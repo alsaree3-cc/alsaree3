@@ -339,7 +339,7 @@
         }
 
         // ===== تسجيل الدخول عبر Supabase (اسم مستخدم + كلمة مرور) =====
-        window.doLogin = async () => {
+        const _doLoginInner = async () => {
             const userEl = document.getElementById('login-username');
             const passEl = document.getElementById('login-password');
             const errorEl = document.getElementById('login-error');
@@ -378,10 +378,12 @@
             // الآن فقط (بعد المصادقة) نجلب بيانات الموظفين ونفتح الاتصال اللحظي
             try {
                 loggedInId = (profile.role === 'admin') ? '__admin__' : profile.employee_key;
-                try { await runDayReset('catchup'); } catch(e) { console.warn('[CatchUp-Reset] تعذر:', e.message); }
                 _serverEmployees = await fetchEmployeesMap();
                 employeesData = _snapshotClone();
                 subscribeEmployees();
+                // التصفير التعويضي يعمل بالخلفية حتى لا يبطّئ الدخول، ثم نحدّث البيانات إن حصل تصفير
+                runDayReset('catchup').then(did => { if (did) resyncEmployees().catch(() => {}); })
+                    .catch(e => console.warn('[CatchUp-Reset] تعذر:', e.message));
             } catch (e) {
                 console.error(e);
                 loggedInId = null; employeesData = {}; unsubscribeEmployees();
@@ -426,6 +428,25 @@
 
             render();
             if (loggedInId === '__admin__') setTimeout(() => window.openAdmin(), 300);
+        };
+
+        // غلاف يعرض أي خطأ على الشاشة ويمنع التعليق الصامت
+        window.doLogin = async () => {
+            const errorEl = document.getElementById('login-error');
+            const btn = document.getElementById('login-btn');
+            try {
+                await Promise.race([
+                    _doLoginInner(),
+                    new Promise((_, rej) => setTimeout(() => rej(new Error('انتهت المهلة: السيرفر لم يرد خلال 25 ثانية')), 25000))
+                ]);
+            } catch (e) {
+                console.error('[Login]', e);
+                errorEl.textContent = '❌ خطأ: ' + (e && e.message ? e.message : e);
+                btn.disabled = false; btn.textContent = 'دخول ←';
+                if (document.getElementById('login-screen').style.display !== 'none') {
+                    loggedInId = null; employeesData = {}; unsubscribeEmployees();
+                }
+            }
         };
 
         document.getElementById('login-password').addEventListener('keydown', (e) => {
@@ -660,9 +681,10 @@
                         let d = historyData[id];
                         let taskEn = d.currentTask || 'None';
                                 if(taskEn === 'واتساب') taskEn = 'WhatsApp';
-                                else if(taskEn === 'توزيع') taskEn = 'Distribution';
+                                else if(taskEn === 'توزيع') taskEn = 'Dispatcher';
                                 else if(taskEn === 'قبول') taskEn = 'Accepting';
                                 else if(taskEn === 'لا يوجد') taskEn = 'None';
+                                else if(taskEn === 'Distribution') taskEn = 'Dispatcher';
                         // عرض المدة من totalWorkSeconds إذا متوفرة، وإلا من totalDurationStr
                         let displayDuration = '-';
                         if (d.totalWorkSeconds && d.totalWorkSeconds > 0) {
@@ -742,7 +764,7 @@
                 }
                 let liveTask = d.currentTask || 'None';
                 if(liveTask === 'واتساب') liveTask = 'WhatsApp';
-                else if(liveTask === 'توزيع') liveTask = 'Distribution';
+                else if(liveTask === 'توزيع') liveTask = 'Dispatcher';
                 else if(liveTask === 'قبول') liveTask = 'Accepting';
                 else if(liveTask === 'لا يوجد') liveTask = 'None';
 
@@ -883,7 +905,7 @@
 
             let taskEn = d.currentTask || 'None';
             if (taskEn === 'واتساب') taskEn = 'WhatsApp';
-            else if (taskEn === 'توزيع') taskEn = 'Distribution';
+            else if (taskEn === 'توزيع') taskEn = 'Dispatcher';
             else if (taskEn === 'قبول') taskEn = 'Accepting';
             else if (taskEn === 'لا يوجد') taskEn = 'None';
 
@@ -989,7 +1011,7 @@
                 }
                 let taskEn = d.currentTask || 'None';
                 if (taskEn === 'واتساب') taskEn = 'WhatsApp';
-                else if (taskEn === 'توزيع') taskEn = 'Distribution';
+                else if (taskEn === 'توزيع') taskEn = 'Dispatcher';
                 else if (taskEn === 'قبول') taskEn = 'Accepting';
                 else if (taskEn === 'لا يوجد') taskEn = 'None';
                 else if (taskEn === 'OFF') taskEn = 'OFF';
@@ -1267,7 +1289,7 @@
 
                 let taskDisplay = d.currentTask || 'None';
                 if(d.currentTask === 'واتساب') taskDisplay = 'WhatsApp';
-                else if(d.currentTask === 'توزيع') taskDisplay = 'Distribution';
+                else if(d.currentTask === 'توزيع') taskDisplay = 'Dispatcher';
                 else if(d.currentTask === 'قبول') taskDisplay = 'Accepting';
                 else if(d.currentTask === 'لا يوجد') taskDisplay = 'None';
 
@@ -1280,7 +1302,7 @@
                         <div class="block mb-3 text-xs font-bold text-black text-right pr-1">المهمة الحالية (Current Task):</div>
                         <div class="grid grid-cols-3 gap-2 mb-5">
                             <button onclick="window.setTask('${escId}', 'واتساب')" class="task-btn ${d.currentTask === 'واتساب' ? 'active' : ''}">💬 WhatsApp</button>
-                            <button onclick="window.setTask('${escId}', 'توزيع')" class="task-btn ${d.currentTask === 'توزيع' ? 'active' : ''}">🚴 Distribute</button>
+                            <button onclick="window.setTask('${escId}', 'توزيع')" class="task-btn ${d.currentTask === 'توزيع' ? 'active' : ''}">🚴 Dispatcher</button>
                             <button onclick="window.setTask('${escId}', 'قبول')" class="task-btn ${d.currentTask === 'قبول' ? 'active' : ''}">✅ Accept</button>
                         </div>
                         <div class="block mb-2 text-xs font-bold text-black text-right pr-1">الإجراءات (Actions):</div>
