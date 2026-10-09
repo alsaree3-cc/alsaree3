@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>Alsaree3 - Digital Monitoring System v6 (Supabase)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        body { background-color: #e2e8f0; color: #000000; font-family: 'Cairo', sans-serif; min-height: 100vh; padding: 24px; }
+        .system-container { background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 32px; padding: 32px; box-shadow: inset 0 2px 4px 0 rgba(255, 255, 255, 0.5), 0 20px 25px -5px rgba(0, 0, 0, 0.05); }
+        .card-box { background-color: #ffffff; border: 1px solid #cbd5e1; padding: 24px; border-radius: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02); transition: all 0.3s; text-align: left; direction: ltr; }
+        .card-box.attendance-active { background-color: #f0fdf4; border-color: #86efac; }
+        .card-box:hover { transform: translateY(-5px); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08); border-color: #22c55e; }
+        .card-box.break-active { background-color: #fef2f2; border-color: #fca5a5; }
+        .card-box.rest-active { background-color: #fff7ed; border-color: #fdba74; }
+        .card-box.rest-active .timer-text { color: #ea580c !important; }
+        .card-box.off-active { background-color: #eff6ff; border-color: #bfdbfe; }
+        .btn-opt { background: #ffffff; color: #000000; font-size: 0.95rem; padding: 12px; border-radius: 14px; font-weight: 700; width: 100%; border: 1px solid #cbd5e1; cursor: pointer; transition: background 0.2s; }
+        .btn-opt:hover { border-color: #22c55e; }
+        .task-btn { background: #ffffff; border: 1px solid #cbd5e1; color: #000000; padding: 12px 8px; border-radius: 14px; font-size: 0.9rem; font-weight: 700; width: 100%; cursor: pointer; transition: all 0.2s; }
+        .task-btn:hover { border-color: #22c55e; }
+        .task-btn.active { background: #22c55e; color: #ffffff !important; border-color: #22c55e; }
+        .admin-panel { background-color: #ffffff; border: 1px solid #cbd5e1; padding: 30px; border-radius: 24px; margin-top: 25px; text-align: right; direction: rtl; }
+        .timer-text { color: #16a34a !important; font-weight: 900; font-size: 1.2rem; margin-left: 10px; }
+        .card-box.break-active .timer-text { color: #dc2626 !important; }
+
+        /* شاشة تسجيل الدخول */
+        #login-screen { position:fixed; inset:0; background:linear-gradient(135deg,#dcfce7 0%,#bbf7d0 50%,#86efac 100%); display:flex; align-items:center; justify-content:center; z-index:9999; font-family:'Cairo',sans-serif; }
+        .login-card { background:#ffffff; border-radius:32px; padding:40px 36px; box-shadow:0 25px 50px rgba(0,0,0,0.12); width:100%; max-width:420px; border:1px solid #bbf7d0; }
+        .login-select { width:100%; padding:14px 16px; border-radius:16px; border:2px solid #d1fae5; font-family:'Cairo',sans-serif; font-size:1rem; font-weight:700; background:#f0fdf4; color:#000; cursor:pointer; outline:none; transition:border 0.2s; direction:rtl; }
+        .login-select:focus { border-color:#22c55e; }
+        .pin-input { width:100%; padding:14px 16px; border-radius:16px; border:2px solid #d1fae5; font-family:'Cairo',sans-serif; font-size:1.4rem; font-weight:900; background:#f0fdf4; color:#000; letter-spacing:8px; text-align:center; outline:none; transition:border 0.2s; }
+        .pin-input:focus { border-color:#22c55e; }
+        .login-btn { width:100%; padding:16px; border-radius:18px; background:#22c55e; color:#fff; font-family:'Cairo',sans-serif; font-size:1.1rem; font-weight:900; border:none; cursor:pointer; transition:background 0.2s; }
+        .login-btn:hover { background:#16a34a; }
+        .login-btn:disabled { background:#86efac; cursor:not-allowed; }
+        .error-msg { color:#dc2626; font-weight:700; font-size:0.9rem; text-align:center; min-height:22px; }
+        .my-card-highlight { border:3px solid #22c55e !important; box-shadow:0 0 0 6px #bbf7d030 !important; }
+        #logout-btn { position:fixed; top:18px; left:18px; z-index:100; background:#fff; border:2px solid #cbd5e1; border-radius:14px; padding:8px 18px; font-family:'Cairo',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer; color:#374151; transition:all 0.2s; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
+        #logout-btn:hover { border-color:#f87171; color:#dc2626; }
+    </style>
+</head>
+<body>
+
+    <!-- شاشة تسجيل الدخول -->
+    <div id="login-screen">
+        <div class="login-card">
+            <div class="text-center mb-8">
+                <div class="text-5xl font-black text-green-600 mb-2 tracking-wide">Alsaree3</div>
+                <div class="text-green-700 font-bold text-base bg-green-50 inline-block px-5 py-2 rounded-2xl border border-green-200">🖥️ Morning Call Center</div>
+            </div>
+            <div class="mb-5">
+                <label class="block text-sm font-black text-gray-600 mb-2 text-right">👤 اسم المستخدم</label>
+                <input id="login-username" type="text" autocomplete="username" placeholder="اسم المستخدم" class="login-select" />
+            </div>
+            <div class="mb-5">
+                <label class="block text-sm font-black text-gray-600 mb-2 text-right">🔐 كلمة المرور</label>
+                <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••" class="pin-input" style="letter-spacing:normal;font-size:1rem;" />
+            </div>
+            <div class="error-msg mb-4" id="login-error"></div>
+            <button id="login-btn" class="login-btn" onclick="window.doLogin()">دخول ←</button>
+        </div>
+    </div>
+
+    <!-- زر الخروج -->
+    <button id="logout-btn" style="display:none" onclick="window.doLogout()">🚪 خروج</button>
+
+    <div class="system-container" id="main-app" style="display:none">
+        <div class="text-center mb-10 select-none">
+            <h1 class="text-5xl font-black text-green-600 mb-3 tracking-wide inline-block px-4">Alsaree3</h1><br>
+            <p class="text-lg font-extrabold text-green-700 bg-green-50 inline-block px-6 py-2 rounded-2xl border border-green-200">🖥️ Morning Call Center</p>
+        </div>
+        <div id="app" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"></div>
+        <div id="admin-section" class="admin-panel hidden mt-8"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // ===== Supabase: الاتصال (المفتاح publishable مخصص للمتصفح — الحماية الفعلية عبر RLS في قاعدة البيانات) =====
+        const SUPABASE_URL = 'https://eygohyybhidlsycblfop.supabase.co';
+        const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_6Y3sDrJirAA8O2j2Iugpfg_WUOr8IBm';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+        // الشاشة مشتركة بين الموظفين: لا نحتفظ بجلسة قديمة بعد إعادة تحميل الصفحة
+        supabaseClient.auth.signOut({ scope: 'local' }).catch(() => {});
+
+        // ===== تحويل بين أسماء الحقول في التطبيق (camelCase) وأعمدة قاعدة البيانات (snake_case) =====
+        const EMP_FIELDS = {
+            name: 'name', status: 'status', startTime: 'start_time', lastActionTime: 'last_action_time',
+            lastActiveDate: 'last_active_date', totalBreakMinutes: 'total_break_minutes',
+            totalRestMinutes: 'total_rest_minutes', totalWorkSeconds: 'total_work_seconds',
+            hourlyBreaks: 'hourly_breaks', slotBreaks: 'slot_breaks', rating: 'rating',
+            allowedBreakSaved: 'allowed_break_saved', currentTask: 'current_task',
+            monthlyRating: 'monthly_rating', monthlyHistory: 'monthly_history'
+        };
+        const NUMERIC_COLS = new Set(['start_time','last_action_time','total_break_minutes','total_rest_minutes','total_work_seconds','rating','allowed_break_saved','monthly_rating']);
+        const JSON_COLS = new Set(['hourly_breaks','slot_breaks','monthly_history']);
+
+        function empFromRow(r) {           // صف من القاعدة → كائن التطبيق (الأعمدة غير الموجودة تُترك undefined)
+            const o = {};
+            for (const [camel, col] of Object.entries(EMP_FIELDS)) {
+                if (!(col in r)) continue;
+                let v = r[col];
+                if (v !== null && v !== undefined) {
+                    if (NUMERIC_COLS.has(col)) v = Number(v);
+                    else if (JSON_COLS.has(col) && typeof v === 'string') { try { v = JSON.parse(v); } catch(e) { v = {}; } }
+                }
+                o[camel] = v;
+            }
+            return o;
+        }
+        function empToRow(obj) {           // كائن التطبيق → صف للقاعدة
+            const row = {};
+            for (const [camel, col] of Object.entries(EMP_FIELDS)) {
+                if (obj[camel] === undefined) continue;
+                let v = obj[camel];
+                if (JSON_COLS.has(col) && (v === null)) v = {};
+                row[col] = v;
+            }
+            return row;
+        }
+        function historyToRow(date, id, p) {
+            const row = { history_date: date, employee_key: id };
+            const map = { name:'name', startTimeStr:'start_time_str', totalDurationStr:'total_duration_str', currentTask:'current_task',
+                          totalBreakMinutes:'total_break_minutes', totalRestMinutes:'total_rest_minutes', totalWorkSeconds:'total_work_seconds',
+                          rating:'rating', monthlyRating:'monthly_rating', savedAt:'saved_at' };
+            for (const [k, col] of Object.entries(map)) if (p[k] !== undefined) row[col] = p[k];
+            return row;
+        }
+        function historyFromRow(r) {
+            return { name: r.name, startTimeStr: r.start_time_str, totalDurationStr: r.total_duration_str, currentTask: r.current_task,
+                     totalBreakMinutes: r.total_break_minutes, totalRestMinutes: r.total_rest_minutes, totalWorkSeconds: r.total_work_seconds,
+                     rating: r.rating, monthlyRating: r.monthly_rating, savedAt: r.saved_at };
+        }
+
+        // ===== طبقة البيانات (كل القراءة/الكتابة تمر من هنا، والحماية الحقيقية في RLS) =====
+        let _syncErrAt = 0;
+        function reportSyncError(err, what) {
+            console.error('[Supabase] فشل ' + what + ':', err);
+            if (Date.now() - _syncErrAt > 30000) {
+                _syncErrAt = Date.now();
+                alert('⚠️ تعذّر حفظ التغيير على السيرفر (' + what + ').\nتحقق من الاتصال بالإنترنت، وإن استمرت المشكلة سجّل الخروج وادخل من جديد.');
+            }
+        }
+
+        async function fetchEmployeesMap() {
+            const { data, error } = await supabaseClient.from('alsaree3_employees').select('*').order('employee_key');
+            if (error) throw error;
+            const map = {};
+            (data || []).forEach(r => { map[r.employee_key] = empFromRow(r); });
+            return map;
+        }
+
+        // تحديث بطاقة موظف واحد (الموظف لا يكتب إلا بطاقته — والسيرفر يفرض ذلك أيضاً)
+        async function safeUpdateEmployee(id, data) {
+            if (loggedInId !== '__admin__' && loggedInId !== id) return { ok: false, skipped: true };
+            if (!_checkWriteRate()) return { ok: false, skipped: true };
+            const row = empToRow(data);
+            if (Object.keys(row).length === 0) return { ok: true };
+            const { data: res, error } = await supabaseClient.from('alsaree3_employees')
+                .update(row).eq('employee_key', id).select('employee_key');
+            if (error) { reportSyncError(error, 'تحديث الموظف'); return { ok: false }; }
+            if (!res || res.length === 0) { reportSyncError(new Error('0 rows updated (RLS?)'), 'تحديث الموظف'); return { ok: false }; }
+            return { ok: true };
+        }
+
+        // مسؤول فقط: تحديث عدة موظفين بمفاتيح بنمط employees/<id>/<field> (تستخدمها endOfDay)
+        async function applyEmployeePathUpdates(paths) {
+            const grouped = {};
+            for (const [path, val] of Object.entries(paths)) {
+                const m = path.match(/^employees\/([^/]+)\/(.+)$/);
+                if (!m) continue;
+                (grouped[m[1]] = grouped[m[1]] || {})[m[2]] = val;
+            }
+            const results = await Promise.all(Object.entries(grouped).map(async ([id, fields]) => {
+                const row = empToRow(fields);
+                if (Object.keys(row).length === 0) return true;
+                const { error } = await supabaseClient.from('alsaree3_employees').update(row).eq('employee_key', id);
+                if (error) { console.error('[Supabase] فشل تحديث', id, error); return false; }
+                return true;
+            }));
+            if (results.some(ok => !ok)) throw new Error('فشل تحديث بعض الموظفين');
+        }
+
+        async function saveHistoryRow(date, id, payload) {
+            if (loggedInId !== '__admin__' && loggedInId !== id) return;
+            if (!_checkWriteRate()) return;
+            const { error } = await supabaseClient.from('alsaree3_history')
+                .upsert(historyToRow(date, id, payload), { onConflict: 'history_date,employee_key' });
+            if (error) console.error('[Supabase] فشل حفظ الأرشيف:', error);
+        }
+
+        // مسؤول فقط: حفظ أرشيف عدة موظفين دفعة واحدة (مفاتيح بنمط history/<date>/<id>)
+        async function applyHistoryPathUpdates(paths) {
+            const rows = [];
+            for (const [path, val] of Object.entries(paths)) {
+                const m = path.match(/^history\/([^/]+)\/([^/]+)$/);
+                if (m) rows.push(historyToRow(m[1], m[2], val));
+            }
+            if (rows.length === 0) return;
+            const { error } = await supabaseClient.from('alsaree3_history')
+                .upsert(rows, { onConflict: 'history_date,employee_key' });
+            if (error) throw error;
+        }
+
+        async function fetchHistoryFor(date) {
+            const { data, error } = await supabaseClient.from('alsaree3_history')
+                .select('*').eq('history_date', date).order('employee_key');
+            if (error) throw error;
+            const out = {};
+            (data || []).forEach(r => { out[r.employee_key] = historyFromRow(r); });
+            return out;
+        }
+
+        async function insertDeviceLog(entry) {
+            const { error } = await supabaseClient.from('alsaree3_device_log').insert({
+                emp_id: entry.empId, emp_name: entry.empName, type: entry.type || null,
+                fingerprint: entry.fingerprint || null, user_agent: entry.userAgent || null,
+                ts: entry.timestamp, time_str: entry.time || null
+            });
+            if (error) console.warn('[Supabase] device log:', error.message);
+        }
+
+        // تصفير اليوم على السيرفر — الأوضاع: force | full | catchup | evening (انظر supabase_setup.sql)
+        async function runDayReset(mode) {
+            const { data, error } = await supabaseClient.rpc('alsaree3_reset_day', { p_mode: mode });
+            if (error) { console.error('[Reset]', mode, error); throw error; }
+            return data === true;
+        }
+
+        // ===== المزامنة اللحظية (Realtime) مع مزامنة احتياطية دورية =====
+        let _rtChannel = null;
+        let _serverEmployees = {};
+        function _snapshotClone() {
+            const sorted = {};
+            Object.keys(_serverEmployees).sort().forEach(k => { sorted[k] = _serverEmployees[k]; });
+            return JSON.parse(JSON.stringify(sorted));
+        }
+        async function resyncEmployees() {
+            _serverEmployees = await fetchEmployeesMap();
+            handleEmployeesSnapshot(_snapshotClone());
+        }
+        function subscribeEmployees() {
+            if (_rtChannel) return;
+            _rtChannel = supabaseClient.channel('alsaree3-employees')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'alsaree3_employees' }, (payload) => {
+                    if (payload.eventType === 'DELETE') {
+                        delete _serverEmployees[payload.old.employee_key];
+                    } else {
+                        const key = payload.new.employee_key;
+                        _serverEmployees[key] = Object.assign({}, _serverEmployees[key] || {}, empFromRow(payload.new));
+                    }
+                    handleEmployeesSnapshot(_snapshotClone());
+                })
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') resyncEmployees().catch(() => {});
+                });
+        }
+        function unsubscribeEmployees() {
+            if (_rtChannel) { supabaseClient.removeChannel(_rtChannel); _rtChannel = null; }
+            _serverEmployees = {};
+        }
+        // شبكة أمان: لو فاتت أحداث (نوم الجهاز/انقطاع) نعيد المزامنة كل 45 ثانية وعند العودة للتبويب
+        setInterval(() => { if (loggedInId) resyncEmployees().catch(() => {}); }, 45000);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && loggedInId) resyncEmployees().catch(() => {});
+        });
+
+        // ===== SECURITY v5: Device Fingerprint =====
+        async function getDeviceFingerprint() {
+            const raw = [
+                navigator.userAgent,
+                navigator.language,
+                screen.width + 'x' + screen.height,
+                new Date().getTimezoneOffset(),
+                navigator.hardwareConcurrency || 0
+            ].join('|');
+            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('').slice(0,16);
+        }
+
+        async function logDeviceAccess(empId, empName) {
+            try {
+                const fp = await getDeviceFingerprint();
+                const logEntry = {
+                    empId, empName,
+                    fingerprint: fp,
+                    userAgent: navigator.userAgent.slice(0, 80),
+                    timestamp: Date.now(),
+                    time: new Date().toLocaleString('ar-IQ')
+                };
+                await insertDeviceLog(logEntry);
+            } catch(e) {}
+        }
+        let employeesData = {}, adminClickCount = 0;
+        let isViewingHistory = false;
+        let lastResetDate = null;
+        let backupThrottle = {};
+        let loggedInId = null;
+        let localUpdateLock = false; // قفل لمنع التحديث اللحظي من تجاوز التحديث المحلي
+
+        // ===== SECURITY: Session timeout — تسجيل خروج تلقائي بعد 8 ساعات =====
+        let _sessionStart = null;
+        const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 ساعات
+        function _checkSessionTimeout() {
+            if (!loggedInId || !_sessionStart) return;
+            if (Date.now() - _sessionStart > SESSION_TIMEOUT_MS) {
+                alert('⏰ انتهت جلستك تلقائياً بعد 8 ساعات. يرجى تسجيل الدخول مجدداً.');
+                window.doLogout && window.doLogout();
+            }
+        }
+        setInterval(_checkSessionTimeout, 60000); // تحقق كل دقيقة
+
+        // ===== SECURITY: Global write rate limiter =====
+        let _fbWriteCount = 0;
+        let _fbWriteWindowStart = Date.now();
+        const FB_MAX_WRITES_PER_MIN = 150; // حد أقصى 150 كتابة في الدقيقة لكل جهاز
+        function _checkWriteRate() {
+            const now = Date.now();
+            if (now - _fbWriteWindowStart > 60000) { _fbWriteCount = 0; _fbWriteWindowStart = now; }
+            if (_fbWriteCount >= FB_MAX_WRITES_PER_MIN) {
+                console.warn('[SECURITY] write rate limit exceeded!');
+                return false;
+            }
+            _fbWriteCount++;
+            return true;
+        }
+        function getTodayDateString() {
+            const d = new Date();
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // ===== تسجيل الدخول عبر Supabase (اسم مستخدم + كلمة مرور) =====
+        window.doLogin = async () => {
+            const userEl = document.getElementById('login-username');
+            const passEl = document.getElementById('login-password');
+            const errorEl = document.getElementById('login-error');
+            const btn = document.getElementById('login-btn');
+            const username = userEl.value.trim().toLowerCase();
+            const password = passEl.value;
+            errorEl.textContent = '';
+            if (!username) { errorEl.textContent = '⚠️ أدخل اسم المستخدم'; return; }
+            if (!password) { errorEl.textContent = '⚠️ أدخل كلمة المرور'; return; }
+            btn.disabled = true; btn.textContent = 'جاري التحقق...';
+            const resetBtn = () => { btn.disabled = false; btn.textContent = 'دخول ←'; };
+
+            // إذا كتب بريده الحقيقي كامل (يحتوي على @) استخدمه كما هو — مخصص لحساب المسؤول
+            const email = username.includes('@') ? username : `${username}@alsaree3.local`;
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) {
+                console.error(error);
+                errorEl.textContent = '❌ اسم المستخدم أو كلمة المرور غير صحيحة';
+                resetBtn(); passEl.value = ''; passEl.focus(); return;
+            }
+
+            // اجلب دور الحساب (مسؤول / موظف) والموظف المرتبط به من Supabase
+            const { data: profile, error: profileError } = await supabaseClient
+                .from('alsaree3_profiles')
+                .select('role, employee_key')
+                .eq('id', data.user.id)
+                .single();
+
+            if (profileError || !profile) {
+                console.error(profileError);
+                errorEl.textContent = '❌ لا يوجد حساب موظف مرتبط بهذا المستخدم';
+                await supabaseClient.auth.signOut();
+                resetBtn(); return;
+            }
+
+            // الآن فقط (بعد المصادقة) نجلب بيانات الموظفين ونفتح الاتصال اللحظي
+            try {
+                loggedInId = (profile.role === 'admin') ? '__admin__' : profile.employee_key;
+                try { await runDayReset('catchup'); } catch(e) { console.warn('[CatchUp-Reset] تعذر:', e.message); }
+                _serverEmployees = await fetchEmployeesMap();
+                employeesData = _snapshotClone();
+                subscribeEmployees();
+            } catch (e) {
+                console.error(e);
+                loggedInId = null; employeesData = {}; unsubscribeEmployees();
+                errorEl.textContent = '❌ تعذّر تحميل بيانات الموظفين من السيرفر';
+                await supabaseClient.auth.signOut();
+                resetBtn(); return;
+            }
+
+            if (profile.role !== 'admin') {
+                const emp = employeesData[profile.employee_key];
+                if (!profile.employee_key || !emp) {
+                    loggedInId = null; employeesData = {}; unsubscribeEmployees();
+                    errorEl.textContent = '❌ بيانات هذا الموظف غير موجودة في النظام';
+                    await supabaseClient.auth.signOut();
+                    resetBtn(); return;
+                }
+            }
+
+            _sessionStart = Date.now();
+            logDeviceAccess(loggedInId, loggedInId === '__admin__' ? 'Admin' : employeesData[loggedInId].name);
+
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('main-app').style.display = 'block';
+            document.getElementById('logout-btn').style.display = 'block';
+            document.getElementById('logout-btn').textContent = (loggedInId === '__admin__') ? '🚪 خروج المسؤول' : '🚪 خروج';
+            resetBtn();
+
+            if (loggedInId !== '__admin__') {
+                const today = getTodayDateString();
+                const empData = employeesData[loggedInId];
+                if (empData && empData.lastActiveDate !== today) {
+                    await safeUpdateEmployee(loggedInId, {
+                        status: 'خارج العمل', lastActionTime: null,
+                        startTime: null, lastActiveDate: today
+                    });
+                    employeesData[loggedInId].status = 'خارج العمل';
+                    employeesData[loggedInId].lastActionTime = null;
+                    employeesData[loggedInId].startTime = null;
+                    employeesData[loggedInId].lastActiveDate = today;
+                }
+            }
+
+            render();
+            if (loggedInId === '__admin__') setTimeout(() => window.openAdmin(), 300);
+        };
+
+        document.getElementById('login-password').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') window.doLogin();
+        });
+
+        window.doLogout = async () => {
+            if (confirm('هل تريد تسجيل الخروج من النظام؟')) {
+                await supabaseClient.auth.signOut();
+                unsubscribeEmployees();
+                employeesData = {};              // الشاشة مشتركة: لا نترك بيانات الموظفين في الذاكرة بعد الخروج
+                loggedInId = null;
+                _sessionStart = null;
+                document.getElementById('app').innerHTML = '';
+                document.getElementById('login-screen').style.display = 'flex';
+                document.getElementById('main-app').style.display = 'none';
+                document.getElementById('logout-btn').style.display = 'none';
+                document.getElementById('admin-section').classList.add('hidden');
+                document.getElementById('admin-section').innerHTML = '';
+                document.getElementById('login-password').value = '';
+                document.getElementById('login-username').value = '';
+                document.getElementById('login-error').textContent = '';
+            }
+        };
+
+        // الدالة الداخلية الفعلية — لا تُستدعى من الخارج (تصفير يدوي بواسطة المسؤول — يُنفَّذ على السيرفر)
+        async function _internalGlobalReset(isAutomated = false) {
+            try {
+                await runDayReset('force');
+                await resyncEmployees();
+                if (!isAutomated) alert("✅ تم التصفير وبدء يوم جديد!");
+            } catch (e) {
+                alert("❌ فشل التصفير: " + (e.message || e));
+            }
+        }
+
+        // النسخة العامة — محمية برمز المسؤول
+        window.executeGlobalReset = async (isAutomated = false) => {
+            if (loggedInId !== '__admin__') {
+                alert("🔒 هذه العملية متاحة للمسؤول فقط!");
+                return;
+            }
+            return _internalGlobalReset(isAutomated);
+        };
+
+        // تصفير كامل يُستخدم فقط من endOfDay بعد حفظ التقرير (مسؤول فقط — يتحقق منه السيرفر أيضاً)
+        async function executeFullReset() {
+            await runDayReset('full');
+            await resyncEmployees();
+        }
+
+        window.triggerInstantGlobalReset = async () => {
+            // ===== SECURITY: تحقق من صلاحية المسؤول =====
+            if (loggedInId !== '__admin__') {
+                alert("🔒 هذه العملية متاحة للمسؤول فقط!");
+                return;
+            }
+            if (confirm("⚠️ هل أنت متأكد من تصفير كل شيء لليوم يدوياً؟")) {
+                _internalGlobalReset(false);
+            }
+        };
+
+        function checkAutoResetCron() {
+            const now = new Date();
+            const todayStr = getTodayDateString();
+            const resetKey = `${todayStr}_reset`;
+            // FIX: يعمل عند أي ساعة >= 19 وليس فقط عند الدقيقة 00:00
+            if (now.getHours() >= 19 && lastResetDate !== resetKey) {
+                lastResetDate = resetKey;
+                console.log(`[Auto-Reset] الساعة ${now.getHours()}:${now.getMinutes()} — جاري التصفير التلقائي...`);
+                runDayReset('evening').then(did => { if (did) resyncEmployees().catch(() => {}); }).catch(e => console.warn('[Auto-Reset] تعذر:', e.message));
+            }
+        }
+
+        // تصفير تعويضي — يُنفَّذ الآن داخل doLogin عبر runDayReset('catchup') (مرة واحدة لكل يوم على السيرفر)
+        async function checkCatchUpReset() {
+            try {
+                if (await runDayReset('catchup')) await resyncEmployees();
+            } catch(e) { console.error('[CatchUp-Reset] فشل:', e); }
+        }
+
+        function checkAndApplyRatings() {
+            let now = Date.now();
+            for (let i in employeesData) {
+                let d = employeesData[i];
+                if (!d.startTime || d.status === 'أوف') continue;
+                
+                let currentHourIndex = Math.floor((now - d.startTime) / 3600000);
+                // احسب فقط دقائق البريك الحالي التي تقع ضمن الساعة الحالية
+                let curB = 0;
+                if (d.status === 'بريك' && d.lastActionTime) {
+                    let breakStartHourIndex = Math.floor((d.lastActionTime - d.startTime) / 3600000);
+                    if (breakStartHourIndex === currentHourIndex) {
+                        curB = Math.floor((now - d.lastActionTime) / 60000);
+                    } else {
+                        let currentHourStart = d.startTime + (currentHourIndex * 3600000);
+                        curB = Math.floor((now - currentHourStart) / 60000);
+                        if (curB < 0) curB = 0;
+                    }
+                }
+                let curR = (d.status === 'راحة' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
+                let totalR = (d.totalRestMinutes || 0) + curR;
+                
+                let totalViolations = 0;
+                let hourlyBreaks = d.hourlyBreaks || {};
+                
+                for (let h = 0; h < currentHourIndex; h++) {
+                    let pastBreak = hourlyBreaks[h] || 0;
+                    if (pastBreak > 5) totalViolations += Math.floor((pastBreak - 5) / 60) + 1;
+                }
+                
+                let currentHourBreak = (hourlyBreaks[currentHourIndex] || 0) + curB;
+                if (currentHourBreak > 5) totalViolations += Math.floor((currentHourBreak - 5) / 60) + 1;
+                if (totalR > 15) totalViolations += Math.floor((totalR - 15) / 60) + 1;
+                
+                let calcRating = totalViolations > 0 ? Math.max(0, 100 - (totalViolations * 5)) : 100;
+                // تحديث محلي فقط — بدون كتابة للسيرفر لتجنب إطلاق تحديث لحظي
+                employeesData[i].rating = calcRating;
+            }
+        }
+
+        window.openAdmin = () => {
+            if (loggedInId !== '__admin__') { alert("🔒 هذه اللوحة متاحة للمسؤول فقط!"); return; }
+            const section = document.getElementById('admin-section'); 
+            section.classList.remove('hidden');
+            const todayStr = getTodayDateString();
+            isViewingHistory = false;
+
+            let html = `<div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-slate-200 pb-4">
+                            <h2 class="text-2xl font-bold text-black text-right">📋 أرشيف التقارير والرقابة التاريخية المتكاملة</h2>
+                            
+                            <div class="flex items-center gap-3 bg-slate-100 p-2 rounded-xl border border-slate-300">
+                                <label class="font-bold text-slate-700 text-sm">اختر تاريخ التقرير السـابق:</label>
+                                <input type="date" id="historyDateSelector" value="${todayStr}" onchange="window.fetchHistoryReport(this.value)" class="bg-white border border-slate-400 p-1 rounded font-bold text-slate-800">
+                            </div>
+                        </div>
+                        
+                        <div class="overflow-x-auto">
+                            <table id="reportTable" class="w-full text-md text-right border-collapse mb-6">
+                                <thead>
+                                    <tr class="bg-green-50 text-black border-b border-green-200">
+                                        <th class="p-3">Name</th><th class="p-3">Check-In Time</th><th class="p-3">Total Hours</th><th class="p-3">Date</th><th class="p-3">Task</th><th class="p-3 text-amber-700">Total Break</th><th class="p-3">Total Rest</th><th class="p-3 text-emerald-700">Day Rating</th><th class="p-3 text-blue-700">Monthly Rating</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reportTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <button onclick="window.downloadPDF()" class="bg-green-600 w-full p-4 rounded-xl font-bold text-white mb-3 shadow hover:bg-green-700 transition">📥 تحميل التقرير المعروض حالياً PDF</button>
+                        <button onclick="window.endOfDay()" class="bg-indigo-700 w-full p-5 rounded-xl font-bold text-white mb-3 shadow hover:bg-indigo-800 transition text-lg">🌙 إنهاء اليوم وحفظ التقرير</button>
+                        <button onclick="window.triggerInstantGlobalReset()" class="bg-amber-600 w-full p-4 rounded-xl font-bold text-white mb-3 shadow hover:bg-amber-700 transition">🔄 تصفير النظام وبدء يوم جديد (يدوياً)</button>
+                        <button onclick="window.resetMonthlySystem()" class="bg-red-600 w-full p-4 rounded-xl font-bold text-white mb-3 shadow hover:bg-red-700 transition">🔄 تصفير وإعادة تعيين الشهر الجديد</button>
+                        <button onclick="window.openDeviceLog()" class="bg-slate-700 w-full p-4 rounded-xl font-bold text-white mb-3 shadow hover:bg-slate-800 transition">📱 سجل الأجهزة والدخول (Device Log)</button>
+                        <button onclick="location.reload()" class="bg-gray-500 w-full p-4 rounded-xl font-bold text-white hover:bg-gray-600 transition">إغلاق التقرير</button>`;
+            
+            section.innerHTML = html; 
+            window.fetchHistoryReport(todayStr); 
+            section.scrollIntoView({ behavior: 'smooth' });
+        };
+
+        // ===== SECURITY v5: عرض سجل الأجهزة =====
+        window.openDeviceLog = async () => {
+            if (loggedInId !== '__admin__') return;
+            const overlay = document.createElement('div');
+            overlay.id = 'device-log-overlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+            overlay.innerHTML = `<div style="background:#fff;border-radius:24px;padding:28px;width:100%;max-width:800px;max-height:85vh;overflow-y:auto;direction:rtl;font-family:Cairo,sans-serif;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                    <h2 style="font-size:1.3rem;font-weight:900;color:#334155;">📱 سجل الأجهزة والدخول</h2>
+                    <button onclick="document.getElementById('device-log-overlay').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:8px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button>
+                </div>
+                <div id="device-log-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري تحميل السجل...</div>
+            </div>`;
+            document.body.appendChild(overlay);
+            try {
+                const { data: logRows, error: logErr } = await supabaseClient.from('alsaree3_device_log')
+                    .select('*').order('ts', { ascending: false }).limit(100);
+                if (logErr) throw logErr;
+                const entries = (logRows || []).map(r => ({ empId: r.emp_id, empName: r.emp_name, type: r.type,
+                    fingerprint: r.fingerprint, userAgent: r.user_agent, timestamp: r.ts, time: r.time_str }));
+                if (entries.length === 0) {
+                    document.getElementById('device-log-content').innerHTML = '<p style="color:#94a3b8;">لا توجد سجلات بعد</p>';
+                    return;
+                }
+                let html = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                    <thead><tr style="background:#f1f5f9;font-weight:900;">
+                        <th style="padding:10px;text-align:right;">الموظف</th>
+                        <th style="padding:10px;text-align:right;">الوقت</th>
+                        <th style="padding:10px;text-align:right;">بصمة الجهاز</th>
+                        <th style="padding:10px;text-align:right;">المتصفح</th>
+                    </tr></thead><tbody>`;
+                entries.slice(0, 100).forEach(e => {
+                    const isAdmin = e.empId === '__admin__';
+                    const isFail = e.type === 'admin_fail';
+                    const bg = isFail ? '#fef2f2' : isAdmin ? '#eff6ff' : '#f0fdf4';
+                    const nameColor = isFail ? '#dc2626' : isAdmin ? '#1d4ed8' : '#15803d';
+                    html += `<tr style="border-bottom:1px solid #e2e8f0;background:${bg};">
+                        <td style="padding:9px;font-weight:900;color:${nameColor};">${isFail ? '❌ محاولة مدير فاشلة' : sanitize(e.empName || e.empId)}</td>
+                        <td style="padding:9px;color:#475569;">${e.time || '-'}</td>
+                        <td style="padding:9px;font-family:monospace;font-size:0.75rem;color:#7c3aed;">${e.fingerprint || '-'}</td>
+                        <td style="padding:9px;color:#64748b;font-size:0.75rem;">${(e.userAgent||'').slice(0,50)}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                document.getElementById('device-log-content').innerHTML = html;
+            } catch(e) {
+                document.getElementById('device-log-content').innerHTML = '<p style="color:#dc2626;">❌ فشل تحميل السجل</p>';
+            }
+        };
+
+        window.fetchHistoryReport = async (selectedDate) => {
+            if (loggedInId !== '__admin__') return;
+            const tableBody = document.getElementById('reportTableBody');
+            const todayStr = getTodayDateString();
+            
+            if (selectedDate !== todayStr) {
+                isViewingHistory = true;
+            } else {
+                isViewingHistory = false;
+            }
+
+            tableBody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-500 font-bold animate-pulse">جاري سحب بيانات الأرشيف ليوم (${selectedDate})...</td></tr>`;
+            
+            try {
+                const historyData = await fetchHistoryFor(selectedDate);
+                let html = "";
+                
+                if (Object.keys(historyData).length > 0) {
+                    for (let id in historyData) {
+                        let d = historyData[id];
+                        let taskEn = d.currentTask || 'None';
+                                if(taskEn === 'واتساب') taskEn = 'WhatsApp';
+                                else if(taskEn === 'توزيع') taskEn = 'Distribution';
+                                else if(taskEn === 'قبول') taskEn = 'Accepting';
+                                else if(taskEn === 'لا يوجد') taskEn = 'None';
+                        // عرض المدة من totalWorkSeconds إذا متوفرة، وإلا من totalDurationStr
+                        let displayDuration = '-';
+                        if (d.totalWorkSeconds && d.totalWorkSeconds > 0) {
+                            let ws = d.totalWorkSeconds;
+                            let wh = Math.floor(ws / 3600);
+                            let wm = Math.floor((ws % 3600) / 60);
+                            displayDuration = `${wh}h : ${wm}m`;
+                        } else if (d.totalDurationStr && d.totalDurationStr !== '-') {
+                            displayDuration = d.totalDurationStr;
+                        }
+                        html += `<tr class="border-b">
+                                    <td class="p-3 font-bold text-black">${sanitize(d.name)}</td>
+                                    <td class="p-3 font-semibold text-green-700">${d.startTimeStr === 'لم يحضر' ? 'Absent' : (d.startTimeStr || '-')}</td>
+                                    <td class="p-3 font-black text-slate-700">${displayDuration}</td>
+                                    <td class="p-3 text-gray-500">${selectedDate}</td>
+                                    <td class="p-3">${taskEn}</td>
+                                    <td class="p-3 font-bold text-amber-700">${d.totalBreakMinutes || 0} min</td>
+                                    <td class="p-3 font-bold">${d.totalRestMinutes || 0} / 15 min</td>
+                                    <td class="p-3 font-black text-green-600 bg-green-50/20">${d.rating || 100}%</td>
+                                    <td class="p-3 font-black text-blue-600 bg-blue-50/20">${d.monthlyRating || 100}%</td>
+                                 </tr>`;
+                    }
+                    tableBody.innerHTML = html;
+                } else {
+                    if (selectedDate === todayStr) {
+                        window.refreshLiveAdminTable();
+                    } else {
+                        html = `<tr><td colspan="9" class="p-4 text-center text-amber-600 font-bold">⚠️ لا توجد سجلات مؤرشفة محفوظة لهذا التاريخ السـابق (${selectedDate}).</td></tr>`;
+                        tableBody.innerHTML = html;
+                    }
+                }
+            } catch (err) {
+                tableBody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-red-600 font-bold">❌ فشل تحميل الأرشيف التاريخي!</td></tr>`;
+            }
+        };
+
+        window.refreshLiveAdminTable = () => {
+            if (loggedInId !== '__admin__') return;
+            const tableBody = document.getElementById('reportTableBody');
+            if (!tableBody || isViewingHistory) return;
+
+            let html = "";
+            for (let i in employeesData) {
+                let d = employeesData[i];
+                let startStr = d.status === 'أوف' ? "OFF" : (d.startTime ? new Date(d.startTime).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}) : "Absent");
+                let dateStr = getTodayDateString(); 
+                
+                let curBms = (d.status === 'بريك' && d.lastActionTime) ? (Date.now() - d.lastActionTime) : 0;
+                let curRms = (d.status === 'راحة' && d.lastActionTime) ? (Date.now() - d.lastActionTime) : 0;
+                let curB = Math.floor(curBms / 60000);
+                let curBsec = Math.floor((curBms / 1000) % 60).toString().padStart(2, '0');
+                let curR = Math.floor(curRms / 60000);
+                let tB = (d.totalBreakMinutes || 0) + curB, tR = (d.totalRestMinutes || 0) + curR;
+                let duration = "-";
+                if (d.startTime && d.status !== 'أوف') {
+                    // استخدم totalWorkSeconds المتراكم كأساس لمنع التصفير عند أي حركة
+                    let baseSecs = d.totalWorkSeconds || 0;
+                    if (d.status === 'حضور' && d.lastActionTime) {
+                        // أضف الجلسة الحالية للمتراكم
+                        let sessionSecs = Math.floor((Date.now() - d.lastActionTime) / 1000);
+                        let netSecs = baseSecs + (sessionSecs > 0 ? sessionSecs : 0);
+                        if (netSecs < 0) netSecs = 0;
+                        let dh = Math.floor(netSecs / 3600);
+                        let dm = Math.floor((netSecs % 3600) / 60);
+                        let ds = (netSecs % 60).toString().padStart(2, '0');
+                        duration = `${dh}h : ${dm}m : ${ds}s`;
+                    } else if (d.status === 'خارج العمل') {
+                        let netSecs = baseSecs;
+                        if (netSecs < 0) netSecs = 0;
+                        duration = `${Math.floor(netSecs / 3600)}h : ${Math.floor((netSecs % 3600) / 60)}m`;
+                    } else {
+                        // بريك / راحة — يتجمد على المتراكم
+                        let netSecs = baseSecs;
+                        if (netSecs < 0) netSecs = 0;
+                        duration = `${Math.floor(netSecs / 3600)}h : ${Math.floor((netSecs % 3600) / 60)}m`;
+                    }
+                }
+                let liveTask = d.currentTask || 'None';
+                if(liveTask === 'واتساب') liveTask = 'WhatsApp';
+                else if(liveTask === 'توزيع') liveTask = 'Distribution';
+                else if(liveTask === 'قبول') liveTask = 'Accepting';
+                else if(liveTask === 'لا يوجد') liveTask = 'None';
+
+                // عرض العداد الحي للبريك الجاري
+                let breakDisplay = d.status === 'بريك' && d.lastActionTime
+                    ? `<span id="admin-break-${i}" class="text-red-600 font-black">${tB}:${curBsec} min ▶</span>`
+                    : `<span id="admin-break-${i}" class="font-bold text-amber-700">${tB} min</span>`;
+
+                let durationDisplay = d.startTime && d.status !== 'أوف'
+                    ? `<span id="admin-dur-${i}">${duration}</span>`
+                    : `<span id="admin-dur-${i}">${duration}</span>`;
+
+                html += `<tr class="border-b" data-emp-id="${i}">
+                            <td class="p-3 font-bold text-black">${sanitize(d.name)}</td>
+                            <td class="p-3 font-semibold text-green-700">${startStr}</td>
+                            <td class="p-3 font-black text-slate-700">${durationDisplay}</td>
+                            <td class="p-3 text-gray-500">${dateStr} (Live)</td>
+                            <td class="p-3">${liveTask}</td>
+                            <td class="p-3">${breakDisplay}</td>
+                            <td class="p-3 font-bold"><span id="admin-rest-${i}">${tR}</span> / 15 min</td>
+
+                            <td class="p-3 font-black text-green-600 bg-green-50/20">${d.rating!==undefined?d.rating:100}%</td>
+                            <td class="p-3 font-black text-blue-600 bg-blue-50/20">${d.monthlyRating!==undefined?d.monthlyRating:100}%</td>
+                         </tr>`;
+            }
+            tableBody.innerHTML = html;
+        };
+
+        // تحديث عدادات البريك والراحة والمدة في جدول المدير كل ثانية
+        function updateAdminTableTimers() {
+            if (isViewingHistory) return;
+            const now = Date.now();
+            for (let i in employeesData) {
+                const d = employeesData[i];
+                const breakEl = document.getElementById('admin-break-' + i);
+                const restEl = document.getElementById('admin-rest-' + i);
+                const durEl = document.getElementById('admin-dur-' + i);
+                if (!breakEl) continue;
+
+                let curBms = (d.status === 'بريك' && d.lastActionTime) ? (now - d.lastActionTime) : 0;
+                let curRms = (d.status === 'راحة' && d.lastActionTime) ? (now - d.lastActionTime) : 0;
+                let curBmin = Math.floor(curBms / 60000);
+                let curBsec = Math.floor((curBms / 1000) % 60).toString().padStart(2, '0');
+                let curRmin = Math.floor(curRms / 60000);
+                let curRsec = Math.floor((curRms / 1000) % 60).toString().padStart(2, '0');
+                let tB = (d.totalBreakMinutes || 0) + curBmin;
+                let tBsec = curBms > 0 ? curBsec : '00';
+                let tR = (d.totalRestMinutes || 0) + curRmin;
+                let tRsec = curRms > 0 ? curRsec : '00';
+
+                if (d.status === 'بريك' && d.lastActionTime) {
+                    breakEl.className = 'text-red-600 font-black';
+                    breakEl.textContent = `${tB}:${tBsec} min ▶`;
+                } else {
+                    breakEl.className = 'font-bold text-amber-700';
+                    breakEl.textContent = `${tB} min`;
+                }
+                if (restEl) {
+                    if (d.status === 'راحة' && d.lastActionTime) {
+                        restEl.textContent = `${tR}:${tRsec}`;
+                    } else {
+                        restEl.textContent = tR;
+                    }
+                }
+                if (durEl && d.startTime && d.status !== 'أوف') {
+                    let baseSecs = d.totalWorkSeconds || 0;
+                    if (d.status === 'حضور' && d.lastActionTime) {
+                        let sessionSecs = Math.floor((now - d.lastActionTime) / 1000);
+                        let netSecs = baseSecs + (sessionSecs > 0 ? sessionSecs : 0);
+                        if (netSecs < 0) netSecs = 0;
+                        let dh = Math.floor(netSecs / 3600);
+                        let dm = Math.floor((netSecs % 3600) / 60);
+                        let ds = (netSecs % 60).toString().padStart(2, '0');
+                        durEl.textContent = `${dh}h : ${dm}m : ${ds}s`;
+                    } else if (d.status === 'خارج العمل') {
+                        let netSecs = baseSecs;
+                        if (netSecs < 0) netSecs = 0;
+                        durEl.textContent = `${Math.floor(netSecs / 3600)}h : ${Math.floor((netSecs % 3600) / 60)}m`;
+                    } else {
+                        // بريك / راحة — يتجمد على المتراكم
+                        let netSecs = baseSecs;
+                        if (netSecs < 0) netSecs = 0;
+                        let dh = Math.floor(netSecs / 3600);
+                        let dm = Math.floor((netSecs % 3600) / 60);
+                        durEl.textContent = `${dh}h : ${dm}m`;
+                    }
+                }
+            }
+        }
+
+        function backupCurrentDataToHistory(id, force = false) {
+            if (isViewingHistory) return;
+            // ===== SECURITY: يسمح فقط للمسؤول أو الموظف نفسه بالكتابة =====
+            if (loggedInId !== '__admin__' && loggedInId !== id) return;
+
+            // FIX: throttle — لا تكتب أكثر من مرة كل 60 ثانية لكل موظف (إلا عند force)
+            const now = Date.now();
+            if (!force && backupThrottle[id] && (now - backupThrottle[id]) < 60000) return;
+            backupThrottle[id] = now;
+
+            const todayStr = getTodayDateString();
+            let d = employeesData[id];
+            if (!d) return;
+
+            let startStr = d.status === 'أوف' ? "OFF (Day Off)" : (d.startTime ? new Date(d.startTime).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}) : "Absent");
+            let curB = (d.status === 'بريك' ? Math.floor((now - d.lastActionTime) / 60000) : 0);
+            let curR = (d.status === 'راحة' ? Math.floor((now - d.lastActionTime) / 60000) : 0);
+            let duration = "-";
+            if (d.status === 'أوف') {
+                duration = "OFF";
+            } else if (d.startTime) {
+                // FIX: استخدم totalWorkSeconds الأدق، مع إضافة الجلسة الحالية إن كان Active
+                let netSecs = 0;
+                let baseSecs = d.totalWorkSeconds || 0;
+                if (d.status === 'حضور' && d.lastActionTime) {
+                    // أضف الجلسة الحالية
+                    let sessionSecs = Math.floor((now - d.lastActionTime) / 1000);
+                    netSecs = baseSecs + (sessionSecs > 0 ? sessionSecs : 0);
+                } else if (d.status === 'بريك' || d.status === 'راحة') {
+                    // متجمد على المتراكم
+                    netSecs = baseSecs;
+                } else {
+                    // خارج العمل — المتراكم هو النهائي
+                    netSecs = baseSecs;
+                    // fallback إذا لم يُسجَّل totalWorkSeconds
+                    if (!netSecs && d.lastActionTime) {
+                        let diff = d.lastActionTime - d.startTime;
+                        let tBall = (d.totalBreakMinutes || 0) + curB;
+                        let tRall = (d.totalRestMinutes || 0) + curR;
+                        netSecs = Math.floor(diff / 1000) - (tBall * 60) - (tRall * 60);
+                    }
+                }
+                if (netSecs < 0) netSecs = 0;
+                let bh = Math.floor(netSecs / 3600);
+                let bm = Math.floor((netSecs % 3600) / 60);
+                duration = `${bh}h : ${bm}m`;
+            }
+
+            let taskEn = d.currentTask || 'None';
+            if (taskEn === 'واتساب') taskEn = 'WhatsApp';
+            else if (taskEn === 'توزيع') taskEn = 'Distribution';
+            else if (taskEn === 'قبول') taskEn = 'Accepting';
+            else if (taskEn === 'لا يوجد') taskEn = 'None';
+
+            // احفظ totalWorkSeconds الفعلي في النسخة الاحتياطية
+            let backupWorkSecs = 0;
+            if (d.startTime && d.status !== 'أوف') {
+                let baseSecs2 = d.totalWorkSeconds || 0;
+                if (d.status === 'حضور' && d.lastActionTime) {
+                    let sessionSecs2 = Math.floor((now - d.lastActionTime) / 1000);
+                    backupWorkSecs = baseSecs2 + (sessionSecs2 > 0 ? sessionSecs2 : 0);
+                } else {
+                    backupWorkSecs = baseSecs2;
+                }
+                if (backupWorkSecs < 0) backupWorkSecs = 0;
+            }
+
+            const historyPayload = {
+                name: d.name,
+                startTimeStr: startStr,
+                totalDurationStr: duration,
+                currentTask: taskEn,
+                totalBreakMinutes: (d.totalBreakMinutes || 0) + curB,
+                totalRestMinutes: (d.totalRestMinutes || 0) + curR,
+                totalWorkSeconds: backupWorkSecs,
+                rating: d.rating !== undefined ? d.rating : 100,
+                monthlyRating: d.monthlyRating !== undefined ? d.monthlyRating : 100
+            };
+
+            saveHistoryRow(todayStr, id, historyPayload);
+        }
+
+        window.resetMonthlySystem = async () => {
+            // ===== SECURITY: متاحة للمسؤول فقط =====
+            if (loggedInId !== '__admin__') { alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
+            if (confirm("⚠️ هل أنت متأكد من مسح التقييم الشهري؟")) {
+                const { error: mErr } = await supabaseClient.from('alsaree3_employees')
+                    .update({ monthly_rating: 100, monthly_history: {} }).not('employee_key', 'is', null);
+                if (mErr) { alert("❌ فشل تصفير الشهر: " + mErr.message); return; }
+                alert("✅ تم تصفير الشهر الجديد!"); location.reload();
+            }
+        };
+
+        // ===== إنهاء اليوم: يحفظ كل شيء ثم يصفر =====
+        window.endOfDay = async () => {
+            // ===== SECURITY: متاحة للمسؤول فقط =====
+            if (loggedInId !== '__admin__') { alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
+            if (!confirm("🌙 هل تريد إنهاء يوم العمل؟\nسيتم حفظ تقرير اليوم وإغلاق دوام جميع الموظفين.")) return;
+
+            const todayStr = getTodayDateString();
+            const now = Date.now();
+
+            // 1. أغلق كل الموظفين الشغالين وسجّل وقت الخروج
+            let closeUpdates = {};
+            for (let id in employeesData) {
+                let d = employeesData[id];
+                if (d.status === 'خارج العمل' || d.status === 'أوف') continue;
+
+                // احسب البريك/الراحة الحالية قبل الإغلاق
+                let curB = (d.status === 'بريك' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
+                let curR = (d.status === 'راحة' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
+                let currentHourIndex = d.startTime ? Math.floor((now - d.startTime) / 3600000) : 0;
+                let hourlyBreaks = d.hourlyBreaks || {};
+                if (curB > 0) {
+                    hourlyBreaks[currentHourIndex] = (hourlyBreaks[currentHourIndex] || 0) + curB;
+                    closeUpdates[`employees/${id}/totalBreakMinutes`] = (d.totalBreakMinutes || 0) + curB;
+                    closeUpdates[`employees/${id}/hourlyBreaks`] = hourlyBreaks;
+                }
+                if (curR > 0) closeUpdates[`employees/${id}/totalRestMinutes`] = (d.totalRestMinutes || 0) + curR;
+                closeUpdates[`employees/${id}/status`] = 'خارج العمل';
+                closeUpdates[`employees/${id}/currentTask`] = 'لا يوجد';
+                closeUpdates[`employees/${id}/lastActionTime`] = null;
+            }
+
+            // طبّق الإغلاق أولاً
+            await applyEmployeePathUpdates(closeUpdates);
+
+            // 2. احفظ تقرير كامل لكل موظف في history
+            const freshData = await fetchEmployeesMap();
+
+            let historyUpdates = {};
+            for (let id in freshData) {
+                let d = freshData[id];
+                let startStr = d.status === 'أوف' ? "OFF" : (d.startTime ? new Date(d.startTime).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : "Absent");
+                let duration = "-";
+                let finalWorkSeconds = 0;
+                if (d.status === 'أوف') {
+                    duration = "OFF";
+                } else if (d.startTime) {
+                    // احسب ساعات العمل الفعلية: إجمالي الوقت منذ startTime ناقص البريك والراحة
+                    let tBfinal = d.totalBreakMinutes || 0;
+                    let tRfinal = d.totalRestMinutes || 0;
+                    let diff = now - d.startTime;
+                    let netSecs = Math.floor(diff / 1000) - (tBfinal * 60) - (tRfinal * 60);
+                    // إذا كان totalWorkSeconds محفوظاً وأكبر → خذ الأكبر (تفادياً لأي فقد)
+                    if (d.totalWorkSeconds && d.totalWorkSeconds > netSecs) {
+                        netSecs = d.totalWorkSeconds;
+                    }
+                    if (netSecs < 0) netSecs = 0;
+                    finalWorkSeconds = netSecs;
+                    let dh = Math.floor(netSecs / 3600);
+                    let dm = Math.floor((netSecs % 3600) / 60);
+                    duration = `${dh}h : ${dm}m`;
+                }
+                let taskEn = d.currentTask || 'None';
+                if (taskEn === 'واتساب') taskEn = 'WhatsApp';
+                else if (taskEn === 'توزيع') taskEn = 'Distribution';
+                else if (taskEn === 'قبول') taskEn = 'Accepting';
+                else if (taskEn === 'لا يوجد') taskEn = 'None';
+                else if (taskEn === 'OFF') taskEn = 'OFF';
+
+                historyUpdates[`history/${todayStr}/${id}`] = {
+                    name: d.name,
+                    startTimeStr: startStr,
+                    totalDurationStr: duration,
+                    currentTask: taskEn,
+                    totalBreakMinutes: d.totalBreakMinutes || 0,
+                    totalRestMinutes: d.totalRestMinutes || 0,
+                    totalWorkSeconds: finalWorkSeconds,
+                    rating: d.rating !== undefined ? d.rating : 100,
+                    monthlyRating: d.monthlyRating !== undefined ? d.monthlyRating : 100,
+                    savedAt: new Date().toLocaleTimeString('en-US')
+                };
+            }
+            await applyHistoryPathUpdates(historyUpdates);
+
+            // 3. صفّر النظام ليوم جديد
+            await new Promise(r => setTimeout(r, 300));
+            await executeFullReset();
+
+            alert(`✅ تم حفظ تقرير ${todayStr} وإنهاء يوم العمل!\nيمكنك الرجوع إليه في أي وقت من لوحة المدير.`);
+        };
+
+        window.downloadPDF = () => {
+            if (loggedInId !== '__admin__') { alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
+            const { jsPDF } = window.jspdf; 
+            const doc = new jsPDF({ orientation: 'landscape' }); // FIX: landscape لأن الجدول عريض
+            const dateVal = document.getElementById('historyDateSelector').value;
+            doc.setFontSize(14);
+            doc.text(`Alsaree3 Morning Call Center - Daily Report: ${dateVal}`, 14, 15);
+            doc.autoTable({ 
+                html: '#reportTable', 
+                startY: 22, 
+                styles: { font: 'Helvetica', fontSize: 9, halign: 'right', cellPadding: 4 },
+                headStyles: { fillColor: [34, 197, 94], textColor: 255, fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: [240, 253, 244] },
+                // FIX: عكس ترتيب الأعمدة لدعم RTL في PDF
+                didParseCell: function(data) {
+                    data.cell.styles.halign = 'right';
+                }
+            });
+            doc.save(`Alsaree3_Report_${dateVal}.pdf`);
+        };
+
+        // تم حذف دالة البريك التلقائي عند الخمول (autoUpdateStatusToBreak) نهائياً
+
+        function sanitize(str) {
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        }
+
+        window.updateStatus = async (id, status) => {
+            // ===== SECURITY: منع الموظف من التحكم ببطاقة موظف آخر =====
+            const isAdmin = (loggedInId === '__admin__');
+            const isMe = (id === loggedInId);
+            if (!isAdmin && !isMe) {
+                alert("🔒 لا يمكنك التحكم ببطاقة موظف آخر!");
+                return;
+            }
+            let d = employeesData[id], now = Date.now(), today = getTodayDateString();
+            const SLOT_MS = 5 * 60 * 1000;
+            let currentHourIndex = d.startTime ? Math.floor((now - d.startTime) / 3600000) : 0;
+            let currentSlotIndex = d.startTime ? Math.floor((now - d.startTime) / SLOT_MS) : 0;
+            let hourlyBreaks = JSON.parse(JSON.stringify(d.hourlyBreaks || {}));
+            let slotBreaks = JSON.parse(JSON.stringify(d.slotBreaks || {}));
+            // دائماً ابدأ من القيم المحفوظة لضمان عدم فقدانها
+            let totalBreakMinutes = d.totalBreakMinutes || 0;
+            let totalRestMinutes = d.totalRestMinutes || 0;
+
+            // احسب وقت العمل المتراكم حتى الآن قبل أي تغيير في الحالة
+            let totalWorkSeconds = d.totalWorkSeconds || 0;
+            if (d.status === 'حضور' && d.lastActionTime) {
+                let sessionSecs = Math.floor((now - d.lastActionTime) / 1000);
+                if (sessionSecs > 0) totalWorkSeconds += sessionSecs;
+            }
+
+            // إذا كان الموظف في بريك أو راحة، احسب الوقت المنقضي وأضفه
+            if (d.lastActionTime && (d.status === 'بريك' || d.status === 'راحة')) {
+                let elapsed = Math.floor((now - d.lastActionTime) / 60000);
+                if (d.status === 'بريك') {
+                    totalBreakMinutes += elapsed;
+                    hourlyBreaks[currentHourIndex] = (hourlyBreaks[currentHourIndex] || 0) + elapsed;
+                    // حفظ البريك في slotBreaks بالثواني — البريك قد يمتد عبر عدة slots
+                    let cursor = d.lastActionTime;
+                    let sIdx = d.startTime ? Math.floor((cursor - d.startTime) / SLOT_MS) : 0;
+                    while (cursor < now) {
+                        let slotEnd = d.startTime + ((sIdx + 1) * SLOT_MS);
+                        let segEnd = Math.min(now, slotEnd);
+                        let segSec = Math.floor((segEnd - cursor) / 1000);
+                        if (segSec > 0) slotBreaks[sIdx] = (slotBreaks[sIdx] || 0) + segSec;
+                        cursor = slotEnd;
+                        sIdx++;
+                    }
+                } else if (d.status === 'راحة') {
+                    totalRestMinutes += elapsed;
+                }
+            }
+
+            // دائماً ضع القيم المحسوبة في الـ updates لضمان عدم فقدانها في السيرفر
+            let updates = {
+                status: status,
+                lastActiveDate: today,
+                totalBreakMinutes: totalBreakMinutes,
+                totalRestMinutes: totalRestMinutes,
+                totalWorkSeconds: totalWorkSeconds,
+                hourlyBreaks: hourlyBreaks,
+                slotBreaks: slotBreaks
+            };
+
+            if (status === 'حضور') {
+                // عند Check-In: احتفظ بالبريك والراحة المتراكمة ولا تصفّرها أبداً
+                if (d.status === 'خارج العمل' || !d.startTime) {
+                    updates.startTime = now;
+                    updates.rating = 100;
+                    // لا تصفّر currentTask — يبقى كما هو
+                    // لا تصفّر totalWorkSeconds — فقط نهاية الدوام تصفّر
+                }
+                updates.lastActionTime = now;
+            } else if (status === 'بريك' || status === 'راحة') {
+                updates.lastActionTime = now;
+            } else if (status === 'أوف') {
+                updates.startTime = now; updates.rating = 100; updates.currentTask = 'OFF';
+                updates.lastActionTime = null;
+                // لا تصفّر Break/Rest/Work — فقط نهاية الدوام تصفّر
+            } else if (status === 'خارج العمل') {
+                updates.currentTask = 'None'; updates.lastActionTime = null;
+                setTimeout(() => { backupCurrentDataToHistory(id); }, 500);
+            }
+            // تحديث محلي فوري مع قفل لمنع التحديث اللحظي من التدخل
+            localUpdateLock = true;
+            employeesData[id] = { ...employeesData[id], ...updates };
+            checkAndApplyRatings();
+            updates.rating = employeesData[id].rating;
+            render();
+            safeUpdateEmployee(id, updates).then(() => {
+                backupCurrentDataToHistory(id);
+                setTimeout(() => { localUpdateLock = false; }, 30000);
+            });
+        };
+
+        window.setTask = async (id, taskName) => {
+            // ===== SECURITY: منع الموظف من التحكم ببطاقة موظف آخر =====
+            const isAdmin = (loggedInId === '__admin__');
+            const isMe = (id === loggedInId);
+            if (!isAdmin && !isMe) {
+                alert("🔒 لا يمكنك التحكم ببطاقة موظف آخر!");
+                return;
+            }
+            // تحديث محلي فوري
+            localUpdateLock = true;
+            employeesData[id] = { ...employeesData[id], currentTask: taskName };
+            render();
+            safeUpdateEmployee(id, { currentTask: taskName }).then(() => {
+                backupCurrentDataToHistory(id);
+                setTimeout(() => { localUpdateLock = false; }, 30000);
+            });
+        };
+
+        // عداد الخمول مُعطَّل — لأن الشاشة مشتركة بين جميع الموظفين
+        // تفعيله سيحوّل كل الموظفين للبريك بسبب حركة شخص واحد فقط
+        // function resetIdleTimer() { ... }
+
+        function render() {
+            if (!loggedInId) return;
+            // FIX: عرض رسالة تحميل إذا لم تصل البيانات بعد من السيرفر
+            if (Object.keys(employeesData).length === 0) {
+                document.getElementById('app').innerHTML = '<div class="col-span-4 text-center py-16 text-gray-400 font-bold text-lg animate-pulse">⏳ جاري تحميل بيانات الموظفين...</div>';
+                setTimeout(() => { if (loggedInId && Object.keys(employeesData).length > 0) render(); }, 1500);
+                return;
+            }
+            let h = "", now = Date.now();
+            
+            // FIX: تحديث جدول المدير فقط إذا كان مفتوحاً وغير في وضع التاريخ
+            const adminSection = document.getElementById('admin-section');
+            if (!isViewingHistory && adminSection && !adminSection.classList.contains('hidden')) {
+                window.refreshLiveAdminTable();
+            }
+
+            for (let i in employeesData) {
+                let d = employeesData[i], now = Date.now();
+                // Total Hours: من startTime مطروحاً البريك والراحة — يتجمد عند بريك/راحة
+                let totalTimerHtml = '';
+                if (d.startTime && d.status === 'حضور' && d.lastActionTime) {
+                    // عداد حي عند Active فقط — من startTime ناقص كل البريك والراحة المتراكمة
+                    let tB = d.totalBreakMinutes || 0;
+                    let tR = d.totalRestMinutes || 0;
+                    let netSecs = Math.floor((now - d.startTime) / 1000) - (tB * 60) - (tR * 60);
+                    if (netSecs < 0) netSecs = 0;
+                    let th = Math.floor(netSecs / 3600);
+                    let tm = Math.floor((netSecs % 3600) / 60);
+                    let ts = (netSecs % 60).toString().padStart(2, '0');
+                    totalTimerHtml = `${th}h:${tm}m:${ts}s`;
+                } else if (d.startTime && (d.status === 'بريك' || d.status === 'راحة')) {
+                    // متجمد — اعرض totalWorkSeconds فقط (لا تضف الجلسة الحالية)
+                    let netSecs = d.totalWorkSeconds || 0;
+                    if (netSecs < 0) netSecs = 0;
+                    let th = Math.floor(netSecs / 3600);
+                    let tm = Math.floor((netSecs % 3600) / 60);
+                    totalTimerHtml = `${th}h:${tm}m`;
+                } else if (d.startTime && d.status === 'خارج العمل') {
+                    // ثابت نهائي — استخدم totalWorkSeconds لأن lastActionTime=null
+                    let netSecs = d.totalWorkSeconds || 0;
+                    if (netSecs < 0) netSecs = 0;
+                    let th = Math.floor(netSecs / 3600);
+                    let tm = Math.floor((netSecs % 3600) / 60);
+                    totalTimerHtml = `${th}h:${tm}m`;
+                }
+                let curTimer = `<span id="timer-${i}" class="timer-text">${totalTimerHtml}</span>`;
+                let stateClass = ''; 
+                if (d.status === 'بريك') stateClass = 'break-active'; 
+                else if (d.status === 'راحة') stateClass = 'rest-active';
+                else if (d.status === 'حضور') stateClass = 'attendance-active';
+                else if (d.status === 'أوف') stateClass = 'off-active';
+
+                // إبراز بطاقة الموظف المسجل (مسؤول يرى الكل بدون تمييز)
+                let myCard = (i === loggedInId) ? 'my-card-highlight' : '';
+                let myBadge = (i === loggedInId) ? `<span class="text-xs bg-green-100 text-green-700 font-black px-2 py-1 rounded-lg border border-green-300 ml-2">أنت</span>` : '';
+                
+                let currentHourIndex = d.startTime ? Math.floor((now - d.startTime) / 3600000) : 0;
+                let hourlyBreaks = d.hourlyBreaks || {};
+                // احسب فقط دقائق البريك الحالي التي تقع ضمن الساعة الحالية
+                let cB = 0;
+                if (d.status === 'بريك' && d.lastActionTime) {
+                    let breakStartHourIndex = d.startTime ? Math.floor((d.lastActionTime - d.startTime) / 3600000) : 0;
+                    if (breakStartHourIndex === currentHourIndex) {
+                        // البريك بدأ في نفس الساعة الحالية — احسب كل المدة
+                        cB = Math.floor((now - d.lastActionTime) / 60000);
+                    } else {
+                        // البريك بدأ في ساعة سابقة — الجزء الحالي فقط هو من بداية الساعة الحالية
+                        let currentHourStart = d.startTime + (currentHourIndex * 3600000);
+                        cB = Math.floor((now - currentHourStart) / 60000);
+                        if (cB < 0) cB = 0;
+                    }
+                }
+                let activeHourBreakTotal = (hourlyBreaks[currentHourIndex] || 0) + cB;
+                
+                let cR = (d.status === 'راحة') ? Math.floor((now - d.lastActionTime) / 60000) : 0;
+                let accR = (d.totalRestMinutes || 0) + cR;
+
+                let currentStatusDisplay = d.status;
+                if(d.status === 'حضور') currentStatusDisplay = 'Active';
+                else if(d.status === 'بريك') currentStatusDisplay = 'Break';
+                else if(d.status === 'راحة') currentStatusDisplay = 'Rest';
+                else if(d.status === 'أوف') currentStatusDisplay = 'OFF';
+                else if(d.status === 'خارج العمل') currentStatusDisplay = 'Out of Office';
+
+                let taskDisplay = d.currentTask || 'None';
+                if(d.currentTask === 'واتساب') taskDisplay = 'WhatsApp';
+                else if(d.currentTask === 'توزيع') taskDisplay = 'Distribution';
+                else if(d.currentTask === 'قبول') taskDisplay = 'Accepting';
+                else if(d.currentTask === 'لا يوجد') taskDisplay = 'None';
+
+                // ===== SECURITY: إخفاء الأزرار عن بطاقات الموظفين الآخرين =====
+                const isAdmin = (loggedInId === '__admin__');
+                const canControl = isAdmin || (i === loggedInId);
+                const escId = i.replace(/'/g, "\\'"); // إفلات المعرف لمنع XSS في onclick
+
+                const taskButtonsHtml = canControl ? `
+                        <div class="block mb-3 text-xs font-bold text-black text-right pr-1">المهمة الحالية (Current Task):</div>
+                        <div class="grid grid-cols-3 gap-2 mb-5">
+                            <button onclick="window.setTask('${escId}', 'واتساب')" class="task-btn ${d.currentTask === 'واتساب' ? 'active' : ''}">💬 WhatsApp</button>
+                            <button onclick="window.setTask('${escId}', 'توزيع')" class="task-btn ${d.currentTask === 'توزيع' ? 'active' : ''}">🚴 Distribute</button>
+                            <button onclick="window.setTask('${escId}', 'قبول')" class="task-btn ${d.currentTask === 'قبول' ? 'active' : ''}">✅ Accept</button>
+                        </div>
+                        <div class="block mb-2 text-xs font-bold text-black text-right pr-1">الإجراءات (Actions):</div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="window.updateStatus('${escId}', 'بريك')" class="btn-opt ${d.status === 'بريك' ? 'bg-red-200 border-red-500 font-black' : ''} text-black">Break</button>
+                            <button onclick="window.updateStatus('${escId}', 'راحة')" class="btn-opt ${d.status === 'راحة' ? 'bg-orange-200 border-orange-400 font-black' : ''} text-black">Rest (15m)</button>
+                            <button onclick="window.updateStatus('${escId}', 'حضور')" class="btn-opt ${d.status === 'حضور' ? 'bg-green-200 border-green-500 font-black' : ''} text-black">Check-In</button>
+                            <button onclick="window.updateStatus('${escId}', 'أوف')" class="btn-opt ${d.status === 'أوف' ? 'bg-blue-200 border-blue-500 font-black' : ''} text-black">OFF Day</button>
+                            <button onclick="window.updateStatus('${escId}', 'خارج العمل')" class="btn-opt hover:bg-red-100 text-black col-span-2">Check-Out</button>
+                        </div>` : `
+                        <div class="mt-4 text-center py-4 rounded-2xl bg-gray-50 border border-gray-200">
+                            <span class="text-gray-400 text-sm font-bold">🔒 للعرض فقط</span>
+                        </div>`;
+
+                h += `<div class="card-box ${stateClass} ${myCard}">
+                        <h3 class="font-black text-black mb-2 text-2xl flex justify-between items-center tracking-wide"><span>${myBadge}${sanitize(d.name)}</span><div class="text-right leading-tight">${d.startTime && d.status !== 'أوف' ? '<span class=\"text-xs font-bold text-gray-400\">⏱ Total Hours</span><br>' : ''}${curTimer}</div></h3>
+                        <div class="flex justify-between text-xs font-bold text-gray-500 mb-4 border-b border-green-200 pb-2">
+                            <span>Break This Hour: <b id="hourbreak-${i}" class="${activeHourBreakTotal > 5 ? 'text-red-600' : 'text-black'}">${activeHourBreakTotal} / 5 min</b></span>
+                            <span>Available Rest: <b id="accrest-${i}" class="${accR > 15 ? 'text-red-600': 'text-black'}">${accR} / 15 m</b></span>
+                        </div>
+                        <div class="flex justify-between text-xs font-bold text-gray-500 mb-4 pb-2 border-b border-green-200">
+                            <span>Status: <b class="text-green-600">${currentStatusDisplay}</b></span>
+                            <span>Task: <b class="text-blue-600">${taskDisplay}</b></span>
+                        </div>
+                        ${taskButtonsHtml}
+                    </div>`;
+            }
+            document.getElementById('app').innerHTML = h;
+        }
+        
+        // ===== معالجة لقطة بيانات الموظفين (تُستدعى من Realtime ومن المزامنة الدورية) =====
+        function handleEmployeesSnapshot(freshData) {
+            const today = getTodayDateString();
+
+            // صفّر أي موظف حالته بريك/راحة/حضور من يوم سابق
+            for (let id in freshData) {
+                const d = freshData[id];
+                if (!['بريك', 'راحة', 'حضور'].includes(d.status)) continue;
+                
+                // تحقق من التاريخ عبر lastActiveDate أو lastActionTime أو startTime
+                const lastDate = d.lastActiveDate || 
+                    (d.lastActionTime ? new Date(d.lastActionTime).toISOString().slice(0,10) : null) ||
+                    (d.startTime ? new Date(d.startTime).toISOString().slice(0,10) : null);
+                
+                if (lastDate !== today) {
+                    freshData[id] = { 
+                        ...d, 
+                        status: 'خارج العمل', 
+                        lastActionTime: null, 
+                        startTime: null, 
+                        lastActiveDate: today
+                    };
+                    safeUpdateEmployee(id, { 
+                        status: 'خارج العمل', 
+                        lastActionTime: null, 
+                        startTime: null, 
+                        lastActiveDate: today
+                    });
+                }
+            }
+
+            // احتفظ بالحالة المحلية للموظف المسجل إذا كان هناك lock
+            if (localUpdateLock && loggedInId && loggedInId !== '__admin__') {
+                const savedEmployee = employeesData[loggedInId];
+                employeesData = freshData;
+                if (savedEmployee) employeesData[loggedInId] = savedEmployee;
+            } else {
+                // حافظ على أعلى قيمة لـ totalBreakMinutes و totalRestMinutes لكل موظف
+                // لمنع إرجاع قيمة قديمة أقل بسبب تأخر الشبكة
+                for (let id in freshData) {
+                    const oldD = employeesData[id];
+                    if (oldD) {
+                        if ((oldD.totalBreakMinutes || 0) > (freshData[id].totalBreakMinutes || 0)) {
+                            freshData[id].totalBreakMinutes = oldD.totalBreakMinutes;
+                        }
+                        if ((oldD.totalRestMinutes || 0) > (freshData[id].totalRestMinutes || 0)) {
+                            freshData[id].totalRestMinutes = oldD.totalRestMinutes;
+                        }
+                        if ((oldD.totalWorkSeconds || 0) > (freshData[id].totalWorkSeconds || 0)) {
+                            freshData[id].totalWorkSeconds = oldD.totalWorkSeconds;
+                        }
+                    }
+                }
+                employeesData = freshData;
+            }
+            if (loggedInId) render();
+        }
+        
+        // تحديث عداد Total Hours كل ثانية بدون إعادة بناء كل الكروت
+        function updateTimers() {
+            if (!loggedInId) return;
+            const now = Date.now();
+            for (let i in employeesData) {
+                const d = employeesData[i];
+                const timerEl = document.getElementById('timer-' + i);
+                if (!timerEl) continue;
+
+                if (d.status === 'حضور' && d.startTime && d.lastActionTime) {
+                    // عداد حي — يحسب من startTime ناقص كل البريك والراحة المتراكمة
+                    let tB = d.totalBreakMinutes || 0;
+                    let tR = d.totalRestMinutes || 0;
+                    let netSecs = Math.floor((now - d.startTime) / 1000) - (tB * 60) - (tR * 60);
+                    if (netSecs < 0) netSecs = 0;
+                    let th = Math.floor(netSecs / 3600);
+                    let tm = Math.floor((netSecs % 3600) / 60);
+                    let ts = (netSecs % 60).toString().padStart(2, '0');
+                    timerEl.textContent = `${th}h:${tm}m:${ts}s`;
+
+                } else if (d.status === 'خارج العمل' && d.startTime) {
+                    // عرض ثابت — استخدم totalWorkSeconds المحفوظ لأن lastActionTime=null بعد Check-Out
+                    let netSecs = d.totalWorkSeconds || 0;
+                    if (!netSecs && d.startTime) {
+                        // fallback: احسب من startTime ناقص البريك
+                        let tBf = d.totalBreakMinutes || 0;
+                        let tRf = d.totalRestMinutes || 0;
+                        netSecs = Math.floor((now - d.startTime) / 1000) - (tBf * 60) - (tRf * 60);
+                    }
+                    if (netSecs < 0) netSecs = 0;
+                    let th = Math.floor(netSecs / 3600);
+                    let tm = Math.floor((netSecs % 3600) / 60);
+                    timerEl.textContent = `${th}h:${tm}m`;
+
+                } else if ((d.status === 'بريك' || d.status === 'راحة') && d.startTime) {
+                    // متجمد — اعرض ساعات العمل المتراكمة فقط (totalWorkSeconds) بدون إضافة الجلسة الحالية
+                    let netSecs = d.totalWorkSeconds || 0;
+                    if (netSecs < 0) netSecs = 0;
+                    let th = Math.floor(netSecs / 3600);
+                    let tm = Math.floor((netSecs % 3600) / 60);
+                    timerEl.textContent = `${th}h:${tm}m`;
+
+                } else {
+                    timerEl.textContent = '';
+                }
+
+                // تحديث عداد البريك الساعي (كل ساعة = 5 دقائق مسموح)
+                const hourBreakEl = document.getElementById('hourbreak-' + i);
+                const accRestEl = document.getElementById('accrest-' + i);
+                if (hourBreakEl && d.startTime) {
+                    // رقم الساعة الحالية من وقت Check-In
+                    const HOUR_MS = 60 * 60 * 1000;
+                    let currentHourIdx = Math.floor((now - d.startTime) / HOUR_MS);
+                    let currentHourStart = d.startTime + (currentHourIdx * HOUR_MS);
+
+                    // احسب كم ثانية أخذ البريك في هذه الساعة فقط
+                    let hourBreakSec = 0;
+
+                    // البريك الجاري الآن — فقط الجزء الواقع في الساعة الحالية
+                    if (d.status === 'بريك' && d.lastActionTime) {
+                        let breakStart = Math.max(d.lastActionTime, currentHourStart);
+                        let liveMs = now - breakStart;
+                        if (liveMs > 0) hourBreakSec += Math.floor(liveMs / 1000);
+                    }
+
+                    // أضف البريك المحفوظ في hourlyBreaks لهذه الساعة (بالدقائق → ثواني)
+                    let hourlyBreaks = d.hourlyBreaks || {};
+                    hourBreakSec += (hourlyBreaks[currentHourIdx] || 0) * 60;
+
+                    // عرض mm:ss
+                    let dispMin = Math.floor(hourBreakSec / 60);
+                    let dispSec = (hourBreakSec % 60).toString().padStart(2, '0');
+
+                    // الوقت المتبقي لنهاية الساعة الحالية
+                    let hourEndMs = currentHourStart + HOUR_MS;
+                    let remainSec = Math.ceil((hourEndMs - now) / 1000);
+                    if (remainSec < 0) remainSec = 0;
+                    let remMin = Math.floor(remainSec / 60);
+                    let remSec = (remainSec % 60).toString().padStart(2, '0');
+
+                    hourBreakEl.textContent = `${dispMin}:${dispSec} / 5m  (resets in ${remMin}:${remSec})`;
+                    hourBreakEl.className = hourBreakSec >= 300 ? 'text-red-600' : 'text-black';
+                }
+                if (accRestEl) {
+                    let cR = (d.status === 'راحة' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
+                    let accR = (d.totalRestMinutes || 0) + cR;
+                    accRestEl.textContent = `${accR} / 15 m`;
+                    accRestEl.className = accR > 15 ? 'text-red-600' : 'text-black';
+                }
+            }
+        }
+
+        // تحديث العداد كل ثانية فقط
+        setInterval(() => {
+            if (!loggedInId) return;
+            updateTimers();
+            updateAdminTableTimers();
+        }, 1000);
+
+        // backup والـ cron كل 10 ثواني — لا حاجة لإرسالها كل ثانية
+        setInterval(() => {
+            if (!loggedInId) return;
+            checkAutoResetCron();
+            if (!isViewingHistory) {
+                for (let id in employeesData) {
+                    if (employeesData[id].startTime && employeesData[id].status !== 'خارج العمل') {
+                        backupCurrentDataToHistory(id, false);
+                    }
+                }
+            }
+        }, 10000);
+
+        // حساب الـ rating محلياً كل دقيقة بدون كتابة للسيرفر
+        setInterval(() => {
+            if (!loggedInId) return;
+            checkAndApplyRatings();
+        }, 60000);
+
+        console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
+    </script>
+</body>
+</html>
