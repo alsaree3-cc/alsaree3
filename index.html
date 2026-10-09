@@ -85,9 +85,10 @@
         // ===== Supabase: الاتصال (المفتاح publishable مخصص للمتصفح — الحماية الفعلية عبر RLS في قاعدة البيانات) =====
         const SUPABASE_URL = 'https://eygohyybhidlsycblfop.supabase.co';
         const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_6Y3sDrJirAA8O2j2Iugpfg_WUOr8IBm';
-        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+            auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: false }
+        });
         // الشاشة مشتركة بين الموظفين: لا نحتفظ بجلسة قديمة بعد إعادة تحميل الصفحة
-        supabaseClient.auth.signOut({ scope: 'local' }).catch(() => {});
 
         // ===== إعدادات قواعد العمل الجديدة =====
         const WORK_LOCATION = { lat: 33.293117, lng: 44.433205 };   // موقع العمل
@@ -105,7 +106,9 @@
             return all.filter(k => k !== id && !grouped.has(k));
         }
         function getMateOnBreak(id) {
-            const k = getGroupMates(id).find(m => employeesData[m] && employeesData[m].status === 'بريك');
+            const _today = getTodayDateString();
+            const k = getGroupMates(id).find(m => employeesData[m] && employeesData[m].status === 'بريك'
+                && employeesData[m].lastActiveDate === _today);   // بريك قديم عالق من أمس لا يمنع الآخرين
             return k ? employeesData[k] : null;
         }
         function distanceMeters(lat1, lng1, lat2, lng2) {
@@ -202,16 +205,31 @@
         }
 
         // تحديث بطاقة موظف واحد (الموظف لا يكتب إلا بطاقته — والسيرفر يفرض ذلك أيضاً)
-        async function safeUpdateEmployee(id, data) {
+        const _writeChain = {};   // id -> آخر عملية كتابة (لضمان ترتيب الكتابات وعدم تقدّم القديمة على الجديدة)
+        function safeUpdateEmployee(id, data) {
+            const prev = _writeChain[id] || Promise.resolve();
+            const next = prev.catch(() => {}).then(() => _doUpdateEmployee(id, data));
+            _writeChain[id] = next;
+            return next;
+        }
+        async function _doUpdateEmployee(id, data) {
             if (loggedInId !== '__admin__' && loggedInId !== id) return { ok: false, skipped: true };
-            if (!_checkWriteRate()) return { ok: false, skipped: true };
             const row = empToRow(data);
             if (Object.keys(row).length === 0) return { ok: true };
-            const { data: res, error } = await supabaseClient.from('alsaree3_employees')
-                .update(row).eq('employee_key', id).select('employee_key');
-            if (error) { reportSyncError(error, 'تحديث الموظف'); return { ok: false }; }
-            if (!res || res.length === 0) { reportSyncError(new Error('0 rows updated (RLS?)'), 'تحديث الموظف'); return { ok: false }; }
-            return { ok: true };
+            let lastErr = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                if (attempt > 0) await new Promise(r => setTimeout(r, 600 * attempt));
+                if (!_checkWriteRate()) return { ok: false, skipped: true };
+                try {
+                    const { data: res, error } = await supabaseClient.from('alsaree3_employees')
+                        .update(row).eq('employee_key', id).select('employee_key');
+                    if (!error && res && res.length > 0) return { ok: true };
+                    if (!error && (!res || res.length === 0)) { lastErr = new Error('0 rows updated (RLS?)'); break; }  // رفض صلاحيات: لا فائدة من التكرار
+                    lastErr = error;
+                } catch (e) { lastErr = e; }   // انقطاع شبكة: أعد المحاولة
+            }
+            reportSyncError(lastErr, 'تحديث الموظف');
+            return { ok: false };
         }
 
         // مسؤول فقط: تحديث عدة موظفين بمفاتيح بنمط employees/<id>/<field> (تستخدمها endOfDay)
@@ -280,6 +298,7 @@
 
         // ===== المزامنة اللحظية (Realtime) مع مزامنة احتياطية دورية =====
         let _rtChannel = null;
+        let _rtEverSubscribed = false;
         let _serverEmployees = {};
         function _snapshotClone() {
             const sorted = {};
@@ -290,7 +309,7 @@
             _serverEmployees = await fetchEmployeesMap();
             handleEmployeesSnapshot(_snapshotClone());
         }
-        function subscribeEmployees() {
+        function subscribeEmployees(skipInitialSync) {
             if (_rtChannel) return;
             _rtChannel = supabaseClient.channel('alsaree3-employees')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'alsaree3_employees' }, (payload) => {
@@ -303,15 +322,21 @@
                     handleEmployeesSnapshot(_snapshotClone());
                 })
                 .subscribe((status) => {
-                    if (status === 'SUBSCRIBED') resyncEmployees().catch(() => {});
+                    if (status === 'SUBSCRIBED') {
+                        if (skipInitialSync && !_rtEverSubscribed) { _rtEverSubscribed = true; return; }
+                        _rtEverSubscribed = true;
+                        resyncEmployees().catch(() => {});   // إعادة اتصال: عوّض ما فاتك
+                    }
                 });
         }
         function unsubscribeEmployees() {
             if (_rtChannel) { supabaseClient.removeChannel(_rtChannel); _rtChannel = null; }
+            _rtEverSubscribed = false;
             _serverEmployees = {};
         }
         // شبكة أمان: لو فاتت أحداث (نوم الجهاز/انقطاع) نعيد المزامنة كل 45 ثانية وعند العودة للتبويب
-        setInterval(() => { if (loggedInId) resyncEmployees().catch(() => {}); }, 45000);
+        setInterval(() => { if (loggedInId) resyncEmployees().catch(() => {}); }, 15000);
+        window.addEventListener('online', () => { if (loggedInId) resyncEmployees().catch(() => {}); });
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden && loggedInId) resyncEmployees().catch(() => {});
         });
@@ -347,7 +372,39 @@
         let lastResetDate = null;
         let backupThrottle = {};
         let loggedInId = null;
-        let localUpdateLock = false; // قفل لمنع التحديث اللحظي من تجاوز التحديث المحلي
+        let localUpdateLock = false; // (قديم — لم يعد مستخدماً)
+        // ===== حماية التغييرات المحلية لكل موظف (تمنع رجوع البريك/الحالة القديمة من السيرفر) =====
+        const _pendingLocal = {};   // id -> { fields, ts, doneAt, seq }
+        let _pendSeq = 0;
+        function _markPending(id, fields) {
+            const seq = ++_pendSeq;
+            const keep = {};
+            ['status','lastActionTime','startTime','currentTask','lastActiveDate'].forEach(k => { if (fields[k] !== undefined) keep[k] = fields[k]; });
+            _pendingLocal[id] = { fields: keep, ts: Date.now(), doneAt: null, seq };
+            return seq;
+        }
+        function _settlePending(id, seq, result) {
+            const p = _pendingLocal[id];
+            if (!p || p.seq !== seq) return;           // جاء تغيير أحدث بعده
+            if (result && result.ok) { p.doneAt = Date.now(); }
+            else { delete _pendingLocal[id]; resyncEmployees().catch(() => {}); } // فشل الحفظ: ارجع لحالة السيرفر الحقيقية
+        }
+        function _applyPending(freshData) {
+            const now = Date.now();
+            for (const id in _pendingLocal) {
+                const p = _pendingLocal[id], srv = freshData[id];
+                const expired = (now - p.ts > 60000) || (p.doneAt && now - p.doneAt > 10000);
+                if (!srv || expired) { delete _pendingLocal[id]; continue; }
+                const matched = Object.keys(p.fields).every(k => srv[k] === p.fields[k]);
+                if (matched) { delete _pendingLocal[id]; continue; }  // السيرفر لحق بنا
+                freshData[id] = { ...srv, ...p.fields };               // السيرفر لسا قديم: احتفظ بالمحلي
+                if (employeesData[id]) {
+                    ['totalBreakMinutes','totalRestMinutes','totalWorkSeconds','hourlyBreaks','slotBreaks','rating'].forEach(k => {
+                        if (employeesData[id][k] !== undefined) freshData[id][k] = employeesData[id][k];
+                    });
+                }
+            }
+        }
 
         // ===== SECURITY: Session timeout — تسجيل خروج تلقائي بعد 8 ساعات =====
         let _sessionStart = null;
@@ -406,7 +463,9 @@
                 resetBtn(); passEl.value = ''; passEl.focus(); return;
             }
 
-            // اجلب دور الحساب (مسؤول / موظف) والموظف المرتبط به من Supabase
+            // اجلب دور الحساب + بيانات الموظفين بالتوازي (كانت تتم بالتتابع وتسبب بطء الدخول)
+            const employeesPromise = fetchEmployeesMap();
+            employeesPromise.catch(() => {});
             const { data: profile, error: profileError } = await supabaseClient
                 .from('alsaree3_profiles')
                 .select('role, employee_key')
@@ -423,12 +482,12 @@
             // الآن فقط (بعد المصادقة) نجلب بيانات الموظفين ونفتح الاتصال اللحظي
             try {
                 loggedInId = (profile.role === 'admin') ? '__admin__' : profile.employee_key;
-                _serverEmployees = await fetchEmployeesMap();
+                _serverEmployees = await employeesPromise;
                 employeesData = _snapshotClone();
-                subscribeEmployees();
+                subscribeEmployees(true);
                 // التصفير التعويضي يعمل بالخلفية حتى لا يبطّئ الدخول، ثم نحدّث البيانات إن حصل تصفير
-                runDayReset('catchup').then(did => { if (did) resyncEmployees().catch(() => {}); })
-                    .catch(e => console.warn('[CatchUp-Reset] تعذر:', e.message));
+                setTimeout(() => runDayReset('catchup').then(did => { if (did) resyncEmployees().catch(() => {}); })
+                    .catch(e => console.warn('[CatchUp-Reset] تعذر:', e.message)), 3000);
             } catch (e) {
                 console.error(e);
                 loggedInId = null; employeesData = {}; unsubscribeEmployees();
@@ -460,14 +519,10 @@
                 const today = getTodayDateString();
                 const empData = employeesData[loggedInId];
                 if (empData && empData.lastActiveDate !== today) {
-                    await safeUpdateEmployee(loggedInId, {
-                        status: 'خارج العمل', lastActionTime: null,
-                        startTime: null, lastActiveDate: today
-                    });
-                    employeesData[loggedInId].status = 'خارج العمل';
-                    employeesData[loggedInId].lastActionTime = null;
-                    employeesData[loggedInId].startTime = null;
-                    employeesData[loggedInId].lastActiveDate = today;
+                    // تحديث محلي فوري + حفظ بالخلفية (لا ننتظر السيرفر قبل عرض الصفحة)
+                    const fresh = { status: 'خارج العمل', lastActionTime: null, startTime: null, lastActiveDate: today };
+                    employeesData[loggedInId] = { ...empData, ...fresh };
+                    safeUpdateEmployee(loggedInId, fresh);
                 }
             }
 
@@ -1163,6 +1218,15 @@
                     alert('⚠️ الزميل ' + mate.name + ' في بريك حالياً — سيتم خصم ' + groupPenalty + ' من تقييمك.');
                 }
             }
+            // بريك/راحة يتطلب أن يكون الموظف في حالة حضور (وإلا يصبح startTime فارغاً ويتعلق العداد)
+            if ((status === 'بريك' || status === 'راحة') && !d.startTime) {
+                alert('⚠️ يجب تسجيل Check-In أولاً قبل أخذ ' + (status === 'بريك' ? 'بريك' : 'راحة') + '.');
+                return;
+            }
+            if ((status === 'بريك' || status === 'راحة') && (d.status === 'خارج العمل' || d.status === 'أوف')) {
+                alert('⚠️ يجب تسجيل Check-In أولاً.');
+                return;
+            }
             const SLOT_MS = 5 * 60 * 1000;
             let currentHourIndex = d.startTime ? Math.floor((now - d.startTime) / 3600000) : 0;
             let currentSlotIndex = d.startTime ? Math.floor((now - d.startTime) / SLOT_MS) : 0;
@@ -1215,7 +1279,7 @@
 
             if (status === 'حضور') {
                 // عند Check-In: احتفظ بالبريك والراحة المتراكمة ولا تصفّرها أبداً
-                if (d.status === 'خارج العمل' || !d.startTime) {
+                if (d.status === 'خارج العمل' || d.status === 'أوف' || !d.startTime) {
                     updates.startTime = now;
                     updates.rating = 100;
                     // لا تصفّر currentTask — يبقى كما هو
@@ -1233,14 +1297,14 @@
                 setTimeout(() => { backupCurrentDataToHistory(id); }, 500);
             }
             // تحديث محلي فوري مع قفل لمنع التحديث اللحظي من التدخل
-            localUpdateLock = true;
+            const _seq = _markPending(id, updates);
             employeesData[id] = { ...employeesData[id], ...updates };
             checkAndApplyRatings();
             updates.rating = employeesData[id].rating;
             render();
-            safeUpdateEmployee(id, updates).then(() => {
-                backupCurrentDataToHistory(id);
-                setTimeout(() => { localUpdateLock = false; }, 30000);
+            safeUpdateEmployee(id, updates).then((res) => {
+                _settlePending(id, _seq, res);
+                if (res && res.ok) backupCurrentDataToHistory(id);
             });
         };
 
@@ -1256,12 +1320,12 @@
                 return;
             }
             // تحديث محلي فوري
-            localUpdateLock = true;
+            const _seq = _markPending(id, { currentTask: taskName });
             employeesData[id] = { ...employeesData[id], currentTask: taskName };
             render();
-            safeUpdateEmployee(id, { currentTask: taskName }).then(() => {
-                backupCurrentDataToHistory(id);
-                setTimeout(() => { localUpdateLock = false; }, 30000);
+            safeUpdateEmployee(id, { currentTask: taskName }).then((res) => {
+                _settlePending(id, _seq, res);
+                if (res && res.ok) backupCurrentDataToHistory(id);
             });
         };
 
@@ -1411,9 +1475,10 @@
                 if (!['بريك', 'راحة', 'حضور'].includes(d.status)) continue;
                 
                 // تحقق من التاريخ عبر lastActiveDate أو lastActionTime أو startTime
-                const lastDate = d.lastActiveDate || 
-                    (d.lastActionTime ? new Date(d.lastActionTime).toISOString().slice(0,10) : null) ||
-                    (d.startTime ? new Date(d.startTime).toISOString().slice(0,10) : null);
+                const _localDate = t => { const x = new Date(t); return x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0') + '-' + String(x.getDate()).padStart(2,'0'); };
+                const lastDate = d.lastActiveDate ||
+                    (d.lastActionTime ? _localDate(d.lastActionTime) : null) ||
+                    (d.startTime ? _localDate(d.startTime) : null);
                 
                 if (lastDate !== today) {
                     freshData[id] = { 
@@ -1433,16 +1498,15 @@
             }
 
             // احتفظ بالحالة المحلية للموظف المسجل إذا كان هناك lock
-            if (localUpdateLock && loggedInId && loggedInId !== '__admin__') {
-                const savedEmployee = employeesData[loggedInId];
-                employeesData = freshData;
-                if (savedEmployee) employeesData[loggedInId] = savedEmployee;
-            } else {
+            {
+                _applyPending(freshData);
                 // حافظ على أعلى قيمة لـ totalBreakMinutes و totalRestMinutes لكل موظف
                 // لمنع إرجاع قيمة قديمة أقل بسبب تأخر الشبكة
                 for (let id in freshData) {
                     const oldD = employeesData[id];
-                    if (oldD) {
+                    // لا نحمي القيم الأعلى إذا بدأ يوم جديد (startTime تغيّر) أو صُفّر الموظف — وإلا لا يعود العداد للصفر أبداً
+                    const sameDay = oldD && oldD.startTime && freshData[id].startTime === oldD.startTime;
+                    if (oldD && sameDay) {
                         if ((oldD.totalBreakMinutes || 0) > (freshData[id].totalBreakMinutes || 0)) {
                             freshData[id].totalBreakMinutes = oldD.totalBreakMinutes;
                         }
@@ -1508,11 +1572,12 @@
                 // تحديث عداد البريك الساعي (كل ساعة = 5 دقائق مسموح)
                 const hourBreakEl = document.getElementById('hourbreak-' + i);
                 const accRestEl = document.getElementById('accrest-' + i);
-                if (hourBreakEl && d.startTime && d.status !== 'خارج العمل' && d.status !== 'أوف') {
+                if (hourBreakEl && (d.startTime || d.lastActionTime) && d.status !== 'خارج العمل' && d.status !== 'أوف') {
                     // رقم الساعة الحالية من وقت Check-In
                     const HOUR_MS = 60 * 60 * 1000;
-                    let currentHourIdx = Math.floor((now - d.startTime) / HOUR_MS);
-                    let currentHourStart = d.startTime + (currentHourIdx * HOUR_MS);
+                    const _base = d.startTime || d.lastActionTime;
+                    let currentHourIdx = Math.floor((now - _base) / HOUR_MS);
+                    let currentHourStart = _base + (currentHourIdx * HOUR_MS);
 
                     // احسب كم ثانية أخذ البريك في هذه الساعة فقط
                     let hourBreakSec = 0;
