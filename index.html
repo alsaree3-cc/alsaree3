@@ -2,11 +2,13 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta name="referrer" content="no-referrer">
     <title>Alsaree3 - Digital Monitoring System v6 (Supabase)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="preconnect" href="https://eygohyybhidlsycblfop.supabase.co" crossorigin>
     <style>
@@ -78,7 +80,7 @@
         <div id="admin-section" class="admin-panel hidden mt-8"></div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0"></script>
     <script>
         // ===== Supabase: الاتصال (المفتاح publishable مخصص للمتصفح — الحماية الفعلية عبر RLS في قاعدة البيانات) =====
         const SUPABASE_URL = 'https://eygohyybhidlsycblfop.supabase.co';
@@ -623,9 +625,9 @@
                     const nameColor = isFail ? '#dc2626' : isAdmin ? '#1d4ed8' : '#15803d';
                     html += `<tr style="border-bottom:1px solid #e2e8f0;background:${bg};">
                         <td style="padding:9px;font-weight:900;color:${nameColor};">${isFail ? '❌ محاولة مدير فاشلة' : sanitize(e.empName || e.empId)}</td>
-                        <td style="padding:9px;color:#475569;">${e.time || '-'}</td>
-                        <td style="padding:9px;font-family:monospace;font-size:0.75rem;color:#7c3aed;">${e.fingerprint || '-'}</td>
-                        <td style="padding:9px;color:#64748b;font-size:0.75rem;">${(e.userAgent||'').slice(0,50)}</td>
+                        <td style="padding:9px;color:#475569;">${sanitize(e.time || '-')}</td>
+                        <td style="padding:9px;font-family:monospace;font-size:0.75rem;color:#7c3aed;">${sanitize(e.fingerprint || '-')}</td>
+                        <td style="padding:9px;color:#64748b;font-size:0.75rem;">${sanitize((e.userAgent||'').slice(0,50))}</td>
                     </tr>`;
                 });
                 html += '</tbody></table>';
@@ -637,6 +639,7 @@
 
         window.fetchHistoryReport = async (selectedDate) => {
             if (loggedInId !== '__admin__') return;
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(String(selectedDate))) return; // SECURITY: تحقق من صيغة التاريخ
             const tableBody = document.getElementById('reportTableBody');
             const todayStr = getTodayDateString();
             
@@ -646,7 +649,7 @@
                 isViewingHistory = false;
             }
 
-            tableBody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-500 font-bold animate-pulse">جاري سحب بيانات الأرشيف ليوم (${selectedDate})...</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-500 font-bold animate-pulse">جاري سحب بيانات الأرشيف ليوم (${sanitize(selectedDate)})...</td></tr>`;
             
             try {
                 const historyData = await fetchHistoryFor(selectedDate);
@@ -672,14 +675,14 @@
                         }
                         html += `<tr class="border-b">
                                     <td class="p-3 font-bold text-black">${sanitize(d.name)}</td>
-                                    <td class="p-3 font-semibold text-green-700">${d.startTimeStr === 'لم يحضر' ? 'Absent' : (d.startTimeStr || '-')}</td>
-                                    <td class="p-3 font-black text-slate-700">${displayDuration}</td>
-                                    <td class="p-3 text-gray-500">${selectedDate}</td>
-                                    <td class="p-3">${taskEn}</td>
-                                    <td class="p-3 font-bold text-amber-700">${d.totalBreakMinutes || 0} min</td>
-                                    <td class="p-3 font-bold">${d.totalRestMinutes || 0} / 15 min</td>
-                                    <td class="p-3 font-black text-green-600 bg-green-50/20">${d.rating || 100}%</td>
-                                    <td class="p-3 font-black text-blue-600 bg-blue-50/20">${d.monthlyRating || 100}%</td>
+                                    <td class="p-3 font-semibold text-green-700">${sanitize(d.startTimeStr === 'لم يحضر' ? 'Absent' : (d.startTimeStr || '-'))}</td>
+                                    <td class="p-3 font-black text-slate-700">${sanitize(displayDuration)}</td>
+                                    <td class="p-3 text-gray-500">${sanitize(selectedDate)}</td>
+                                    <td class="p-3">${sanitize(taskEn)}</td>
+                                    <td class="p-3 font-bold text-amber-700">${Number(d.totalBreakMinutes) || 0} min</td>
+                                    <td class="p-3 font-bold">${Number(d.totalRestMinutes) || 0} / 15 min</td>
+                                    <td class="p-3 font-black text-green-600 bg-green-50/20">${Number(d.rating) || 100}%</td>
+                                    <td class="p-3 font-black text-blue-600 bg-blue-50/20">${Number(d.monthlyRating) || 100}%</td>
                                  </tr>`;
                     }
                     tableBody.innerHTML = html;
@@ -687,7 +690,7 @@
                     if (selectedDate === todayStr) {
                         window.refreshLiveAdminTable();
                     } else {
-                        html = `<tr><td colspan="9" class="p-4 text-center text-amber-600 font-bold">⚠️ لا توجد سجلات مؤرشفة محفوظة لهذا التاريخ السـابق (${selectedDate}).</td></tr>`;
+                        html = `<tr><td colspan="9" class="p-4 text-center text-amber-600 font-bold">⚠️ لا توجد سجلات مؤرشفة محفوظة لهذا التاريخ السـابق (${sanitize(selectedDate)}).</td></tr>`;
                         tableBody.innerHTML = html;
                     }
                 }
@@ -745,24 +748,24 @@
 
                 // عرض العداد الحي للبريك الجاري
                 let breakDisplay = d.status === 'بريك' && d.lastActionTime
-                    ? `<span id="admin-break-${i}" class="text-red-600 font-black">${tB}:${curBsec} min ▶</span>`
-                    : `<span id="admin-break-${i}" class="font-bold text-amber-700">${tB} min</span>`;
+                    ? `<span id="admin-break-${sanitize(i)}" class="text-red-600 font-black">${tB}:${curBsec} min ▶</span>`
+                    : `<span id="admin-break-${sanitize(i)}" class="font-bold text-amber-700">${tB} min</span>`;
 
                 let durationDisplay = d.startTime && d.status !== 'أوف'
-                    ? `<span id="admin-dur-${i}">${duration}</span>`
-                    : `<span id="admin-dur-${i}">${duration}</span>`;
+                    ? `<span id="admin-dur-${sanitize(i)}">${duration}</span>`
+                    : `<span id="admin-dur-${sanitize(i)}">${duration}</span>`;
 
-                html += `<tr class="border-b" data-emp-id="${i}">
+                html += `<tr class="border-b" data-emp-id="${sanitize(i)}">
                             <td class="p-3 font-bold text-black">${sanitize(d.name)}</td>
                             <td class="p-3 font-semibold text-green-700">${startStr}</td>
                             <td class="p-3 font-black text-slate-700">${durationDisplay}</td>
                             <td class="p-3 text-gray-500">${dateStr} (Live)</td>
-                            <td class="p-3">${liveTask}</td>
+                            <td class="p-3">${sanitize(liveTask)}</td>
                             <td class="p-3">${breakDisplay}</td>
-                            <td class="p-3 font-bold"><span id="admin-rest-${i}">${tR}</span> / 15 min</td>
+                            <td class="p-3 font-bold"><span id="admin-rest-${sanitize(i)}">${tR}</span> / 15 min</td>
 
-                            <td class="p-3 font-black text-green-600 bg-green-50/20">${d.rating!==undefined?d.rating:100}%</td>
-                            <td class="p-3 font-black text-blue-600 bg-blue-50/20">${d.monthlyRating!==undefined?d.monthlyRating:100}%</td>
+                            <td class="p-3 font-black text-green-600 bg-green-50/20">${Number(d.rating!==undefined?d.rating:100) || 0}%</td>
+                            <td class="p-3 font-black text-blue-600 bg-blue-50/20">${Number(d.monthlyRating!==undefined?d.monthlyRating:100) || 0}%</td>
                          </tr>`;
             }
             tableBody.innerHTML = html;
@@ -1060,6 +1063,9 @@
         }
 
         window.updateStatus = async (id, status) => {
+            // ===== SECURITY: السماح بحالات معروفة فقط وموظف موجود فقط =====
+            if (!['حضور','بريك','راحة','أوف','خارج العمل'].includes(status)) return;
+            if (!employeesData[id]) return;
             // ===== SECURITY: منع الموظف من التحكم ببطاقة موظف آخر =====
             const isAdmin = (loggedInId === '__admin__');
             const isMe = (id === loggedInId);
@@ -1149,6 +1155,9 @@
         };
 
         window.setTask = async (id, taskName) => {
+            // ===== SECURITY: السماح بمهام معروفة فقط =====
+            if (!['واتساب','توزيع','قبول'].includes(taskName)) return;
+            if (!employeesData[id]) return;
             // ===== SECURITY: منع الموظف من التحكم ببطاقة موظف آخر =====
             const isAdmin = (loggedInId === '__admin__');
             const isMe = (id === loggedInId);
@@ -1215,7 +1224,7 @@
                     let tm = Math.floor((netSecs % 3600) / 60);
                     totalTimerHtml = `${th}h:${tm}m`;
                 }
-                let curTimer = `<span id="timer-${i}" class="timer-text">${totalTimerHtml}</span>`;
+                let curTimer = `<span id="timer-${sanitize(i)}" class="timer-text">${totalTimerHtml}</span>`;
                 let stateClass = ''; 
                 if (d.status === 'بريك') stateClass = 'break-active'; 
                 else if (d.status === 'راحة') stateClass = 'rest-active';
@@ -1265,7 +1274,7 @@
                 // ===== SECURITY: إخفاء الأزرار عن بطاقات الموظفين الآخرين =====
                 const isAdmin = (loggedInId === '__admin__');
                 const canControl = isAdmin || (i === loggedInId);
-                const escId = i.replace(/'/g, "\\'"); // إفلات المعرف لمنع XSS في onclick
+                const escId = sanitize(String(i).replace(/\\/g, '\\\\').replace(/'/g, "\\'")); // إفلات JS ثم HTML لمنع XSS في onclick
 
                 const taskButtonsHtml = canControl ? `
                         <div class="block mb-3 text-xs font-bold text-black text-right pr-1">المهمة الحالية (Current Task):</div>
@@ -1289,12 +1298,12 @@
                 h += `<div class="card-box ${stateClass} ${myCard}">
                         <h3 class="font-black text-black mb-2 text-2xl flex justify-between items-center tracking-wide"><span>${myBadge}${sanitize(d.name)}</span><div class="text-right leading-tight">${d.startTime && d.status !== 'أوف' ? '<span class=\"text-xs font-bold text-gray-400\">⏱ Total Hours</span><br>' : ''}${curTimer}</div></h3>
                         <div class="flex justify-between text-xs font-bold text-gray-500 mb-4 border-b border-green-200 pb-2">
-                            <span>Break This Hour: <b id="hourbreak-${i}" class="${activeHourBreakTotal > 5 ? 'text-red-600' : 'text-black'}">${activeHourBreakTotal} / 5 min</b></span>
-                            <span>Available Rest: <b id="accrest-${i}" class="${accR > 15 ? 'text-red-600': 'text-black'}">${accR} / 15 m</b></span>
+                            <span>Break This Hour: <b id="hourbreak-${sanitize(i)}" class="${activeHourBreakTotal > 5 ? 'text-red-600' : 'text-black'}">${activeHourBreakTotal} / 5 min</b></span>
+                            <span>Available Rest: <b id="accrest-${sanitize(i)}" class="${accR > 15 ? 'text-red-600': 'text-black'}">${accR} / 15 m</b></span>
                         </div>
                         <div class="flex justify-between text-xs font-bold text-gray-500 mb-4 pb-2 border-b border-green-200">
-                            <span>Status: <b class="text-green-600">${currentStatusDisplay}</b></span>
-                            <span>Task: <b class="text-blue-600">${taskDisplay}</b></span>
+                            <span>Status: <b class="text-green-600">${sanitize(currentStatusDisplay)}</b></span>
+                            <span>Task: <b class="text-blue-600">${sanitize(taskDisplay)}</b></span>
                         </div>
                         ${taskButtonsHtml}
                     </div>`;
