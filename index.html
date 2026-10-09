@@ -46,6 +46,8 @@
         .my-card-highlight { border:3px solid #22c55e !important; box-shadow:0 0 0 6px #bbf7d030 !important; }
         #logout-btn { position:fixed; top:18px; left:18px; z-index:100; background:#fff; border:2px solid #cbd5e1; border-radius:14px; padding:8px 18px; font-family:'Cairo',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer; color:#374151; transition:all 0.2s; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
         #logout-btn:hover { border-color:#f87171; color:#dc2626; }
+        #leave-btn { position:fixed; top:18px; left:125px; z-index:100; background:#fff; border:2px solid #86efac; border-radius:14px; padding:8px 18px; font-family:'Cairo',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer; color:#15803d; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
+        #leave-btn:hover { background:#f0fdf4; }
     </style>
 </head>
 <body>
@@ -71,6 +73,7 @@
         </div>
     </div>
 
+    <button id="leave-btn" style="display:none" onclick="window.openLeaveRequest()">📝 طلب إجازة / إذن</button>
     <!-- زر الخروج -->
     <button id="logout-btn" style="display:none" onclick="window.doLogout()">🚪 خروج</button>
 
@@ -95,8 +98,58 @@
 
         // ===== إعدادات قواعد العمل الجديدة =====
         const WORK_LOCATION = { lat: 33.293117, lng: 44.433205 };   // موقع العمل
-        const WORK_RADIUS_METERS = 1000;                  // أقصى مسافة مسموحة لتسجيل الحضور (1 كم)
+        const WORK_RADIUS_METERS = 100;                   // أقصى مسافة مسموحة لتسجيل الحضور (100 متر)
         // المجموعات: كل مجموعة قائمة بمفاتيح الموظفين (employee_key). الموظفون غير المذكورين يُعتبرون في مجموعة واحدة مشتركة.
+        // ===== خصم التأخير عن بداية الدوام =====
+        // مفتاح الموظف أو جزء من اسمه (عربي/إنجليزي) => وقت بداية الدوام
+        const SHIFT_RULES = [
+            // off = يوم الأوف الأسبوعي (0=الأحد 1=الاثنين 2=الثلاثاء 3=الأربعاء 4=الخميس 5=الجمعة 6=السبت)
+            { match: /نور|nour|noor/i,                    start: '11:00', off: 0 },
+            { match: /فاروق|farouk|farouq|farooq|faruq|faroq/i,       start: '11:00', off: 2 },
+            { match: /هبه|hiba|heba|hebah/i,             start: '10:00', off: 5 },
+            { match: /احمد|ahmed|ahmad/i,                start: '07:30', off: 6 }
+        ];
+        const LATE_GRACE_MIN = 5;         // سماحية بالدقائق بعد بداية الدوام
+        const LATE_BASE_POINTS = 5;       // الخصم الأساسي عند تجاوز السماحية
+        const LATE_EXTRA_POINTS = 5;      // خصم إضافي لكل خطوة تأخير إضافية
+        const LATE_EXTRA_STEP_MIN = 15;   // طول الخطوة بالدقائق
+        const LATE_MAX_POINTS = 50;       // أقصى خصم للتأخير في اليوم
+        function _normAr(s) { return String(s || '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه'); }
+        function _ruleFor(id) {
+            const hay = _normAr(id) + ' ' + _normAr((employeesData[id] || {}).name);
+            return SHIFT_RULES.find(x => x.match.test(hay)) || null;
+        }
+        function getShiftStart(id) {
+            const m = _empMeta[id];
+            if (m && m.shift) return String(m.shift).slice(0, 5);
+            const r = _ruleFor(id); return r ? r.start : null;
+        }
+        function getOffDay(id) {
+            const m = _empMeta[id];
+            if (m && m.off !== null && m.off !== undefined) return m.off;
+            const r = _ruleFor(id); return r ? r.off : null;
+        }
+        function isOffDay(id, dateStr) {
+            const od = getOffDay(id); if (od === null || od === undefined) return false;
+            const p = String(dateStr).split('-').map(Number); if (p.length < 3) return false;
+            return new Date(p[0], p[1] - 1, p[2]).getDay() === od;
+        }
+        function _startLabel(id, dateStr, st) {
+            const v = String(st || '');
+            if (!v || v === 'Absent' || v === 'لم يحضر') return isOffDay(id, dateStr) ? 'OFF' : (v ? 'Absent' : '-');
+            return v;
+        }
+        function calcLatePenalty(id, now) {
+            const st = getShiftStart(id); if (!st) return null;
+            if (isOffDay(id, _ymd(new Date(now)))) return null;   // يوم الأوف: لا خصم أبداً
+            const [h, m] = st.split(':').map(Number);
+            const sd = new Date(now); sd.setHours(h, m, 0, 0);
+            const late = Math.floor((now - sd.getTime()) / 60000);
+            if (late <= LATE_GRACE_MIN) return null;
+            const pts = Math.min(LATE_MAX_POINTS, LATE_BASE_POINTS + LATE_EXTRA_POINTS * Math.floor((late - LATE_GRACE_MIN) / LATE_EXTRA_STEP_MIN));
+            return { late, points: pts, start: st };
+        }
+
         const MAX_BREAK_MINUTES = 15;   // البريك ينتهي تلقائياً بعد هذه المدة (غيّر الرقم أو ضع 0 للتعطيل)
         const MAX_REST_MINUTES = 20;    // الراحة تنتهي تلقائياً بعد هذه المدة (0 للتعطيل)
         const BREAK_GROUPS = [];                          // مثال: [['ahmed','ali','sara'], ['omar','huda']]
@@ -112,8 +165,14 @@
         }
         function getMateOnBreak(id) {
             const _today = getTodayDateString();
-            const k = getGroupMates(id).find(m => employeesData[m] && employeesData[m].status === 'بريك'
-                && employeesData[m].lastActiveDate === _today);   // بريك قديم عالق من أمس لا يمنع الآخرين
+            const _now = Date.now();
+            const k = getGroupMates(id).find(m => {
+                const e = employeesData[m];
+                if (!e || e.status !== 'بريك' || e.lastActiveDate !== _today) return false;
+                // بريك تجاوز الحد الأقصى (مثلاً جهاز الزميل مغلق) لا يجب أن يمنع الآخرين للأبد
+                if (MAX_BREAK_MINUTES > 0 && e.lastActionTime && (_now - e.lastActionTime) >= MAX_BREAK_MINUTES * 60000) return false;
+                return true;
+            });   // بريك قديم عالق من أمس لا يمنع الآخرين
             return k ? employeesData[k] : null;
         }
         function distanceMeters(lat1, lng1, lat2, lng2) {
@@ -134,7 +193,7 @@
                     pos => {
                         const dist = distanceMeters(pos.coords.latitude, pos.coords.longitude, WORK_LOCATION.lat, WORK_LOCATION.lng);
                         if (dist <= WORK_RADIUS_METERS) resolve({ ok: true });
-                        else resolve({ ok: false, msg: 'أنت بعيد عن موقع العمل (' + (dist/1000).toFixed(1) + ' كم). يجب أن تكون ضمن ' + (WORK_RADIUS_METERS/1000) + ' كم لتسجيل الحضور.' });
+                        else resolve({ ok: false, msg: 'أنت بعيد عن موقع العمل (' + Math.round(dist) + ' متر). يجب أن تكون ضمن ' + WORK_RADIUS_METERS + ' متر لتسجيل الحضور.' });
                     },
                     err => resolve({ ok: false, msg: err.code === 1 ? 'يجب السماح للموقع (Location) في المتصفح لتسجيل الحضور' : 'تعذّر تحديد موقعك، حاول مرة أخرى' }),
                     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -339,7 +398,7 @@
             _rtEverSubscribed = false;
             _serverEmployees = {};
         }
-        // شبكة أمان: لو فاتت أحداث (نوم الجهاز/انقطاع) نعيد المزامنة كل 45 ثانية وعند العودة للتبويب
+        // شبكة أمان: لو فاتت أحداث (نوم الجهاز/انقطاع) نعيد المزامنة كل 15 ثانية وعند العودة للتبويب
         setInterval(() => { if (loggedInId) resyncEmployees().catch(() => {}); }, 15000);
         window.addEventListener('online', () => { if (loggedInId) resyncEmployees().catch(() => {}); });
         document.addEventListener('visibilitychange', () => {
@@ -381,6 +440,7 @@
         // ===== حماية التغييرات المحلية لكل موظف (تمنع رجوع البريك/الحالة القديمة من السيرفر) =====
         const _pendingLocal = {};   // id -> { fields, ts, doneAt, seq }
         let _pendSeq = 0;
+        const _staleResetAt = {};   // id -> آخر مرة أرسلنا فيها تصفير يوم قديم (لمنع تكرار الكتابة)
         function _markPending(id, fields) {
             const seq = ++_pendSeq;
             const keep = {};
@@ -418,7 +478,7 @@
             if (!loggedInId || !_sessionStart) return;
             if (Date.now() - _sessionStart > SESSION_TIMEOUT_MS) {
                 alert('⏰ انتهت جلستك تلقائياً بعد 8 ساعات. يرجى تسجيل الدخول مجدداً.');
-                window.doLogout && window.doLogout();
+                _performLogout();
             }
         }
         setInterval(_checkSessionTimeout, 60000); // تحقق كل دقيقة
@@ -524,6 +584,7 @@
             document.getElementById('main-app').style.display = 'block';
             document.getElementById('logout-btn').style.display = 'block';
             document.getElementById('logout-btn').textContent = (loggedInId === '__admin__') ? '🚪 خروج المسؤول' : '🚪 خروج';
+            document.getElementById('leave-btn').style.display = (loggedInId === '__admin__') ? 'none' : 'block';
             resetBtn();
 
             if (loggedInId !== '__admin__') {
@@ -547,6 +608,7 @@
         window.doLogin = async () => {
             const errorEl = document.getElementById('login-error');
             const btn = document.getElementById('login-btn');
+            if (btn.disabled) return;   // منع تكرار الطلب (Enter أثناء التحقق)
             try {
                 await Promise.race([
                     _doLoginInner(),
@@ -567,9 +629,15 @@
         });
 
         window.doLogout = async () => {
-            if (confirm('هل تريد تسجيل الخروج من النظام؟')) {
-                await supabaseClient.auth.signOut();
+            if (confirm('هل تريد تسجيل الخروج من النظام؟')) await _performLogout();
+        };
+        async function _performLogout() {
+            {
+                try { await supabaseClient.auth.signOut(); } catch (e) { console.warn('[Logout] signOut:', e); }
                 unsubscribeEmployees();
+                isViewingHistory = false;                                   // الشاشة مشتركة: لا تُبقِ وضع الأرشيف للمستخدم التالي
+                Object.keys(_pendingLocal).forEach(k => delete _pendingLocal[k]);
+                backupThrottle = {};
                 employeesData = {};              // الشاشة مشتركة: لا نترك بيانات الموظفين في الذاكرة بعد الخروج
                 loggedInId = null;
                 _sessionStart = null;
@@ -577,13 +645,15 @@
                 document.getElementById('login-screen').style.display = 'flex';
                 document.getElementById('main-app').style.display = 'none';
                 document.getElementById('logout-btn').style.display = 'none';
+                document.getElementById('leave-btn').style.display = 'none';
+                ['leave-overlay', 'leave-admin-overlay', 'month-overlay', 'device-log-overlay', 'pin-overlay'].forEach(oid => { const oe = document.getElementById(oid); if (oe) oe.remove(); });
                 document.getElementById('admin-section').classList.add('hidden');
                 document.getElementById('admin-section').innerHTML = '';
                 document.getElementById('login-password').value = '';
                 document.getElementById('login-username').value = '';
                 document.getElementById('login-error').textContent = '';
             }
-        };
+        }
 
         // الدالة الداخلية الفعلية — لا تُستدعى من الخارج (تصفير يدوي بواسطة المسؤول — يُنفَّذ على السيرفر)
         async function _internalGlobalReset(isAutomated = false) {
@@ -617,6 +687,7 @@
                 alert("🔒 هذه العملية متاحة للمسؤول فقط!");
                 return;
             }
+            if (!(await _askPin('تصفير اليوم يدوياً'))) return;
             if (confirm("⚠️ هل أنت متأكد من تصفير كل شيء لليوم يدوياً؟")) {
                 _internalGlobalReset(false);
             }
@@ -627,10 +698,13 @@
             const todayStr = getTodayDateString();
             const resetKey = `${todayStr}_reset`;
             // FIX: يعمل عند أي ساعة >= 19 وليس فقط عند الدقيقة 00:00
-            if (now.getHours() >= 19 && lastResetDate !== resetKey) {
+            const _isAdminNow = (loggedInId === '__admin__');
+            const _minutesNow = now.getHours() * 60 + now.getMinutes();
+            // المسؤول يحفظ التقرير ويغلق الدوام الساعة 7:00، وبقية الأجهزة تنتظر حتى 7:10 كاحتياط
+            if (_minutesNow >= (_isAdminNow ? 19 * 60 : 19 * 60 + 10) && lastResetDate !== resetKey) {
                 lastResetDate = resetKey;
                 console.log(`[Auto-Reset] الساعة ${now.getHours()}:${now.getMinutes()} — جاري التصفير التلقائي...`);
-                runDayReset('evening').then(did => { if (did) resyncEmployees().catch(() => {}); }).catch(e => console.warn('[Auto-Reset] تعذر:', e.message));
+                (_isAdminNow ? window.endOfDay(true) : runDayReset('evening')).then(did => { if (did) resyncEmployees().catch(() => {}); }).catch(e => { console.warn('[Auto-Reset] تعذر:', e.message); setTimeout(() => { if (lastResetDate === resetKey) lastResetDate = null; }, 60000); });
             }
         }
 
@@ -676,7 +750,8 @@
                 if (totalR > 15) totalViolations += Math.floor((totalR - 15) / 60) + 1;
                 
                 let groupPen = hourlyBreaks.groupPenalty || 0;
-                let calcRating = Math.max(0, 100 - (totalViolations * 5) - groupPen);
+                let latePen = Number(hourlyBreaks.latePenalty) || 0;
+                let calcRating = Math.max(0, 100 - (totalViolations * 5) - groupPen - latePen);
                 // تحديث محلي فقط — بدون كتابة للسيرفر لتجنب إطلاق تحديث لحظي
                 employeesData[i].rating = calcRating;
             }
@@ -689,37 +764,510 @@
             const todayStr = getTodayDateString();
             isViewingHistory = false;
 
-            let html = `<div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-slate-200 pb-4">
-                            <h2 class="text-2xl font-bold text-black text-right">📋 أرشيف التقارير والرقابة التاريخية المتكاملة</h2>
-                            
-                            <div class="flex items-center gap-3 bg-slate-100 p-2 rounded-xl border border-slate-300">
-                                <label class="font-bold text-slate-700 text-sm">اختر تاريخ التقرير السـابق:</label>
-                                <input type="date" id="historyDateSelector" value="${todayStr}" onchange="window.fetchHistoryReport(this.value)" class="bg-white border border-slate-400 p-1 rounded font-bold text-slate-800">
-                            </div>
+            let html = `
+                <div class="flex flex-col md:flex-row justify-between items-center mb-5 gap-4">
+                    <div class="text-right">
+                        <h2 class="text-2xl font-black text-slate-800">⚙️ لوحة المسؤول</h2>
+                        <p class="text-sm font-bold text-slate-500">التقارير والرقابة وإدارة الدوام</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap justify-center">
+                        <div class="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
+                            <label class="font-bold text-slate-600 text-sm">📅 تاريخ التقرير</label>
+                            <input type="date" id="historyDateSelector" value="${todayStr}" onchange="window.fetchHistoryReport(this.value)" class="bg-white border border-slate-300 px-2 py-1 rounded-lg font-bold text-slate-800 text-sm">
                         </div>
-                        
-                        <div class="overflow-x-auto">
-                            <table id="reportTable" class="w-full text-md text-right border-collapse mb-6">
-                                <thead>
-                                    <tr class="bg-green-50 text-black border-b border-green-200">
-                                        <th class="p-3">Name</th><th class="p-3">Check-In Time</th><th class="p-3">Total Hours</th><th class="p-3">Date</th><th class="p-3">Task</th><th class="p-3 text-amber-700">Total Break</th><th class="p-3">Total Rest</th><th class="p-3 text-emerald-700">Day Rating</th><th class="p-3 text-blue-700">Monthly Rating</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="reportTableBody">
-                                </tbody>
-                            </table>
-                        </div>
-                        
-                        <button onclick="window.downloadPDF()" class="bg-green-600 w-full p-4 rounded-xl font-bold text-white mb-3 shadow hover:bg-green-700 transition">📥 تحميل التقرير المعروض حالياً PDF</button>
-                        <button onclick="window.endOfDay()" class="bg-indigo-700 w-full p-5 rounded-xl font-bold text-white mb-3 shadow hover:bg-indigo-800 transition text-lg">🌙 إنهاء اليوم وحفظ التقرير</button>
-                        <button onclick="window.triggerInstantGlobalReset()" class="bg-amber-600 w-full p-4 rounded-xl font-bold text-white mb-3 shadow hover:bg-amber-700 transition">🔄 تصفير النظام وبدء يوم جديد (يدوياً)</button>
-                        <button onclick="window.resetMonthlySystem()" class="bg-red-600 w-full p-4 rounded-xl font-bold text-white mb-3 shadow hover:bg-red-700 transition">🔄 تصفير وإعادة تعيين الشهر الجديد</button>
-                        <button onclick="window.openDeviceLog()" class="bg-slate-700 w-full p-4 rounded-xl font-bold text-white mb-3 shadow hover:bg-slate-800 transition">📱 سجل الأجهزة والدخول (Device Log)</button>
-                        <button onclick="location.reload()" class="bg-gray-500 w-full p-4 rounded-xl font-bold text-white hover:bg-gray-600 transition">إغلاق التقرير</button>`;
+                        <button onclick="window.closeAdmin()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 font-bold text-slate-600 text-sm transition">✕ إغلاق</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    <button id="leave-admin-btn" onclick="window.openLeaveAdmin()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-purple-50 border-purple-200 text-purple-800 hover:bg-purple-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📥</span><span class="text-sm leading-tight text-center">طلبات الإجازة والإذن</span><span id="leave-badge" class="hidden absolute top-2 left-2 bg-red-600 text-white text-xs font-black rounded-full px-2 py-0.5">0</span></button>
+                    <button  onclick="window.openMonthSummary()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📊</span><span class="text-sm leading-tight text-center">ملخص الشهر ونسبة الموظفين</span></button>
+                    <button  onclick="window.downloadPDF()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-green-50 border-green-200 text-green-800 hover:bg-green-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📄</span><span class="text-sm leading-tight text-center">تحميل التقرير PDF</span></button>
+                    <button  onclick="window.openAddEmployee()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">➕</span><span class="text-sm">إضافة موظف</span></button>
+                    <button  onclick="window.openDeviceLog()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📱</span><span class="text-sm leading-tight text-center">سجل الأجهزة والدخول</span></button>
+                </div>
+
+                <div class="overflow-x-auto rounded-2xl border border-slate-200 mb-5">
+                    <table id="reportTable" class="w-full text-md text-right border-collapse">
+                        <thead>
+                            <tr class="bg-green-50 text-black border-b border-green-200">
+                                <th class="p-3">Name</th><th class="p-3">Check-In Time</th><th class="p-3">Total Hours</th><th class="p-3">Date</th><th class="p-3">Task</th><th class="p-3 text-amber-700">Total Break</th><th class="p-3">Total Rest</th><th class="p-3 text-emerald-700">Day Rating</th><th class="p-3 text-blue-700">Monthly Rating</th><th class="p-3 text-red-700">Late (Admin)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reportTableBody">
+                        </tbody>
+                    </table>
+                </div>
+
+                <button onclick="window.endOfDay()" class="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow transition">🌙 إنهاء اليوم وحفظ التقرير</button>
+
+                <div class="mt-5 rounded-2xl border border-red-200 bg-red-50/60 p-4">
+                    <div class="mb-3 text-red-700 font-black text-sm">🔒 منطقة حساسة — تتطلب الرمز السري</div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button onclick="window.triggerInstantGlobalReset()" class="py-3 rounded-xl bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 font-black text-sm transition">🔄 تصفير اليوم وبدء يوم جديد</button>
+                        <button onclick="window.resetMonthlySystem()" class="py-3 rounded-xl bg-white border border-red-300 text-red-700 hover:bg-red-50 font-black text-sm transition">🗓️ تصفير الشهر الجديد</button>
+                    </div>
+                </div>`;
             
             section.innerHTML = html; 
             window.fetchHistoryReport(todayStr); 
+            window.refreshLeaveBadge();
             section.scrollIntoView({ behavior: 'smooth' });
+        };
+
+        // ===== الرمز السري للعمليات الحساسة (يُخزَّن كبصمة SHA-256 وليس نصاً) =====
+        const ADMIN_PIN_SHA256 = '20ee235b5de5b36244da6f9aa1cbdd032a90867ba92276ccc8c38c0d0d57fcec';
+        let _pinFails = 0, _pinLockUntil = 0;
+        async function _sha256Hex(s) {
+            const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+            return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join('');
+        }
+        function _askPin(title) {
+            return new Promise(resolve => {
+                const old = document.getElementById('pin-overlay'); if (old) old.remove();
+                const o = document.createElement('div');
+                o.id = 'pin-overlay';
+                o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.65);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;';
+                o.innerHTML = `<div style="background:#fff;border-radius:24px;padding:28px;width:100%;max-width:340px;direction:rtl;font-family:Cairo,sans-serif;text-align:center;box-shadow:0 25px 50px rgba(0,0,0,0.25);">
+                    <div style="font-size:2.2rem;">🔒</div>
+                    <h3 style="font-weight:900;font-size:1.1rem;color:#334155;margin:6px 0 4px;">${title}</h3>
+                    <p style="font-size:0.8rem;color:#94a3b8;font-weight:700;margin-bottom:14px;">أدخل الرمز السري للمتابعة</p>
+                    <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" class="pin-input" style="margin-bottom:8px;">
+                    <div id="pin-err" class="error-msg" style="margin-bottom:10px;"></div>
+                    <div style="display:flex;gap:8px;">
+                        <button id="pin-ok" class="login-btn" style="width:auto;flex:2;padding:12px;">تأكيد</button>
+                        <button id="pin-cancel" style="flex:1;padding:12px;border-radius:18px;background:#f1f5f9;border:none;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;color:#475569;">إلغاء</button>
+                    </div>
+                </div>`;
+                document.body.appendChild(o);
+                const inp = o.querySelector('#pin-input'), err = o.querySelector('#pin-err');
+                const done = ok => { o.remove(); resolve(ok); };
+                const submit = async () => {
+                    if (Date.now() < _pinLockUntil) { err.textContent = '⛔ محاولات كثيرة، انتظر ' + Math.ceil((_pinLockUntil - Date.now()) / 1000) + ' ثانية'; return; }
+                    let ok = false;
+                    try { ok = (await _sha256Hex(inp.value)) === ADMIN_PIN_SHA256; }
+                    catch (e) { err.textContent = '❌ تعذر التحقق من الرمز'; return; }
+                    if (ok) { _pinFails = 0; done(true); return; }
+                    inp.value = ''; inp.focus();
+                    if (++_pinFails >= 5) { _pinLockUntil = Date.now() + 30000; _pinFails = 0; err.textContent = '⛔ محاولات كثيرة، انتظر 30 ثانية'; }
+                    else err.textContent = '❌ الرمز غير صحيح';
+                };
+                o.querySelector('#pin-ok').onclick = submit;
+                o.querySelector('#pin-cancel').onclick = () => done(false);
+                inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') done(false); });
+                setTimeout(() => inp.focus(), 50);
+            });
+        }
+
+        // ===== نظام طلبات الإجازة والإذن الزمني =====
+        const ANNUAL_LEAVE_DAYS = 21;   // رصيد الإجازة السنوية لكل موظف
+        // leave_adjust = أيام "مستخدمة" يدوية يضيفها المسؤول فوق الإجازات المعتمدة
+        let _leaveAdj = {}, _empMeta = {}, _metaAt = 0;
+        async function _loadEmpMeta(force) {
+            if (!force && Date.now() - _metaAt < 60000) return;
+            // نحاول الأعمدة كلها، وإن لم تُضف بعد في Supabase نقرأ المتوفر فقط
+            const tries = ['employee_key, leave_adjust, shift_start, off_day', 'employee_key, leave_adjust', 'employee_key'];
+            for (const cols of tries) {
+                try {
+                    const { data, error } = await supabaseClient.from('alsaree3_employees').select(cols);
+                    if (error) continue;
+                    const adj = {}, meta = {};
+                    (data || []).forEach(r => {
+                        adj[r.employee_key] = Number(r.leave_adjust) || 0;
+                        meta[r.employee_key] = { shift: r.shift_start || null, off: (r.off_day === null || r.off_day === undefined) ? null : Number(r.off_day) };
+                    });
+                    _leaveAdj = adj; _empMeta = meta; _metaAt = Date.now();
+                    return;
+                } catch (e) { /* جرّب التالي */ }
+            }
+            console.warn('[EmpMeta] تعذر قراءة بيانات الموظفين الإضافية — نفّذ leave_balance.sql في Supabase');
+        }
+        function _loadLeaveAdj() { return _loadEmpMeta(true); }
+        function _leaveUsedTotal(rows, k, year) { return _leaveUsedDays(rows, k, year) + (Number(_leaveAdj[k]) || 0); }
+        function _ymd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+        function _expandDates(startStr, days) {
+            const [y, m, d] = String(startStr).split('-').map(Number);
+            const out = [];
+            for (let i = 0; i < (Number(days) || 1); i++) out.push(_ymd(new Date(y, m - 1, d + i)));
+            return out;
+        }
+        function _leaveUsedDays(rows, key, year) {
+            return (rows || []).filter(r => r.employee_key === key && r.kind === 'day' && r.status === 'approved' && String(r.start_date).startsWith(year))
+                .reduce((s, r) => s + (Number(r.days) || 0), 0);
+        }
+        function _leaveStatusLabel(s) { return s === 'approved' ? '✅ موافق' : s === 'rejected' ? '❌ مرفوض' : '⏳ بانتظار الرد'; }
+        function _leaveDurationLabel(r) {
+            if (r.kind === 'day') {
+                const ds = _expandDates(r.start_date, r.days);
+                return r.days + ' يوم (' + ds[0] + (ds.length > 1 ? ' → ' + ds[ds.length - 1] : '') + ')';
+            }
+            return r.start_date + ' | ' + (r.from_time || '') + ' - ' + (r.to_time || '') + ' (' + (Number(r.hours) || 0) + ' س)';
+        }
+        function _modal(id, title, bodyHtml, maxW) {
+            const old = document.getElementById(id); if (old) old.remove();
+            const o = document.createElement('div');
+            o.id = id;
+            o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+            o.innerHTML = `<div style="background:#fff;border-radius:24px;padding:28px;width:100%;max-width:${maxW}px;max-height:88vh;overflow:auto;direction:rtl;font-family:Cairo,sans-serif;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">
+                    <h2 style="font-size:1.3rem;font-weight:900;color:#334155;">${title}</h2>
+                    <button onclick="document.getElementById('${id}').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:8px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button>
+                </div>
+                <div id="${id}-body">${bodyHtml}</div>
+            </div>`;
+            document.body.appendChild(o);
+        }
+
+        // --- جهة الموظف ---
+        window.openLeaveRequest = () => {
+            if (!loggedInId || loggedInId === '__admin__') return;
+            const today = getTodayDateString();
+            _modal('leave-overlay', '📝 طلب إجازة / إذن زمني', `
+                <div style="display:grid;gap:8px;">
+                    <label style="font-weight:900;font-size:0.85rem;">نوع الطلب</label>
+                    <select id="lv-kind" class="login-select" onchange="window._lvKindChange()">
+                        <option value="day">🏖️ يوم إجازة</option>
+                        <option value="hourly">⏱️ إذن زمني (ساعات)</option>
+                    </select>
+                    <label style="font-weight:900;font-size:0.85rem;">التاريخ</label>
+                    <input id="lv-date" type="date" min="${today}" value="${today}" class="login-select">
+                    <div id="lv-days-box" style="display:grid;gap:8px;">
+                        <label style="font-weight:900;font-size:0.85rem;">عدد الأيام</label>
+                        <input id="lv-days" type="number" min="1" max="90" value="1" class="login-select">
+                    </div>
+                    <div id="lv-time-box" style="display:none;gap:8px;">
+                        <label style="font-weight:900;font-size:0.85rem;">من الساعة</label>
+                        <input id="lv-from" type="time" class="login-select">
+                        <label style="font-weight:900;font-size:0.85rem;">إلى الساعة</label>
+                        <input id="lv-to" type="time" class="login-select">
+                    </div>
+                    <label style="font-weight:900;font-size:0.85rem;">ملاحظة (اختياري)</label>
+                    <textarea id="lv-note" maxlength="200" rows="2" class="login-select" style="font-size:0.9rem;"></textarea>
+                    <div id="lv-msg" class="error-msg"></div>
+                    <button id="lv-submit" class="login-btn" onclick="window.submitLeaveRequest()">إرسال الطلب</button>
+                </div>
+                <h3 style="font-weight:900;margin:18px 0 8px;color:#334155;">طلباتي</h3>
+                <div id="lv-mine" style="color:#94a3b8;font-weight:700;">⏳ جاري التحميل...</div>`, 560);
+            window._lvLoadMine();
+        };
+        window._lvKindChange = () => {
+            const hourly = document.getElementById('lv-kind').value === 'hourly';
+            document.getElementById('lv-days-box').style.display = hourly ? 'none' : 'grid';
+            document.getElementById('lv-time-box').style.display = hourly ? 'grid' : 'none';
+        };
+        window._lvLoadMine = async () => {
+            const box = document.getElementById('lv-mine');
+            if (!box || !loggedInId || loggedInId === '__admin__') return;
+            try {
+                const { data, error } = await supabaseClient.from('alsaree3_leave_requests')
+                    .select('*').eq('employee_key', loggedInId).order('created_at', { ascending: false }).limit(50);
+                if (error) throw error;
+                const year = String(new Date().getFullYear());
+                await _loadLeaveAdj();
+                const used = _leaveUsedDays(data, loggedInId, year);
+                let html = '';
+                if (!data || data.length === 0) html += '<p style="color:#94a3b8;">لا توجد طلبات سابقة</p>';
+                else {
+                    html += '<div style="display:grid;gap:8px;">';
+                    data.forEach(r => {
+                        html += `<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;font-size:0.85rem;">
+                            <div style="display:flex;justify-content:space-between;font-weight:900;"><span>${r.kind === 'day' ? '🏖️ إجازة' : '⏱️ إذن زمني'}</span><span>${_leaveStatusLabel(r.status)}</span></div>
+                            <div style="color:#475569;margin-top:4px;">${sanitize(_leaveDurationLabel(r))}</div>
+                            ${r.note ? `<div style="color:#64748b;margin-top:2px;">${sanitize(r.note)}</div>` : ''}
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+                box.style.color = '#000';
+                box.innerHTML = html;
+            } catch (e) {
+                console.error('[Leave]', e);
+                box.innerHTML = '<p style="color:#dc2626;">❌ تعذر تحميل الطلبات</p>';
+            }
+        };
+        window.submitLeaveRequest = async () => {
+            if (!loggedInId || loggedInId === '__admin__' || !employeesData[loggedInId]) return;
+            const msg = document.getElementById('lv-msg'), btn = document.getElementById('lv-submit');
+            msg.style.color = '';
+            const kind = document.getElementById('lv-kind').value;
+            const date = document.getElementById('lv-date').value;
+            const note = document.getElementById('lv-note').value.trim().slice(0, 200);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { msg.textContent = '⚠️ اختر التاريخ'; return; }
+            if (date < getTodayDateString()) { msg.textContent = '⚠️ لا يمكن طلب تاريخ قديم'; return; }
+            const row = { employee_key: loggedInId, emp_name: employeesData[loggedInId].name, kind, start_date: date, days: 1, note: note || null, status: 'pending' };
+            if (kind === 'day') {
+                const days = parseInt(document.getElementById('lv-days').value, 10);
+                if (!(days >= 1 && days <= 90)) { msg.textContent = '⚠️ عدد الأيام غير صحيح'; return; }
+                row.days = days;
+            } else {
+                const from = document.getElementById('lv-from').value, to = document.getElementById('lv-to').value;
+                if (!from || !to) { msg.textContent = '⚠️ حدد وقت البداية والنهاية'; return; }
+                const mins = (parseInt(to.slice(0, 2), 10) * 60 + parseInt(to.slice(3, 5), 10)) - (parseInt(from.slice(0, 2), 10) * 60 + parseInt(from.slice(3, 5), 10));
+                if (mins <= 0) { msg.textContent = '⚠️ وقت النهاية يجب أن يكون بعد البداية'; return; }
+                row.from_time = from; row.to_time = to; row.hours = Math.round(mins / 60 * 100) / 100;
+            }
+            if (!_checkWriteRate()) return;
+            btn.disabled = true; msg.textContent = '';
+            const { error } = await supabaseClient.from('alsaree3_leave_requests').insert(row);
+            btn.disabled = false;
+            if (error) { console.error('[Leave]', error); msg.textContent = '❌ تعذر إرسال الطلب: ' + error.message; return; }
+            msg.style.color = '#16a34a'; msg.textContent = '✅ تم إرسال الطلب وبانتظار موافقة المسؤول';
+            document.getElementById('lv-note').value = '';
+            window._lvLoadMine();
+        };
+
+        // --- جهة المسؤول ---
+        window.refreshLeaveBadge = async () => {
+            if (loggedInId !== '__admin__') return;
+            const btn = document.getElementById('leave-admin-btn');
+            if (!btn) return;
+            const { count, error } = await supabaseClient.from('alsaree3_leave_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending');
+            if (error) return;
+            const badge = document.getElementById('leave-badge');
+            if (badge) { badge.textContent = count || 0; badge.classList.toggle('hidden', !count); }
+        };
+        setInterval(() => { if (loggedInId === '__admin__') window.refreshLeaveBadge(); }, 60000);
+
+        window.openLeaveAdmin = () => {
+            if (loggedInId !== '__admin__') return;
+            _modal('leave-admin-overlay', '📥 طلبات الإجازة والإذن الزمني', '<div style="color:#94a3b8;font-weight:700;text-align:center;padding:20px;">⏳ جاري التحميل...</div>', 1000);
+            window._lvAdminLoad();
+        };
+        window._lvAdminLoad = async () => {
+            const body = document.getElementById('leave-admin-overlay-body');
+            if (!body || loggedInId !== '__admin__') return;
+            try {
+                const { data, error } = await supabaseClient.from('alsaree3_leave_requests').select('*').order('created_at', { ascending: false }).limit(500);
+                if (error) throw error;
+                await _loadLeaveAdj();
+                const rows = data || [];
+                const year = String(new Date().getFullYear());
+                const th = 'padding:9px;text-align:right;';
+                const pending = rows.filter(r => r.status === 'pending');
+                let html = `<h3 style="font-weight:900;margin-bottom:8px;">⏳ طلبات بانتظار قرارك (${pending.length})</h3>`;
+                if (pending.length === 0) html += '<p style="color:#94a3b8;margin-bottom:14px;">لا توجد طلبات جديدة</p>';
+                else {
+                    html += `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-bottom:18px;">
+                        <thead><tr style="background:#f1f5f9;font-weight:900;"><th style="${th}">الموظف</th><th style="${th}">النوع</th><th style="${th}">المدة</th><th style="${th}">المتبقي</th><th style="${th}">ملاحظة</th><th style="${th}">القرار</th></tr></thead><tbody>`;
+                    pending.forEach(r => {
+                        const left = Math.max(0, ANNUAL_LEAVE_DAYS - _leaveUsedTotal(rows, r.employee_key, year));
+                        html += `<tr style="border-bottom:1px solid #e2e8f0;">
+                            <td style="${th}font-weight:900;">${sanitize(r.emp_name || r.employee_key)}</td>
+                            <td style="${th}">${r.kind === 'day' ? '🏖️ إجازة' : '⏱️ إذن زمني'}</td>
+                            <td style="${th}">${sanitize(_leaveDurationLabel(r))}</td>
+                            <td style="${th}">${r.kind === 'day' ? left + ' يوم' + (r.days > left ? ' ⚠️' : '') : '-'}</td>
+                            <td style="${th}color:#64748b;">${sanitize(r.note || '-')}</td>
+                            <td style="${th}white-space:nowrap;">
+                                <button onclick="window.decideLeave(${Number(r.id)}, 'approved')" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:6px 12px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">✅ موافقة</button>
+                                <button onclick="window.decideLeave(${Number(r.id)}, 'rejected')" style="background:#dc2626;color:#fff;border:none;border-radius:10px;padding:6px 12px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">❌ رفض</button>
+                            </td></tr>`;
+                    });
+                    html += '</tbody></table></div>';
+                }
+                // رصيد كل موظف
+                html += `<h3 style="font-weight:900;margin-bottom:8px;">📅 رصيد الإجازات ${year}</h3>
+                    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-bottom:18px;">
+                    <thead><tr style="background:#f1f5f9;font-weight:900;"><th style="${th}">الموظف</th><th style="${th}">المستخدم</th><th style="${th}">المتبقي</th><th style="${th}">إذن زمني معتمد (س)</th><th style="${th}">✏️ المستخدم (اكتب الرقم)</th></tr></thead><tbody>`;
+                window._lvUsed = {};
+                Object.keys(employeesData).forEach(k => {
+                    const used = _leaveUsedDays(rows, k, year);
+                    const hrs = rows.filter(r => r.employee_key === k && r.kind === 'hourly' && r.status === 'approved' && String(r.start_date).startsWith(year))
+                        .reduce((s, r) => s + (Number(r.hours) || 0), 0);
+                    const usedTotal = used + (Number(_leaveAdj[k]) || 0);
+                    const left = ANNUAL_LEAVE_DAYS - usedTotal;
+                    window._lvUsed[k] = used;
+                    html += `<tr style="border-bottom:1px solid #e2e8f0;"><td style="${th}font-weight:900;">${sanitize(employeesData[k].name)}</td>
+                        <td style="${th}">${usedTotal} / ${ANNUAL_LEAVE_DAYS}</td>
+                        <td style="${th}font-weight:900;color:${left <= 3 ? '#dc2626' : '#16a34a'};">${left}</td>
+                        <td style="${th}">${Math.round(hrs * 100) / 100}</td>
+                        <td style="${th}white-space:nowrap;"><input type="number" step="0.5" min="0" max="365" value="${usedTotal}" id="lvbal-${sanitize(k)}" style="width:70px;padding:5px;border:1px solid #cbd5e1;border-radius:8px;font-weight:900;text-align:center;">
+                        <button onclick="window.saveLeaveBalance('${sanitize(k)}')" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:6px 12px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">حفظ</button></td></tr>`;
+                });
+                html += '</tbody></table></div>';
+                // آخر القرارات
+                const decided = rows.filter(r => r.status !== 'pending');
+                html += '<h3 style="font-weight:900;margin-bottom:8px;">🗂️ سجل الإجازات والإذونات (يراه المسؤول فقط)</h3>';
+                if (decided.length === 0) html += '<p style="color:#94a3b8;">لا توجد قرارات سابقة</p>';
+                else {
+                    html += `<div style="overflow:auto;max-height:340px;"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;"><tbody>`;
+                    decided.forEach(r => {
+                        html += `<tr style="border-bottom:1px solid #e2e8f0;"><td style="${th}font-weight:900;">${sanitize(r.emp_name || r.employee_key)}</td>
+                            <td style="${th}">${r.kind === 'day' ? '🏖️' : '⏱️'} ${sanitize(_leaveDurationLabel(r))}</td>
+                            <td style="${th}">${_leaveStatusLabel(r.status)}</td>
+                            <td style="${th}color:#64748b;">${sanitize(String(r.decided_at || r.created_at || '').slice(0, 10))}</td></tr>`;
+                    });
+                    html += '</tbody></table></div>';
+                }
+                body.innerHTML = html;
+            } catch (e) {
+                console.error('[LeaveAdmin]', e);
+                body.innerHTML = '<p style="color:#dc2626;font-weight:700;">❌ تعذر تحميل الطلبات — تأكد من تنفيذ ملف leave_requests.sql في Supabase.</p>';
+            }
+        };
+        window.saveLeaveBalance = async (k) => {
+            if (loggedInId !== '__admin__' || !employeesData[k]) return;
+            const inp = document.getElementById('lvbal-' + k);
+            const target = Number(inp && inp.value);
+            if (!Number.isFinite(target) || target < 0 || target > 365) { alert('⚠️ أدخل رقماً صحيحاً للمستخدم'); return; }
+            const used = (window._lvUsed && window._lvUsed[k]) || 0;
+            const adj = Math.round((target - used) * 100) / 100;   // المستخدم المعروض = المعتمد + adj
+            if (!_checkWriteRate()) return;
+            const { data, error } = await supabaseClient.from('alsaree3_employees').update({ leave_adjust: adj }).eq('employee_key', k).select('employee_key');
+            if (error || !data || data.length === 0) {
+                alert('❌ تعذر حفظ الرصيد: ' + (error ? error.message : 'لا صلاحية') + '\nتأكد من تنفيذ ملف leave_balance.sql في Supabase.');
+                return;
+            }
+            window._lvAdminLoad();
+        };
+        window.openAddEmployee = () => {
+            if (loggedInId !== '__admin__') return;
+            _modal('add-emp-overlay', '➕ إضافة موظف جديد', `
+                <div style="display:grid;gap:10px;">
+                    <label style="font-weight:700;">المفتاح (إنجليزي صغير بدون مسافات، مثال: ali)<input id="ae-key" class="login-select" style="direction:ltr;text-align:left;" maxlength="30"></label>
+                    <label style="font-weight:700;">اسم الموظف<input id="ae-name" class="login-select" maxlength="60"></label>
+                    <label style="font-weight:700;">بداية الدوام (للخصم عند التأخير)<input id="ae-shift" type="time" class="login-select" value="09:00"></label>
+                    <label style="font-weight:700;">يوم الأوف الأسبوعي
+                        <select id="ae-off" class="login-select"><option value="">بدون</option><option value="6">السبت</option><option value="0">الأحد</option><option value="1">الاثنين</option><option value="2">الثلاثاء</option><option value="3">الأربعاء</option><option value="4">الخميس</option><option value="5">الجمعة</option></select></label>
+                    <div style="font-size:0.8rem;color:#64748b;font-weight:700;">الموظف الجديد يدخل تلقائياً في مجموعة البريك المشتركة. بعد الإضافة أنشئ له حساب دخول من Supabase (انظر الرسالة بعد الحفظ).</div>
+                    <div id="ae-msg" class="error-msg"></div>
+                    <button id="ae-go" class="login-btn" onclick="window.submitAddEmployee()">إضافة</button>
+                </div>`, 480);
+        };
+        window.submitAddEmployee = async () => {
+            if (loggedInId !== '__admin__') return;
+            const msg = document.getElementById('ae-msg'), btn = document.getElementById('ae-go');
+            const key = document.getElementById('ae-key').value.trim().toLowerCase();
+            const name = document.getElementById('ae-name').value.trim();
+            const shift = document.getElementById('ae-shift').value;
+            const offV = document.getElementById('ae-off').value;
+            if (!/^[a-z0-9_]{2,30}$/.test(key)) { msg.textContent = '⚠️ المفتاح: حروف إنجليزية صغيرة وأرقام فقط'; return; }
+            if (!name) { msg.textContent = '⚠️ اكتب اسم الموظف'; return; }
+            if (employeesData[key]) { msg.textContent = '⚠️ هذا المفتاح موجود مسبقاً'; return; }
+            if (!_checkWriteRate()) return;
+            btn.disabled = true; msg.textContent = '';
+            const row = empToRow({ name, status: 'خارج العمل', startTime: null, lastActionTime: null, lastActiveDate: null,
+                totalBreakMinutes: 0, totalRestMinutes: 0, totalWorkSeconds: 0, hourlyBreaks: {}, slotBreaks: {}, rating: 100,
+                currentTask: 'None', monthlyRating: 100, monthlyHistory: {} });
+            row.employee_key = key; row.shift_start = shift || null; row.off_day = offV === '' ? null : Number(offV);
+            const { error } = await supabaseClient.from('alsaree3_employees').insert(row);
+            btn.disabled = false;
+            if (error) { console.error('[AddEmp]', error); msg.textContent = '❌ تعذر الإضافة: ' + error.message + ' (نفّذ leave_balance.sql)'; return; }
+            document.getElementById('add-emp-overlay').remove();
+            _metaAt = 0;
+            try { await resyncEmployees(); } catch (e) {}
+            alert('✅ تمت إضافة ' + name + '.\nالخطوة الأخيرة: في Supabase > Authentication أنشئ مستخدماً له (إيميل + كلمة سر)، ثم في جدول alsaree3_profiles أضف صفاً: id = معرّف المستخدم، role = employee، employee_key = ' + key);
+        };
+        window.decideLeave = async (id, status) => {
+            if (loggedInId !== '__admin__') return;
+            if (!['approved', 'rejected'].includes(status)) return;
+            id = Number(id); if (!Number.isFinite(id)) return;
+            if (!_checkWriteRate()) return;
+            const { data, error } = await supabaseClient.from('alsaree3_leave_requests')
+                .update({ status, decided_at: new Date().toISOString() }).eq('id', id).eq('status', 'pending').select('id');
+            if (error) { alert('❌ فشل حفظ القرار: ' + error.message); return; }
+            if (!data || data.length === 0) alert('⚠️ هذا الطلب تم البت فيه مسبقاً');
+            window._lvAdminLoad();
+            window.refreshLeaveBadge();
+        };
+
+        window.openMonthSummary = async () => {
+            if (loggedInId !== '__admin__') return;
+            const oldEl = document.getElementById('month-overlay'); if (oldEl) oldEl.remove();
+            const ym = getTodayDateString().slice(0, 7);
+            const overlay = document.createElement('div');
+            overlay.id = 'month-overlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+            overlay.innerHTML = `<div style="background:#fff;border-radius:24px;padding:28px;width:100%;max-width:1000px;max-height:88vh;overflow:auto;direction:rtl;font-family:Cairo,sans-serif;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                    <h2 style="font-size:1.3rem;font-weight:900;color:#334155;">📊 ملخص الشهر ونسبة كل موظف</h2>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <input type="month" id="month-picker" value="${ym}" onchange="window.loadMonthSummary(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">
+                        <button onclick="document.getElementById('month-overlay').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:8px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button>
+                    </div>
+                </div>
+                <div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:12px;">النسبة = متوسط التقييم اليومي لأيام الدوام الفعلية (أيام OFF والإجازات المعتمدة والغياب لا تُحتسب).</div>
+                <div id="month-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div>
+            </div>`;
+            document.body.appendChild(overlay);
+            window.loadMonthSummary(ym);
+        };
+
+        window.loadMonthSummary = async (ym) => {
+            if (loggedInId !== '__admin__') return;
+            if (!/^\d{4}-\d{2}$/.test(String(ym))) return;
+            const box = document.getElementById('month-content');
+            if (!box) return;
+            box.innerHTML = '⏳ جاري التحميل...';
+            const [y, m] = ym.split('-').map(Number);
+            const start = ym + '-01';
+            const end = ym + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0');
+            try {
+                const { data, error } = await supabaseClient.from('alsaree3_history')
+                    .select('*').gte('history_date', start).lte('history_date', end).order('history_date').limit(5000);
+                if (error) throw error;
+                // الإجازات المعتمدة (إن لم يوجد الجدول بعد يستمر الملخص بدونها)
+                await _loadEmpMeta();
+                const { data: lvRows } = await supabaseClient.from('alsaree3_leave_requests')
+                    .select('employee_key,kind,start_date,days,hours').eq('status', 'approved');
+                const leaveSet = {}, permHours = {};
+                (lvRows || []).forEach(q => {
+                    if (q.kind === 'day') {
+                        _expandDates(q.start_date, q.days).forEach(ds => {
+                            if (ds >= start && ds <= end) (leaveSet[q.employee_key] = leaveSet[q.employee_key] || new Set()).add(ds);
+                        });
+                    } else if (q.start_date >= start && q.start_date <= end) {
+                        permHours[q.employee_key] = (permHours[q.employee_key] || 0) + (Number(q.hours) || 0);
+                    }
+                });
+                const agg = {};
+                // أدرج كل الموظفين حتى من لم يسجل أي يوم بعد
+                Object.keys(employeesData).forEach(k => { agg[k] = { name: employeesData[k].name, days: 0, off: 0, absent: 0, leave: 0, permH: 0, sum: 0, br: 0, rest: 0, secs: 0 }; });
+                (data || []).forEach(r => {
+                    const a = agg[r.employee_key] = agg[r.employee_key] || { name: r.name, days: 0, off: 0, absent: 0, leave: 0, permH: 0, sum: 0, br: 0, rest: 0, secs: 0 };
+                    if (r.name) a.name = r.name;
+                    const _ls = leaveSet[r.employee_key];
+                    if (_ls && _ls.has(r.history_date)) return;   // يوم إجازة معتمدة: لا يدخل في النسبة
+                    const st = String(r.start_time_str || '');
+                    if (st.toUpperCase().startsWith('OFF')) { a.off++; return; }
+                    if (!st || st === 'Absent' || st === 'لم يحضر') { if (isOffDay(r.employee_key, r.history_date)) a.off++; else a.absent++; return; }
+                    a.days++;
+                    a.sum += (r.rating == null ? 100 : Number(r.rating) || 0);
+                    a.br += Number(r.total_break_minutes) || 0;
+                    a.rest += Number(r.total_rest_minutes) || 0;
+                    a.secs += Number(r.total_work_seconds) || 0;
+                });
+                Object.keys(agg).forEach(k => { agg[k].leave = leaveSet[k] ? leaveSet[k].size : 0; agg[k].permH = Math.round((permHours[k] || 0) * 100) / 100; });
+                const rows = Object.values(agg).sort((p, q) => String(p.name).localeCompare(String(q.name)));
+                if (rows.length === 0) { box.innerHTML = '<p>لا توجد بيانات لهذا الشهر.</p>'; return; }
+                let html = `<table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:right;">
+                    <thead><tr style="background:#f1f5f9;font-weight:900;">
+                        <th style="padding:10px;">الموظف</th><th style="padding:10px;">أيام الدوام</th><th style="padding:10px;">OFF</th><th style="padding:10px;">غياب</th><th style="padding:10px;">إجازة</th><th style="padding:10px;">إذن زمني (س)</th>
+                        <th style="padding:10px;">نسبة الشهر حتى الآن</th><th style="padding:10px;">إجمالي البريك</th><th style="padding:10px;">إجمالي الراحة</th><th style="padding:10px;">ساعات العمل</th>
+                    </tr></thead><tbody>`;
+                rows.forEach(a => {
+                    const pct = a.days > 0 ? Math.round((a.sum / a.days) * 10) / 10 : null;
+                    const color = pct === null ? '#64748b' : pct >= 90 ? '#16a34a' : pct >= 75 ? '#d97706' : '#dc2626';
+                    html += `<tr style="border-bottom:1px solid #e2e8f0;">
+                        <td style="padding:9px;font-weight:900;">${sanitize(a.name || '-')}</td>
+                        <td style="padding:9px;">${a.days}</td><td style="padding:9px;">${a.off}</td><td style="padding:9px;">${a.absent}</td><td style="padding:9px;">${a.leave}</td><td style="padding:9px;">${a.permH}</td>
+                        <td style="padding:9px;font-weight:900;font-size:1.05rem;color:${color};">${pct === null ? '-' : pct + '%'}</td>
+                        <td style="padding:9px;">${a.br} min</td><td style="padding:9px;">${a.rest} min</td>
+                        <td style="padding:9px;">${Math.floor(a.secs / 3600)}h : ${Math.floor((a.secs % 3600) / 60)}m</td>
+                    </tr>`;
+                });
+                box.style.padding = '0'; box.style.color = '#000';
+                box.innerHTML = html + '</tbody></table>';
+            } catch (e) {
+                console.error('[MonthSummary]', e);
+                box.innerHTML = '<p style="color:#dc2626;">❌ فشل تحميل ملخص الشهر</p>';
+            }
+        };
+
+        window.closeAdmin = () => {
+            isViewingHistory = false;
+            const section = document.getElementById('admin-section');
+            section.innerHTML = '<div class="text-center"><button onclick="window.openAdmin()" class="px-6 py-3 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-black shadow transition">⚙️ فتح لوحة المسؤول</button></div>';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 
         // ===== SECURITY v5: عرض سجل الأجهزة =====
@@ -784,7 +1332,7 @@
                 isViewingHistory = false;
             }
 
-            tableBody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-500 font-bold animate-pulse">جاري سحب بيانات الأرشيف ليوم (${sanitize(selectedDate)})...</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="10" class="p-4 text-center text-slate-500 font-bold animate-pulse">جاري سحب بيانات الأرشيف ليوم (${sanitize(selectedDate)})...</td></tr>`;
             
             try {
                 const historyData = await fetchHistoryFor(selectedDate);
@@ -811,14 +1359,15 @@
                         }
                         html += `<tr class="border-b">
                                     <td class="p-3 font-bold text-black">${sanitize(d.name)}</td>
-                                    <td class="p-3 font-semibold text-green-700">${sanitize(d.startTimeStr === 'لم يحضر' ? 'Absent' : (d.startTimeStr || '-'))}</td>
+                                    <td class="p-3 font-semibold text-green-700">${sanitize(_startLabel(id, selectedDate, d.startTimeStr))}</td>
                                     <td class="p-3 font-black text-slate-700">${sanitize(displayDuration)}</td>
                                     <td class="p-3 text-gray-500">${sanitize(selectedDate)}</td>
                                     <td class="p-3">${sanitize(taskEn)}</td>
                                     <td class="p-3 font-bold text-amber-700">${Number(d.totalBreakMinutes) || 0} min</td>
                                     <td class="p-3 font-bold">${Number(d.totalRestMinutes) || 0} / 15 min</td>
-                                    <td class="p-3 font-black text-green-600 bg-green-50/20">${Number(d.rating) || 100}%</td>
-                                    <td class="p-3 font-black text-blue-600 bg-blue-50/20">${Number(d.monthlyRating) || 100}%</td>
+                                    <td class="p-3 font-black text-green-600 bg-green-50/20">${d.rating == null ? 100 : (Number(d.rating) || 0)}%</td>
+                                    <td class="p-3 font-black text-blue-600 bg-blue-50/20">${d.monthlyRating == null ? 100 : (Number(d.monthlyRating) || 0)}%</td>
+                                    <td class="p-3 text-slate-400">-</td>
                                  </tr>`;
                     }
                     tableBody.innerHTML = html;
@@ -826,12 +1375,12 @@
                     if (selectedDate === todayStr) {
                         window.refreshLiveAdminTable();
                     } else {
-                        html = `<tr><td colspan="9" class="p-4 text-center text-amber-600 font-bold">⚠️ لا توجد سجلات مؤرشفة محفوظة لهذا التاريخ السـابق (${sanitize(selectedDate)}).</td></tr>`;
+                        html = `<tr><td colspan="10" class="p-4 text-center text-amber-600 font-bold">⚠️ لا توجد سجلات مؤرشفة محفوظة لهذا التاريخ السـابق (${sanitize(selectedDate)}).</td></tr>`;
                         tableBody.innerHTML = html;
                     }
                 }
             } catch (err) {
-                tableBody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-red-600 font-bold">❌ فشل تحميل الأرشيف التاريخي!</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="10" class="p-4 text-center text-red-600 font-bold">❌ فشل تحميل الأرشيف التاريخي!</td></tr>`;
             }
         };
 
@@ -887,9 +1436,7 @@
                     ? `<span id="admin-break-${sanitize(i)}" class="text-red-600 font-black">${tB}:${curBsec} min ▶</span>`
                     : `<span id="admin-break-${sanitize(i)}" class="font-bold text-amber-700">${tB} min</span>`;
 
-                let durationDisplay = d.startTime && d.status !== 'أوف'
-                    ? `<span id="admin-dur-${sanitize(i)}">${duration}</span>`
-                    : `<span id="admin-dur-${sanitize(i)}">${duration}</span>`;
+                let durationDisplay = `<span id="admin-dur-${sanitize(i)}">${duration}</span>`;
 
                 html += `<tr class="border-b" data-emp-id="${sanitize(i)}">
                             <td class="p-3 font-bold text-black">${sanitize(d.name)}</td>
@@ -902,6 +1449,7 @@
 
                             <td class="p-3 font-black text-green-600 bg-green-50/20">${Number(d.rating!==undefined?d.rating:100) || 0}%</td>
                             <td class="p-3 font-black text-blue-600 bg-blue-50/20">${Number(d.monthlyRating!==undefined?d.monthlyRating:100) || 0}%</td>
+                            <td class="p-3 font-black ${(d.hourlyBreaks && d.hourlyBreaks.lateMinutes > 0) ? 'text-red-600' : 'text-slate-400'}">${(d.hourlyBreaks && d.hourlyBreaks.lateDate === getTodayDateString() && d.hourlyBreaks.lateMinutes > 0) ? (Number(d.hourlyBreaks.lateMinutes) + ' min (−' + (Number(d.hourlyBreaks.latePenalty) || 0) + '%)') : '-'}</td>
                          </tr>`;
             }
             tableBody.innerHTML = html;
@@ -984,8 +1532,8 @@
             if (!d) return;
 
             let startStr = d.status === 'أوف' ? "OFF (Day Off)" : (d.startTime ? new Date(d.startTime).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}) : "Absent");
-            let curB = (d.status === 'بريك' ? Math.floor((now - d.lastActionTime) / 60000) : 0);
-            let curR = (d.status === 'راحة' ? Math.floor((now - d.lastActionTime) / 60000) : 0);
+            let curB = (d.status === 'بريك' && d.lastActionTime ? Math.floor((now - d.lastActionTime) / 60000) : 0);
+            let curR = (d.status === 'راحة' && d.lastActionTime ? Math.floor((now - d.lastActionTime) / 60000) : 0);
             let duration = "-";
             if (d.status === 'أوف') {
                 duration = "OFF";
@@ -1054,19 +1602,49 @@
         window.resetMonthlySystem = async () => {
             // ===== SECURITY: متاحة للمسؤول فقط =====
             if (loggedInId !== '__admin__') { alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
+            if (!(await _askPin('تصفير الشهر الجديد'))) return;
             if (confirm("⚠️ هل أنت متأكد من مسح التقييم الشهري؟")) {
                 const { error: mErr } = await supabaseClient.from('alsaree3_employees')
                     .update({ monthly_rating: 100, monthly_history: {} }).not('employee_key', 'is', null);
                 if (mErr) { alert("❌ فشل تصفير الشهر: " + mErr.message); return; }
-                alert("✅ تم تصفير الشهر الجديد!"); location.reload();
+                await resyncEmployees().catch(() => {}); alert("✅ تم تصفير الشهر الجديد!");
             }
         };
 
         // ===== إنهاء اليوم: يحفظ كل شيء ثم يصفر =====
-        window.endOfDay = async () => {
+        const ADMIN_ACTION_PIN = '1975';
+        function askAdminPin(label) {
+            return new Promise(resolve => {
+                const o = document.createElement('div');
+                o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;';
+                o.innerHTML = `<div style="background:#fff;border-radius:24px;padding:28px;width:100%;max-width:340px;direction:rtl;font-family:Cairo,sans-serif;text-align:center;">
+                    <h3 style="font-weight:900;font-size:1.1rem;color:#334155;margin-bottom:12px;">🔐 ${label}</h3>
+                    <input id="admpin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" class="pin-input" placeholder="••••">
+                    <div id="admpin-err" class="error-msg"></div>
+                    <div style="display:flex;gap:8px;margin-top:10px;">
+                        <button id="admpin-ok" class="login-btn" style="padding:12px;">تأكيد</button>
+                        <button id="admpin-cancel" style="flex:1;background:#f1f5f9;border:none;border-radius:18px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">إلغاء</button>
+                    </div></div>`;
+                document.body.appendChild(o);
+                const inp = o.querySelector('#admpin-input'), err = o.querySelector('#admpin-err');
+                const done = ok => { o.remove(); resolve(ok); };
+                const check = () => { if (inp.value === ADMIN_ACTION_PIN) done(true); else { err.textContent = '❌ الرمز غير صحيح'; inp.value = ''; inp.focus(); } };
+                o.querySelector('#admpin-ok').onclick = check;
+                o.querySelector('#admpin-cancel').onclick = () => done(false);
+                inp.addEventListener('keydown', e => { if (e.key === 'Enter') check(); });
+                setTimeout(() => inp.focus(), 50);
+            });
+        }
+
+        window.endOfDay = async (auto = false) => {
+            auto = (auto === true);   // true فقط عند التشغيل التلقائي الساعة 7 مساءً
             // ===== SECURITY: متاحة للمسؤول فقط =====
-            if (loggedInId !== '__admin__') { alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
-            if (!confirm("🌙 هل تريد إنهاء يوم العمل؟\nسيتم حفظ تقرير اليوم وإغلاق دوام جميع الموظفين.")) return;
+            if (loggedInId !== '__admin__') { if (!auto) alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
+            if (auto) {
+                // التلقائي: لا يعمل إلا إذا كان هناك موظف ما زال في دوامه
+                const anyActive = Object.values(employeesData).some(e => ['حضور', 'بريك', 'راحة'].includes(e.status));
+                if (!anyActive) return;
+            } else if (!(await askAdminPin('أدخل الرمز السري لإنهاء اليوم')) || !confirm("🌙 هل تريد إنهاء يوم العمل؟\nسيتم حفظ تقرير اليوم وإغلاق دوام جميع الموظفين.")) return;
 
             const todayStr = getTodayDateString();
             const now = Date.now();
@@ -1081,13 +1659,16 @@
                 let curB = (d.status === 'بريك' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
                 let curR = (d.status === 'راحة' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
                 let currentHourIndex = d.startTime ? Math.floor((now - d.startTime) / 3600000) : 0;
-                let hourlyBreaks = d.hourlyBreaks || {};
+                let hourlyBreaks = JSON.parse(JSON.stringify(d.hourlyBreaks || {}));
                 if (curB > 0) {
                     hourlyBreaks[currentHourIndex] = (hourlyBreaks[currentHourIndex] || 0) + curB;
                     closeUpdates[`employees/${id}/totalBreakMinutes`] = (d.totalBreakMinutes || 0) + curB;
                     closeUpdates[`employees/${id}/hourlyBreaks`] = hourlyBreaks;
                 }
                 if (curR > 0) closeUpdates[`employees/${id}/totalRestMinutes`] = (d.totalRestMinutes || 0) + curR;
+                if (d.status === 'حضور' && d.lastActionTime) {
+                    closeUpdates[`employees/${id}/totalWorkSeconds`] = (d.totalWorkSeconds || 0) + Math.max(0, Math.floor((now - d.lastActionTime) / 1000));
+                }
                 closeUpdates[`employees/${id}/status`] = 'خارج العمل';
                 closeUpdates[`employees/${id}/currentTask`] = 'لا يوجد';
                 closeUpdates[`employees/${id}/lastActionTime`] = null;
@@ -1099,13 +1680,19 @@
             // 2. احفظ تقرير كامل لكل موظف في history
             const freshData = await fetchEmployeesMap();
 
+            let _existingToday = {};
+            try { _existingToday = await fetchHistoryFor(todayStr); } catch (e) { console.warn('[EndOfDay] تعذر قراءة الأرشيف الحالي', e); }
             let historyUpdates = {};
             for (let id in freshData) {
                 let d = freshData[id];
-                let startStr = d.status === 'أوف' ? "OFF" : (d.startTime ? new Date(d.startTime).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : "Absent");
+                // لا تكتب فوق تقرير محفوظ بصفر إذا كان الموظف قد صُفّر مسبقاً (مثلاً بتصفير آخر)
+                const _ex = _existingToday[id];
+                if (_ex && _ex.startTimeStr && _ex.startTimeStr !== 'Absent' && _ex.startTimeStr !== 'لم يحضر' && !d.startTime && d.status !== 'أوف') continue;
+                const _offToday = (d.status === 'أوف') || (!d.startTime && isOffDay(id, todayStr));
+                let startStr = _offToday ? "OFF" : (d.startTime ? new Date(d.startTime).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : "Absent");
                 let duration = "-";
                 let finalWorkSeconds = 0;
-                if (d.status === 'أوف') {
+                if (_offToday) {
                     duration = "OFF";
                 } else if (d.startTime) {
                     // احسب ساعات العمل الفعلية: إجمالي الوقت منذ startTime ناقص البريك والراحة
@@ -1149,7 +1736,7 @@
             await new Promise(r => setTimeout(r, 300));
             await executeFullReset();
 
-            alert(`✅ تم حفظ تقرير ${todayStr} وإنهاء يوم العمل!\nيمكنك الرجوع إليه في أي وقت من لوحة المدير.`);
+            if (!auto) alert(`✅ تم حفظ تقرير ${todayStr} وإنهاء يوم العمل!\nيمكنك الرجوع إليه في أي وقت من لوحة المدير.`);
         };
 
         // مكتبات PDF ثقيلة ولا تُستخدم إلا عند الضغط على زر التحميل — تُحمَّل عند الحاجة فقط
@@ -1172,24 +1759,82 @@
 
         window.downloadPDF = async () => {
             if (loggedInId !== '__admin__') { alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
-            try { await loadPdfLibs(); } catch (e) { alert('❌ تعذر تحميل مكتبة PDF. تحقق من الإنترنت وأعد المحاولة.'); return; }
-            const { jsPDF } = window.jspdf; 
-            const doc = new jsPDF({ orientation: 'landscape' }); // FIX: landscape لأن الجدول عريض
-            const dateVal = document.getElementById('historyDateSelector').value;
-            doc.setFontSize(14);
-            doc.text(`Alsaree3 Morning Call Center - Daily Report: ${dateVal}`, 14, 15);
-            doc.autoTable({ 
-                html: '#reportTable', 
-                startY: 22, 
-                styles: { font: 'Helvetica', fontSize: 9, halign: 'right', cellPadding: 4 },
-                headStyles: { fillColor: [34, 197, 94], textColor: 255, fontStyle: 'bold' },
-                alternateRowStyles: { fillColor: [240, 253, 244] },
-                // FIX: عكس ترتيب الأعمدة لدعم RTL في PDF
-                didParseCell: function(data) {
-                    data.cell.styles.halign = 'right';
-                }
-            });
-            doc.save(`Alsaree3_Report_${dateVal}.pdf`);
+            if (!(await askAdminPin('أدخل الرمز السري لتحميل التقرير'))) return;
+            const today = getTodayDateString();
+            const first = today.slice(0, 8) + '01';
+            const pbtn = 'background:#f1f5f9;border:1px solid #cbd5e1;border-radius:10px;padding:6px 12px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;';
+            _modal('report-range-overlay', '📄 تحميل التقرير', `
+                <div style="display:grid;gap:10px;">
+                    <label style="font-weight:700;">من تاريخ <input type="date" id="rr-from" value="${first}" class="login-select"></label>
+                    <label style="font-weight:700;">إلى تاريخ <input type="date" id="rr-to" value="${today}" class="login-select"></label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button style="${pbtn}" onclick="window._rrPreset('month')">من بداية الشهر حتى اليوم</button>
+                        <button style="${pbtn}" onclick="window._rrPreset('last')">الشهر الماضي</button>
+                        <button style="${pbtn}" onclick="window._rrPreset('today')">اليوم فقط</button>
+                    </div>
+                    <div style="font-size:0.8rem;color:#64748b;font-weight:700;">ملاحظة: بيانات اليوم الحالي تدخل التقرير بعد "إنهاء اليوم وحفظ التقرير".</div>
+                    <div id="rr-msg" class="error-msg"></div>
+                    <button id="rr-go" class="login-btn" onclick="window.generateRangePDF()">⬇️ تحميل PDF</button>
+                </div>`, 520);
+        };
+        window._rrPreset = (kind) => {
+            const t = getTodayDateString(); const [y, m] = t.split('-').map(Number);
+            let from = t.slice(0, 8) + '01', to = t;
+            if (kind === 'last') { from = _ymd(new Date(y, m - 2, 1)); to = _ymd(new Date(y, m - 1, 0)); }
+            if (kind === 'today') from = t;
+            document.getElementById('rr-from').value = from; document.getElementById('rr-to').value = to;
+        };
+        window.generateRangePDF = async () => {
+            if (loggedInId !== '__admin__') return;
+            const msg = document.getElementById('rr-msg'), btn = document.getElementById('rr-go');
+            const from = document.getElementById('rr-from').value, to = document.getElementById('rr-to').value;
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) { msg.textContent = '⚠️ اختر التاريخين'; return; }
+            if (from > to) { msg.textContent = '⚠️ تاريخ البداية بعد النهاية'; return; }
+            if ((new Date(to) - new Date(from)) / 86400000 > 366) { msg.textContent = '⚠️ المدة أطول من سنة'; return; }
+            btn.disabled = true; msg.style.color = '#64748b'; msg.textContent = '⏳ جاري تجهيز التقرير...';
+            try {
+                await loadPdfLibs();
+                await _loadEmpMeta();
+                const { data, error } = await supabaseClient.from('alsaree3_history').select('*')
+                    .gte('history_date', from).lte('history_date', to).order('history_date').order('employee_key').limit(5000);
+                if (error) throw error;
+                const { data: lvRows } = await supabaseClient.from('alsaree3_leave_requests').select('employee_key,kind,start_date,days').eq('status', 'approved');
+                const leaveSet = {};
+                (lvRows || []).forEach(q => { if (q.kind === 'day') _expandDates(q.start_date, q.days).forEach(ds => { (leaveSet[q.employee_key] = leaveSet[q.employee_key] || new Set()).add(ds); }); });
+                const rows = data || [];
+                if (rows.length === 0) { msg.style.color = '#d97706'; msg.textContent = '⚠️ لا توجد سجلات محفوظة في هذه المدة'; btn.disabled = false; return; }
+                const agg = {}, body = [];
+                rows.forEach(r => {
+                    const k = r.employee_key;
+                    const a = agg[k] = agg[k] || { name: r.name || k, days: 0, off: 0, absent: 0, leave: 0, sum: 0, br: 0, rest: 0, secs: 0 };
+                    let st = _startLabel(k, r.history_date, r.start_time_str), rating = '-', hrs = r.total_duration_str || '-';
+                    if (leaveSet[k] && leaveSet[k].has(r.history_date)) { st = 'LEAVE'; a.leave++; hrs = '-'; }
+                    else if (String(st).toUpperCase().startsWith('OFF')) { a.off++; hrs = 'OFF'; }
+                    else if (st === 'Absent' || st === '-') { a.absent++; hrs = '-'; }
+                    else {
+                        a.days++; const rt = (r.rating == null ? 100 : Number(r.rating) || 0); a.sum += rt; rating = rt + '%';
+                        a.br += Number(r.total_break_minutes) || 0; a.rest += Number(r.total_rest_minutes) || 0; a.secs += Number(r.total_work_seconds) || 0;
+                    }
+                    body.push([r.history_date, r.name || k, st, hrs, r.current_task || '-', (Number(r.total_break_minutes) || 0) + ' min', (Number(r.total_rest_minutes) || 0) + ' min', rating]);
+                });
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'landscape' });
+                doc.setFontSize(14);
+                doc.text(`Alsaree3 Morning Call Center - Report: ${from} to ${to}`, 14, 15);
+                const tStyle = { styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [34, 197, 94], textColor: 255, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [240, 253, 244] } };
+                doc.autoTable({ head: [['Date', 'Name', 'Check-In', 'Total Hours', 'Task', 'Break', 'Rest', 'Day Rating']], body, startY: 22, ...tStyle });
+                const sum = Object.values(agg).sort((p, q) => String(p.name).localeCompare(String(q.name))).map(a => [
+                    a.name, a.days, a.off, a.absent, a.leave, a.days ? (Math.round(a.sum / a.days * 10) / 10) + '%' : '-', a.br + ' min', a.rest + ' min', Math.floor(a.secs / 3600) + 'h ' + Math.floor((a.secs % 3600) / 60) + 'm'
+                ]);
+                const y0 = (doc.lastAutoTable && doc.lastAutoTable.finalY ? doc.lastAutoTable.finalY : 22) + 12;
+                doc.setFontSize(12); doc.text('Summary per employee', 14, y0 - 3);
+                doc.autoTable({ head: [['Name', 'Work days', 'OFF', 'Absent', 'Leave', 'Avg Rating', 'Break', 'Rest', 'Work hours']], body: sum, startY: y0, ...tStyle });
+                doc.save(`Alsaree3_Report_${from}_to_${to}.pdf`);
+                msg.style.color = '#16a34a'; msg.textContent = '✅ تم تحميل التقرير';
+            } catch (e) {
+                console.error('[RangePDF]', e); msg.style.color = '#dc2626'; msg.textContent = '❌ فشل إنشاء التقرير';
+            }
+            btn.disabled = false;
         };
 
         // تم حذف دالة البريك التلقائي عند الخمول (autoUpdateStatusToBreak) نهائياً
@@ -1279,6 +1924,16 @@
             }
 
             if (groupPenalty) hourlyBreaks.groupPenalty = (hourlyBreaks.groupPenalty || 0) + groupPenalty;
+            // خصم التأخير: يُحسب مرة واحدة في اليوم عند أول تسجيل حضور
+            let latePenaltyMsg = '';
+            if (status === 'حضور' && !auto && (d.status === 'خارج العمل' || !d.startTime) && hourlyBreaks.lateDate !== today) {
+                await _loadEmpMeta();
+                const lp = calcLatePenalty(id, now);
+                hourlyBreaks.lateDate = today;
+                hourlyBreaks.latePenalty = lp ? lp.points : 0;
+                hourlyBreaks.lateMinutes = lp ? lp.late : 0;
+                if (lp) latePenaltyMsg = '⏰ تأخرت ' + lp.late + ' دقيقة عن بداية الدوام (' + lp.start + ').';
+            }
             // دائماً ضع القيم المحسوبة في الـ updates لضمان عدم فقدانها في السيرفر
             let updates = {
                 status: status,
@@ -1352,7 +2007,11 @@
             // FIX: عرض رسالة تحميل إذا لم تصل البيانات بعد من السيرفر
             if (Object.keys(employeesData).length === 0) {
                 document.getElementById('app').innerHTML = '<div class="col-span-4 text-center py-16 text-gray-400 font-bold text-lg animate-pulse">⏳ جاري تحميل بيانات الموظفين...</div>';
-                setTimeout(() => { if (loggedInId && Object.keys(employeesData).length > 0) render(); }, 1500);
+                setTimeout(() => {
+                    if (!loggedInId) return;
+                    if (Object.keys(employeesData).length > 0) render();
+                    else document.getElementById('app').innerHTML = '<div class="col-span-4 text-center py-16 text-gray-400 font-bold text-lg">لا توجد بيانات موظفين لعرضها.</div>';
+                }, 1500);
                 return;
             }
             let h = "", now = Date.now();
@@ -1369,9 +2028,8 @@
                 let totalTimerHtml = '';
                 if (d.startTime && d.status === 'حضور' && d.lastActionTime) {
                     // عداد حي عند Active فقط — من startTime ناقص كل البريك والراحة المتراكمة
-                    let tB = d.totalBreakMinutes || 0;
-                    let tR = d.totalRestMinutes || 0;
-                    let netSecs = Math.floor((now - d.startTime) / 1000) - (tB * 60) - (tR * 60);
+                    // الوقت المتراكم + الجلسة الحالية (نفس طريقة لوحة المسؤول)
+                    let netSecs = (d.totalWorkSeconds || 0) + Math.max(0, Math.floor((now - d.lastActionTime) / 1000));
                     if (netSecs < 0) netSecs = 0;
                     let th = Math.floor(netSecs / 3600);
                     let tm = Math.floor((netSecs % 3600) / 60);
@@ -1423,7 +2081,7 @@
                 // لا نعرض عداد البريك الساعي لموظف خارج العمل أو في يوم OFF (كانت تظهر بقايا قديمة)
                 if (d.status === 'خارج العمل' || d.status === 'أوف') activeHourBreakTotal = 0;
                 
-                let cR = (d.status === 'راحة') ? Math.floor((now - d.lastActionTime) / 60000) : 0;
+                let cR = (d.status === 'راحة' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
                 let accR = (d.totalRestMinutes || 0) + cR;
 
                 let currentStatusDisplay = d.status;
@@ -1503,12 +2161,10 @@
                         startTime: null, 
                         lastActiveDate: today
                     };
-                    safeUpdateEmployee(id, { 
-                        status: 'خارج العمل', 
-                        lastActionTime: null, 
-                        startTime: null, 
-                        lastActiveDate: today
-                    });
+                    if (!_staleResetAt[id] || Date.now() - _staleResetAt[id] > 15000) {
+                        _staleResetAt[id] = Date.now();
+                        safeUpdateEmployee(id, { status: 'خارج العمل', lastActionTime: null, startTime: null, lastActiveDate: today });
+                    }
                 }
             }
 
@@ -1549,9 +2205,8 @@
 
                 if (d.status === 'حضور' && d.startTime && d.lastActionTime) {
                     // عداد حي — يحسب من startTime ناقص كل البريك والراحة المتراكمة
-                    let tB = d.totalBreakMinutes || 0;
-                    let tR = d.totalRestMinutes || 0;
-                    let netSecs = Math.floor((now - d.startTime) / 1000) - (tB * 60) - (tR * 60);
+                    // الوقت المتراكم + الجلسة الحالية (نفس طريقة لوحة المسؤول)
+                    let netSecs = (d.totalWorkSeconds || 0) + Math.max(0, Math.floor((now - d.lastActionTime) / 1000));
                     if (netSecs < 0) netSecs = 0;
                     let th = Math.floor(netSecs / 3600);
                     let tm = Math.floor((netSecs % 3600) / 60);
