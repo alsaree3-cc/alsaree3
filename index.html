@@ -7,8 +7,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://eygohyybhidlsycblfop.supabase.co" crossorigin>
     <style>
         body { background-color: #e2e8f0; color: #000000; font-family: 'Cairo', sans-serif; min-height: 100vh; padding: 24px; }
         .system-container { background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 32px; padding: 32px; box-shadow: inset 0 2px 4px 0 rgba(255, 255, 255, 0.5), 0 20px 25px -5px rgba(0, 0, 0, 0.05); }
@@ -1013,8 +1013,27 @@
             alert(`✅ تم حفظ تقرير ${todayStr} وإنهاء يوم العمل!\nيمكنك الرجوع إليه في أي وقت من لوحة المدير.`);
         };
 
-        window.downloadPDF = () => {
+        // مكتبات PDF ثقيلة ولا تُستخدم إلا عند الضغط على زر التحميل — تُحمَّل عند الحاجة فقط
+        function _loadScript(src) {
+            return new Promise((res, rej) => {
+                const el = document.createElement('script');
+                el.src = src; el.onload = res; el.onerror = () => rej(new Error('تعذر تحميل ' + src));
+                document.head.appendChild(el);
+            });
+        }
+        let _pdfLibsPromise = null;
+        function loadPdfLibs() {
+            if (!_pdfLibsPromise) {
+                _pdfLibsPromise = _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+                    .then(() => _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js'))
+                    .catch(e => { _pdfLibsPromise = null; throw e; });
+            }
+            return _pdfLibsPromise;
+        }
+
+        window.downloadPDF = async () => {
             if (loggedInId !== '__admin__') { alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
+            try { await loadPdfLibs(); } catch (e) { alert('❌ تعذر تحميل مكتبة PDF. تحقق من الإنترنت وأعد المحاولة.'); return; }
             const { jsPDF } = window.jspdf; 
             const doc = new jsPDF({ orientation: 'landscape' }); // FIX: landscape لأن الجدول عريض
             const dateVal = document.getElementById('historyDateSelector').value;
@@ -1224,6 +1243,8 @@
                     }
                 }
                 let activeHourBreakTotal = (hourlyBreaks[currentHourIndex] || 0) + cB;
+                // لا نعرض عداد البريك الساعي لموظف خارج العمل أو في يوم OFF (كانت تظهر بقايا قديمة)
+                if (d.status === 'خارج العمل' || d.status === 'أوف') activeHourBreakTotal = 0;
                 
                 let cR = (d.status === 'راحة') ? Math.floor((now - d.lastActionTime) / 60000) : 0;
                 let accR = (d.totalRestMinutes || 0) + cR;
@@ -1388,7 +1409,7 @@
                 // تحديث عداد البريك الساعي (كل ساعة = 5 دقائق مسموح)
                 const hourBreakEl = document.getElementById('hourbreak-' + i);
                 const accRestEl = document.getElementById('accrest-' + i);
-                if (hourBreakEl && d.startTime) {
+                if (hourBreakEl && d.startTime && d.status !== 'خارج العمل' && d.status !== 'أوف') {
                     // رقم الساعة الحالية من وقت Check-In
                     const HOUR_MS = 60 * 60 * 1000;
                     let currentHourIdx = Math.floor((now - d.startTime) / HOUR_MS);
