@@ -6,7 +6,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'">
     <meta name="referrer" content="no-referrer">
-    <title>Alsaree3 - Digital Monitoring System v6.3</title>
+    <title>Alsaree3 - Digital Monitoring System v6.4</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
@@ -51,7 +51,7 @@
 <body>
 
     <!-- شاشة تسجيل الدخول -->
-    <div id="ver-badge" style="position:fixed;bottom:6px;left:8px;z-index:10000;font:11px monospace;color:#64748b;background:#ffffffcc;padding:2px 6px;border-radius:6px;">v6.3</div>
+    <div id="ver-badge" style="position:fixed;bottom:6px;left:8px;z-index:10000;font:11px monospace;color:#64748b;background:#ffffffcc;padding:2px 6px;border-radius:6px;">v6.4</div>
     <div id="login-screen">
         <div class="login-card">
             <div class="text-center mb-8">
@@ -97,6 +97,8 @@
         const WORK_LOCATION = { lat: 33.293117, lng: 44.433205 };   // موقع العمل
         const WORK_RADIUS_METERS = 1000;                  // أقصى مسافة مسموحة لتسجيل الحضور (1 كم)
         // المجموعات: كل مجموعة قائمة بمفاتيح الموظفين (employee_key). الموظفون غير المذكورين يُعتبرون في مجموعة واحدة مشتركة.
+        const MAX_BREAK_MINUTES = 15;   // البريك ينتهي تلقائياً بعد هذه المدة (غيّر الرقم أو ضع 0 للتعطيل)
+        const MAX_REST_MINUTES = 20;    // الراحة تنتهي تلقائياً بعد هذه المدة (0 للتعطيل)
         const BREAK_GROUPS = [];                          // مثال: [['ahmed','ali','sara'], ['omar','huda']]
         const BLOCK_BREAK_IF_GROUP_BUSY = true;           // true = منع البريك | false = السماح مع خصم من التقييم
         const GROUP_BREAK_PENALTY_POINTS = 5;             // الخصم عند بريك أثناء بريك زميل (يُطبق فقط إذا BLOCK = false)
@@ -1196,7 +1198,7 @@
             return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
         }
 
-        window.updateStatus = async (id, status) => {
+        window.updateStatus = async (id, status, auto) => {
             // ===== SECURITY: السماح بحالات معروفة فقط وموظف موجود فقط =====
             if (!['حضور','بريك','راحة','أوف','خارج العمل'].includes(status)) return;
             if (!employeesData[id]) return;
@@ -1211,7 +1213,7 @@
 
             // ===== قاعدة الموقع: تسجيل الحضور فقط ضمن 1 كم من موقع العمل (المسؤول مستثنى) =====
             const isRealCheckIn = (status === 'حضور') && (d.status === 'خارج العمل' || d.status === 'أوف' || !d.startTime);
-            if (!isAdmin && isRealCheckIn) {
+            if (!isAdmin && isRealCheckIn && !auto) {
                 const loc = await verifyWorkLocation();
                 if (!loc.ok) { alert('📍 ' + loc.msg); return; }
             }
@@ -1230,7 +1232,7 @@
                 }
             }
             // بريك/راحة يتطلب أن يكون الموظف في حالة حضور (وإلا يصبح startTime فارغاً ويتعلق العداد)
-            if ((status === 'بريك' || status === 'راحة') && !d.startTime) {
+            if (!auto && (status === 'بريك' || status === 'راحة') && !d.startTime) {
                 alert('⚠️ يجب تسجيل Check-In أولاً قبل أخذ ' + (status === 'بريك' ? 'بريك' : 'راحة') + '.');
                 return;
             }
@@ -1451,6 +1453,7 @@
                         </div>
                         <div class="block mb-2 text-xs font-bold text-black text-right pr-1">الإجراءات (Actions):</div>
                         <div class="grid grid-cols-2 gap-3">
+                            ${(d.status === 'بريك' || d.status === 'راحة') ? `<button onclick="window.updateStatus('${escId}', 'حضور')" class="col-span-2 py-3 rounded-2xl bg-green-500 hover:bg-green-600 text-white font-black text-base">✅ إنهاء ${d.status === 'بريك' ? 'البريك' : 'الراحة'} والعودة للعمل</button>` : ''}
                             <button onclick="window.updateStatus('${escId}', 'بريك')" class="btn-opt ${d.status === 'بريك' ? 'bg-red-200 border-red-500 font-black' : ''} text-black">Break</button>
                             <button onclick="window.updateStatus('${escId}', 'راحة')" class="btn-opt ${d.status === 'راحة' ? 'bg-orange-200 border-orange-400 font-black' : ''} text-black">Rest (15m)</button>
                             <button onclick="window.updateStatus('${escId}', 'حضور')" class="btn-opt ${d.status === 'حضور' ? 'bg-green-200 border-green-500 font-black' : ''} text-black">Check-In</button>
@@ -1634,6 +1637,27 @@
             updateTimers();
             updateAdminTableTimers();
         }, 1000);
+
+        // ===== إنهاء البريك/الراحة العالقة تلقائياً =====
+        const _autoEnded = {};
+        function autoEndStuckBreaks() {
+            if (!loggedInId) return;
+            const now = Date.now(), isAdmin = (loggedInId === '__admin__');
+            for (const id in employeesData) {
+                if (!isAdmin && id !== loggedInId) continue;     // كل جهاز ينهي بطاقته فقط، والمسؤول ينهي الجميع
+                const d = employeesData[id];
+                if (!d || !d.lastActionTime) continue;
+                const mins = (now - d.lastActionTime) / 60000;
+                const over = (d.status === 'بريك' && MAX_BREAK_MINUTES > 0 && mins >= MAX_BREAK_MINUTES)
+                          || (d.status === 'راحة' && MAX_REST_MINUTES > 0 && mins >= MAX_REST_MINUTES);
+                if (!over) continue;
+                if (_autoEnded[id] && now - _autoEnded[id] < 60000) continue;   // لا تكرر قبل دقيقة
+                _autoEnded[id] = now;
+                console.log('[Auto-End]', id, d.status, Math.round(mins) + ' min');
+                window.updateStatus(id, 'حضور', true);
+            }
+        }
+        setInterval(autoEndStuckBreaks, 5000);
 
         // backup والـ cron كل 10 ثواني — لا حاجة لإرسالها كل ثانية
         setInterval(() => {
