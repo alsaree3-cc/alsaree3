@@ -2,9 +2,11 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'">
     <meta name="referrer" content="no-referrer">
-    <title>Alsaree3 - Digital Monitoring System v6 (Supabase)</title>
+    <title>Alsaree3 - Digital Monitoring System v6.3</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
@@ -49,6 +51,7 @@
 <body>
 
     <!-- شاشة تسجيل الدخول -->
+    <div id="ver-badge" style="position:fixed;bottom:6px;left:8px;z-index:10000;font:11px monospace;color:#64748b;background:#ffffffcc;padding:2px 6px;border-radius:6px;">v6.3</div>
     <div id="login-screen">
         <div class="login-card">
             <div class="text-center mb-8">
@@ -451,12 +454,16 @@
             errorEl.textContent = '';
             if (!username) { errorEl.textContent = '⚠️ أدخل اسم المستخدم'; return; }
             if (!password) { errorEl.textContent = '⚠️ أدخل كلمة المرور'; return; }
+            const _t0 = performance.now(), _T = [];
+            const _mark = n => { _T.push(n + ' ' + Math.round(performance.now() - _t0) + 'ms'); const el = document.getElementById('login-timing'); if (el) el.textContent = '⏱ ' + _T.join(' → '); };
+            if (!document.getElementById('login-timing')) errorEl.insertAdjacentHTML('afterend', '<div id="login-timing" style="font:11px monospace;color:#64748b;margin-bottom:8px;direction:ltr;text-align:left"></div>');
             btn.disabled = true; btn.textContent = 'جاري التحقق...';
             const resetBtn = () => { btn.disabled = false; btn.textContent = 'دخول ←'; };
 
             // إذا كتب بريده الحقيقي كامل (يحتوي على @) استخدمه كما هو — مخصص لحساب المسؤول
             const email = username.includes('@') ? username : `${username}@alsaree3.local`;
             const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            _mark('auth');
             if (error) {
                 console.error(error);
                 errorEl.textContent = '❌ اسم المستخدم أو كلمة المرور غير صحيحة';
@@ -472,6 +479,7 @@
                 .eq('id', data.user.id)
                 .single();
 
+            _mark('profile');
             if (profileError || !profile) {
                 console.error(profileError);
                 errorEl.textContent = '❌ لا يوجد حساب موظف مرتبط بهذا المستخدم';
@@ -483,6 +491,7 @@
             try {
                 loggedInId = (profile.role === 'admin') ? '__admin__' : profile.employee_key;
                 _serverEmployees = await employeesPromise;
+                _mark('employees');
                 employeesData = _snapshotClone();
                 subscribeEmployees(true);
                 // التصفير التعويضي يعمل بالخلفية حتى لا يبطّئ الدخول، ثم نحدّث البيانات إن حصل تصفير
@@ -527,6 +536,8 @@
             }
 
             render();
+            _mark('render');
+            console.log('[Login timing]', _T.join(' → '));
             if (loggedInId === '__admin__') setTimeout(() => window.openAdmin(), 300);
         };
 
@@ -1303,6 +1314,7 @@
             updates.rating = employeesData[id].rating;
             render();
             safeUpdateEmployee(id, updates).then((res) => {
+                console.log('[Save]', id, status, res);
                 _settlePending(id, _seq, res);
                 if (res && res.ok) backupCurrentDataToHistory(id);
             });
