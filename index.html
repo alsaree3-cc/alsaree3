@@ -26,6 +26,22 @@
         .card-box.off-active { background-color: #eff6ff; border-color: #bfdbfe; }
         .btn-opt { background: #ffffff; color: #000000; font-size: 0.95rem; padding: 12px; border-radius: 14px; font-weight: 700; width: 100%; border: 1px solid #cbd5e1; cursor: pointer; transition: background 0.2s; }
         .btn-opt:hover { border-color: #22c55e; }
+        /* أزرار الطلبات المصغّرة */
+        .tk-row { display:flex; gap:8px; margin-bottom:12px; }
+        .tk-btn { flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:7px 10px; border-radius:12px; font-size:0.82rem; font-weight:800; line-height:1.2; border:1px solid transparent; cursor:pointer; font-family:inherit; transition:transform .12s, background .15s, opacity .15s; }
+        .tk-btn:active { transform:scale(.96); }
+        .tk-btn.busy { opacity:.55; pointer-events:none; }
+        .tk-in { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+        .tk-in:hover { background:#dbeafe; }
+        .tk-ok { background:#f0fdf4; color:#15803d; border-color:#bbf7d0; }
+        .tk-ok:hover { background:#dcfce7; }
+        .tk-ok:disabled { background:#f1f5f9; color:#94a3b8; border-color:#e2e8f0; cursor:not-allowed; transform:none; }
+        .tk-badge { background:#16a34a; color:#fff; border-radius:999px; min-width:18px; padding:0 6px; font-size:0.7rem; font-weight:900; }
+        .tk-input { flex:1; min-width:0; padding:7px 10px; border-radius:12px; border:1px solid #cbd5e1; background:#fff; font-family:inherit; font-size:0.85rem; font-weight:700; color:#0f172a; direction:ltr; text-align:center; }
+        .tk-input:focus { outline:none; border-color:#f59e0b; box-shadow:0 0 0 2px #fde68a; }
+        .tk-wa { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+        .tk-wa:hover { background:#d1fae5; }
+        .tk-stat { text-align:center; font-size:0.72rem; font-weight:800; color:#64748b; margin:-4px 0 12px; }
         .task-btn { background: #ffffff; border: 1px solid #cbd5e1; color: #000000; padding: 12px 8px; border-radius: 14px; font-size: 0.9rem; font-weight: 700; width: 100%; cursor: pointer; transition: all 0.2s; }
         .task-btn:hover { border-color: #22c55e; }
         .task-btn.active { background: #22c55e; color: #ffffff !important; border-color: #22c55e; }
@@ -803,10 +819,11 @@
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                     <button id="leave-admin-btn" onclick="window.openLeaveAdmin()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-purple-50 border-purple-200 text-purple-800 hover:bg-purple-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📥</span><span class="text-sm leading-tight text-center">طلبات الإجازة والإذن</span><span id="leave-badge" class="hidden absolute top-2 left-2 bg-red-600 text-white text-xs font-black rounded-full px-2 py-0.5">0</span></button>
                     <button  onclick="window.openMonthSummary()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📊</span><span class="text-sm leading-tight text-center">ملخص الشهر ونسبة الموظفين</span></button>
+                    <button  onclick="window.openScoreCard()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">🏆</span><span class="text-sm leading-tight text-center">بطاقة الأداء وترتيب الموظفين</span></button>
                     <button  onclick="window.downloadPDF()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-green-50 border-green-200 text-green-800 hover:bg-green-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📄</span><span class="text-sm leading-tight text-center">تحميل التقرير PDF</span></button>
                     <button  onclick="window.openAddEmployee()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">➕</span><span class="text-sm">إضافة موظف</span></button>
                     <button  onclick="window.openDeviceLog()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📱</span><span class="text-sm leading-tight text-center">سجل الأجهزة والدخول</span></button>
-                    <button  onclick="window.openTickets()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📋</span><span class="text-sm leading-tight text-center">مهام واتساب والردود</span></button>
+                    <button  onclick="window.openTickets()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📋</span><span class="text-sm leading-tight text-center">مهام واتساب والردود</span><span id="tickets-badge" class="hidden absolute top-2 left-2 bg-red-600 text-white text-xs font-black rounded-full px-2 py-0.5">0</span></button>
                 </div>
 
                 <div class="overflow-x-auto rounded-2xl border border-slate-200 mb-5">
@@ -1202,6 +1219,7 @@
             if (!data || data.length === 0) alert('⚠️ هذا الطلب تم البت فيه مسبقاً');
             window._lvAdminLoad();
             window.refreshLeaveBadge();
+            if (status === 'approved') autoWaiveLeaveLate().catch(() => {});
         };
 
         window.openMonthSummary = async () => {
@@ -1263,8 +1281,9 @@
                     if (_ls && _ls.has(r.history_date)) return;   // يوم إجازة معتمدة: لا يدخل في النسبة
                     const st = String(r.start_time_str || '');
                     if (st === 'EXCLUDED') return;   // يوم مستثنى من التقييم: لا يدخل في أي حساب
+                    if (isOffDay(r.employee_key, r.history_date)) { a.off++; return; }   // الأوف الأسبوعي: لا يؤثر على النسبة
                     if (st.toUpperCase().startsWith('OFF')) { a.off++; return; }
-                    if (!st || st === 'Absent' || st === 'لم يحضر') { if (isOffDay(r.employee_key, r.history_date)) a.off++; else a.absent++; return; }
+                    if (!st || st === 'Absent' || st === 'لم يحضر') { if (r.history_date === getTodayDateString()) return; if (isOffDay(r.employee_key, r.history_date)) a.off++; else a.absent++; return; }
                     a.days++;
                     a.sum += (r.rating == null ? 100 : Number(r.rating) || 0);
                     a.br += Number(r.total_break_minutes) || 0;
@@ -1295,6 +1314,186 @@
             } catch (e) {
                 console.error('[MonthSummary]', e);
                 box.innerHTML = '<p style="color:#dc2626;">❌ فشل تحميل ملخص الشهر</p>';
+            }
+        };
+
+        // ===== بطاقة الأداء الشهرية (للمسؤول): درجة من 100 بأوزان قابلة للتعديل =====
+        const SC_WEIGHTS = { att: 50, brk: 30, tkt: 10, hrs: 10 };   // المجموع = 100
+        const SC_BREAK_ALLOW_PER_HOUR_MIN = 5;   // مسموح البريك: 5 دقائق لكل ساعة عمل فعلية
+        const SC_REST_ALLOW_MIN = 15;     // مسموح الاستراحة يومياً (دقيقة)
+        const SC_DAILY_HOURS = 8;         // ساعات العمل المطلوبة يومياً
+        function _scParseMin(str) {
+            const m = String(str || '').match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+            if (!m) return null;
+            let h = Number(m[1]); const mi = Number(m[2]); const ap = (m[3] || '').toUpperCase();
+            if (ap === 'PM' && h < 12) h += 12; if (ap === 'AM' && h === 12) h = 0;
+            return h * 60 + mi;
+        }
+        // إذن زمني معتمد يغطي بداية الدوام: يُنقل وقت الدوام الفعلي إلى نهاية الإذن (فلا يُحتسب تأخير)
+        function _scExcuseTo(perms, sm) {
+            let to = null;
+            (perms || []).forEach(p => {
+                if (p.from <= sm + LATE_GRACE_MIN && p.to > sm) to = Math.max(to === null ? 0 : to, p.to);
+            });
+            return to;
+        }
+        function _scDayPunctuality(id, st, perms) {
+            const shift = getShiftStart(id); if (!shift) return null;
+            let sm = _scParseMin(shift); const am = _scParseMin(st); if (sm === null || am === null) return null;
+            const ex = _scExcuseTo(perms, sm); if (ex !== null) sm = ex;
+            let late = am - sm; if (late < -720) late += 1440; if (late > 720) late -= 1440;
+            if (late <= LATE_GRACE_MIN) return 100;
+            const pts = Math.min(LATE_MAX_POINTS, LATE_BASE_POINTS + LATE_EXTRA_POINTS * Math.floor((late - LATE_GRACE_MIN) / LATE_EXTRA_STEP_MIN));
+            return 100 - pts;
+        }
+        function _scTicketScore(t) {
+            if (t.kind === 'accept') return null;
+            if (!t.solved_at) return 0;
+            const mins = _minsBetween(t.created_at, t.solved_at);
+            return mins <= TICKET_SOLVE_LIMIT_MIN ? 100 : Math.max(0, Math.round(100 - (mins - TICKET_SOLVE_LIMIT_MIN) * 100 / 45));
+        }
+        // مسامحة تلقائية من التأخير لمن عنده إجازة/إذن معتمد يغطي دوامه اليوم (تعمل عندما يكون المسؤول فاتحاً التطبيق)
+        const _lateWaiveTried = {};
+        async function autoWaiveLeaveLate() {
+            if (loggedInId !== '__admin__') return;
+            const today = getTodayDateString();
+            const cands = Object.keys(employeesData).filter(k => {
+                const hb = employeesData[k].hourlyBreaks || {};
+                return hb.lateDate === today && Number(hb.lateMinutes) > 0 && !hb.lateWaived && !_lateWaiveTried[k + today];
+            });
+            if (!cands.length) return;
+            const { data: rows, error } = await supabaseClient.from('alsaree3_leave_requests')
+                .select('employee_key,kind,start_date,days,from_time,to_time').eq('status', 'approved').in('employee_key', cands);
+            if (error || !rows) return;
+            await _loadEmpMeta();
+            for (const k of cands) {
+                const sm = _scParseMin(getShiftStart(k));
+                const covered = rows.some(q => {
+                    if (q.employee_key !== k) return false;
+                    if (q.kind === 'day') return _expandDates(q.start_date, q.days).includes(today);
+                    if (q.start_date !== today || sm === null) return false;
+                    const f = _scParseMin(q.from_time), t = _scParseMin(q.to_time);
+                    return f !== null && t !== null && f <= sm + LATE_GRACE_MIN && t > sm;
+                });
+                if (!covered) continue;
+                _lateWaiveTried[k + today] = true;
+                const { data, error: e2 } = await supabaseClient.rpc('alsaree3_waive_late', { p_key: k });
+                if (!e2) { _applyServerRow(k, data); if (typeof window.refreshLiveAdminTable === 'function') window.refreshLiveAdminTable(); }
+            }
+        }
+        window.openScoreCard = () => {
+            if (loggedInId !== '__admin__') return;
+            const old = document.getElementById('score-overlay'); if (old) old.remove();
+            const ym = getTodayDateString().slice(0, 7);
+            const o = document.createElement('div');
+            o.id = 'score-overlay';
+            o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+            o.innerHTML = '<div style="background:#fff;border-radius:24px;padding:24px;width:100%;max-width:980px;max-height:88vh;overflow:auto;direction:rtl;font-family:Cairo,sans-serif;">'
+                + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">'
+                + '<h2 style="font-size:1.3rem;font-weight:900;color:#334155;">🏆 بطاقة الأداء الشهرية</h2>'
+                + '<div style="display:flex;gap:10px;align-items:center;"><input type="month" value="' + ym + '" onchange="window.loadScoreCard(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
+                + '<button onclick="document.getElementById(\'score-overlay\').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:8px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button></div></div>'
+                + '<div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:12px;line-height:1.7;">الأوزان: الحضور والتأخير ' + SC_WEIGHTS.att + '% · البريك والاستراحة ' + SC_WEIGHTS.brk + '% · سرعة حل الطلبات ' + SC_WEIGHTS.tkt + '% · ساعات الحضور ' + SC_WEIGHTS.hrs + '%.<br>لا تُحتسب: أيام OFF، والإجازات المعتمدة، والأيام المستثناة، وغياب اليوم الحالي. الإذن الزمني المعتمد لا يُحتسب تأخيراً ويُخصم من الساعات المطلوبة ويُضاف لوقت البريك المسموح. ساعات اليوم الحالي لا تدخل في الحساب حتى ينتهي اليوم. أي معيار ليس له بيانات يُعاد توزيع وزنه على الباقي.</div>'
+                + '<div id="score-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div></div>';
+            document.body.appendChild(o);
+            window.loadScoreCard(ym);
+        };
+        window.loadScoreCard = async (ym) => {
+            if (loggedInId !== '__admin__') return;
+            if (!/^\d{4}-\d{2}$/.test(String(ym))) return;
+            const box = document.getElementById('score-content'); if (!box) return;
+            box.style.cssText = 'text-align:center;color:#94a3b8;font-weight:700;padding:20px;';
+            box.innerHTML = '⏳ جاري الحساب...';
+            const [y, m] = ym.split('-').map(Number);
+            const start = ym + '-01', lastDay = new Date(y, m, 0).getDate();
+            const end = ym + '-' + String(lastDay).padStart(2, '0');
+            const today = getTodayDateString();
+            try {
+                const { data, error } = await supabaseClient.from('alsaree3_history').select('*').gte('history_date', start).lte('history_date', end).order('history_date').limit(5000);
+                if (error) throw error;
+                await _loadEmpMeta();
+                const { data: lvRows } = await supabaseClient.from('alsaree3_leave_requests').select('employee_key,kind,start_date,days,hours,from_time,to_time').eq('status', 'approved');
+                const leaveSet = {}, permByDay = {};
+                (lvRows || []).forEach(q => {
+                    if (q.kind === 'day') _expandDates(q.start_date, q.days).forEach(ds => { if (ds >= start && ds <= end) (leaveSet[q.employee_key] = leaveSet[q.employee_key] || new Set()).add(ds); });
+                    else if (q.start_date >= start && q.start_date <= end) {
+                        const f = _scParseMin(q.from_time), t = _scParseMin(q.to_time);
+                        if (f !== null && t !== null && t > f) {
+                            const km = (permByDay[q.employee_key] = permByDay[q.employee_key] || {});
+                            (km[q.start_date] = km[q.start_date] || []).push({ from: f, to: t, mins: t - f });
+                        }
+                    }
+                });
+                const blank = name => ({ name, days: 0, absent: 0, punct: [], brkDay: [], hrDays: 0, hrSecs: 0, hrPermMin: 0 });
+                const agg = {};
+                Object.keys(employeesData).forEach(k => { agg[k] = blank(employeesData[k].name); });
+                (data || []).forEach(r => {
+                    const k = r.employee_key;
+                    const a = agg[k] = agg[k] || blank(r.name);
+                    if (r.name) a.name = r.name;
+                    const ls = leaveSet[k]; if (ls && ls.has(r.history_date)) return;
+                    if (isOffDay(k, r.history_date)) return;   // الأوف الأسبوعي: لا يزيد ولا ينقص (حتى لو داوم)
+                    const st = String(r.start_time_str || '');
+                    if (st === 'EXCLUDED' || st.toUpperCase().startsWith('OFF')) return;
+                    const isToday = r.history_date === today;
+                    if (!st || st === 'Absent' || st === 'لم يحضر') {
+                        if (isToday) return;   // اليوم الحالي لم ينتهِ: لا يُعدّ غياباً
+                        if (!isOffDay(k, r.history_date)) a.absent++;
+                        return;
+                    }
+                    const perms = (permByDay[k] || {})[r.history_date] || [];
+                    const permMin = perms.reduce((s, p) => s + p.mins, 0);
+                    a.days++;
+                    const p = _scDayPunctuality(k, st, perms); if (p !== null) a.punct.push(p);
+                    const secs = Number(r.total_work_seconds) || 0;
+                    const used = (Number(r.total_break_minutes) || 0) + (Number(r.total_rest_minutes) || 0);
+                    const allow = SC_BREAK_ALLOW_PER_HOUR_MIN * (secs / 3600) + SC_REST_ALLOW_MIN + permMin;
+                    a.brkDay.push(used <= allow ? 100 : Math.max(0, 100 - (used - allow) / allow * 100));
+                    if (!isToday) { a.hrDays++; a.hrSecs += secs; a.hrPermMin += permMin; }   // ساعات اليوم الحالي ناقصة: لا تُحتسب بعد
+                });
+                // الطلبات: استدعاء يوم بيوم (بالتوازي) حتى اليوم الحالي
+                const tk = {}; let tkOk = true;
+                const dates = []; for (let d = 1; d <= lastDay; d++) { const ds = ym + '-' + String(d).padStart(2, '0'); if (ds <= today) dates.push(ds); }
+                const res = await Promise.all(dates.map(ds => supabaseClient.rpc('alsaree3_tickets_admin', { p_date: ds }).then(r => ({ ds, r })).catch(() => ({ ds, r: { error: true } }))));
+                res.forEach(({ ds, r }) => {
+                    if (r.error) { tkOk = false; return; }
+                    (r.data || []).forEach(t => {
+                        if (!t.solved_at && ds === today) return;   // طلب اليوم المفتوح لم ينتهِ وقته بعد
+                        const sc = _scTicketScore(t); if (sc === null) return;
+                        (tk[t.employee_key] = tk[t.employee_key] || []).push(sc);
+                    });
+                });
+                const avg = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+                const rows = Object.entries(agg).filter(([k, a]) => a.days > 0 || a.absent > 0).map(([k, a]) => {
+                    const punct = avg(a.punct) === null ? 100 : avg(a.punct);
+                    const att = (a.days + a.absent) > 0 ? punct * (a.days / (a.days + a.absent)) : null;
+                    const brk = avg(a.brkDay);
+                    const reqSecs = a.hrDays * SC_DAILY_HOURS * 3600 - a.hrPermMin * 60;
+                    const hrs = a.hrDays > 0 ? Math.min(100, a.hrSecs / Math.max(3600, reqSecs) * 100) : null;
+                    const tkt = tkOk ? avg(tk[k] || []) : null;
+                    const comps = { att, brk, tkt, hrs };
+                    let ws = 0, tot = 0;
+                    Object.keys(SC_WEIGHTS).forEach(c => { if (comps[c] !== null) { ws += SC_WEIGHTS[c]; tot += comps[c] * SC_WEIGHTS[c]; } });
+                    return { name: a.name || k, att, brk, tkt, hrs, total: ws ? tot / ws : 0, days: a.days, absent: a.absent };
+                }).sort((p, q) => q.total - p.total);
+                if (rows.length === 0) { box.innerHTML = '<p>لا توجد بيانات لهذا الشهر.</p>'; return; }
+                const c = v => v === null ? '#64748b' : v >= 90 ? '#16a34a' : v >= 75 ? '#d97706' : '#dc2626';
+                const f = v => v === null ? '-' : Math.round(v) + '%';
+                const medals = ['🥇', '🥈', '🥉'];
+                let html = '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
+                    + ['#', 'الموظف', 'الدرجة النهائية', 'الحضور والتأخير', 'البريك والاستراحة', 'سرعة الطلبات', 'ساعات الحضور', 'أيام/غياب'].map(h => '<th style="padding:10px;">' + h + '</th>').join('') + '</tr></thead><tbody>';
+                rows.forEach((r, i) => {
+                    html += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + (medals[i] || (i + 1)) + '</td>'
+                        + '<td style="padding:9px;font-weight:900;">' + sanitize(r.name) + '</td>'
+                        + '<td style="padding:9px;font-weight:900;font-size:1.1rem;color:' + c(r.total) + ';">' + Math.round(r.total) + '</td>'
+                        + [r.att, r.brk, r.tkt, r.hrs].map(v => '<td style="padding:9px;font-weight:800;color:' + c(v) + ';">' + f(v) + '</td>').join('')
+                        + '<td style="padding:9px;direction:ltr;text-align:right;">' + r.days + ' / ' + r.absent + '</td></tr>';
+                });
+                box.style.cssText = 'padding:0;color:#000;';
+                box.innerHTML = html + '</tbody></table>' + (tkOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل الطلبات، فحُسبت الدرجة بدون معيار الطلبات.</p>');
+            } catch (e) {
+                console.error('[ScoreCard]', e);
+                box.innerHTML = '<p style="color:#dc2626;">❌ فشل تحميل بطاقة الأداء</p>';
             }
         };
 
@@ -1461,7 +1660,7 @@
                 if (error) throw error;
                 let h = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;"><span style="font-weight:800;">📅 التاريخ</span>'
                       + '<input type="date" value="' + sanitize(date) + '" onchange="window.openTickets(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;"></div>'
-                      + '<div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:10px;">الخصم من تقييم اليوم عند إغلاقه الساعة 7: تأخر القراءة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د = 1، وتأخر الحل أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د أو عدم الحل = 2.</div>';
+                      + '<div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:10px;">الخصم من تقييم اليوم عند إغلاقه الساعة 7: تأخر القراءة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د = 1، وتأخر الحل أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د أو عدم الحل = 2 (على مهامك 📨 فقط). ومكافأة +1 لكل رسالة واتساب يحلّها الموظف (حتى +10) والتقييم لا يتجاوز 100.</div>';
                 const _st = {};
                 (data || []).filter(t => t.kind === 'self').forEach(t => {
                     const a = _st[t.employee_key] = _st[t.employee_key] || { n: 0, solved: 0, mins: 0 };
@@ -1473,6 +1672,14 @@
                     h += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:10px 14px;margin-bottom:12px;font-weight:800;color:#1e40af;">✅ الطلبات المقبولة (الإجمالي ' + _acTotal + '):<br>'
                        + Object.keys(_ac).sort((x, y) => _ac[y] - _ac[x]).map(k => sanitize(employeesData[k] ? employeesData[k].name : k) + ': ' + _ac[k]).join('<br>') + '</div>';
                 }
+                try {
+                    const { data: dp } = await supabaseClient.rpc('alsaree3_dispatch_admin', { p_date: date });
+                    if (dp && dp.length) {
+                        const g = {}; dp.forEach(x => { (g[x.employee_key] = g[x.employee_key] || []).push(x); });
+                        h += '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:14px;padding:10px 14px;margin-bottom:12px;font-weight:800;color:#92400e;">🚴 الطلبات الموزّعة يدوياً (الإجمالي ' + dp.length + '):<br>'
+                           + Object.keys(g).map(k => sanitize(employeesData[k] ? employeesData[k].name : k) + ': ' + g[k].length + ' — ' + g[k].map(x => sanitize(String(x.order_no))).join('، ')).join('<br>') + '</div>';
+                    }
+                } catch (e) {}
                 data = (data || []).filter(t => t.kind !== 'accept');
                 const _stKeys = Object.keys(_st);
                 if (_stKeys.length) {
@@ -1504,6 +1711,32 @@
             }
         };
 
+        // ----- جهة المسؤول: متابعة الرسائل المفتوحة/المحلولة لكل موظف (تحديث كل 30 ثانية) -----
+        window._adminTk = [];
+        function _tkLabel(id) {
+            const mine = (window._adminTk || []).filter(t => t.employee_key === id && t.kind === 'self');
+            if (mine.length === 0) return '';
+            const open = mine.filter(t => !t.solved_at).length, done = mine.length - open;
+            return '<div style="font-size:.75rem;font-weight:900;margin-bottom:4px;">'
+                 + (open ? '<span style="color:#dc2626;">📩 ' + open + ' مفتوحة</span> ' : '')
+                 + (done ? '<span style="color:#16a34a;">✅ ' + done + ' حُلّت</span>' : '') + '</div>';
+        }
+        async function pollAdminTickets() {
+            if (loggedInId !== '__admin__') return;
+            try {
+                const { data, error } = await supabaseClient.rpc('alsaree3_tickets_admin', { p_date: getTodayDateString() });
+                if (error) return;
+                window._adminTk = data || [];
+                autoWaiveLeaveLate().catch(() => {});
+                const openN = window._adminTk.filter(t => t.kind === 'self' && !t.solved_at).length;
+                const bd = document.getElementById('tickets-badge');
+                if (bd) { bd.textContent = openN; bd.classList.toggle('hidden', openN === 0); }
+                if (typeof window.refreshLiveAdminTable === 'function' && !isViewingHistory) window.refreshLiveAdminTable();
+            } catch (e) {}
+        }
+        setInterval(pollAdminTickets, 30000);
+        setTimeout(pollAdminTickets, 4000);
+
         // ----- جهة الموظف: شريط يظهر فيه طلبات المسؤول -----
         let _tkWarned = false, _tkData = [];
         async function pollMyTickets() {
@@ -1514,17 +1747,19 @@
                 if (error) { if (!_tkWarned) { _tkWarned = true; console.warn('[Tickets]', error.message); } return; }
                 _tkData = data || [];
                 renderTicketBanner();
+                try { render(); } catch (e) {}
             } catch (e) { if (!_tkWarned) { _tkWarned = true; console.warn('[Tickets]', e); } }
         }
         function renderTicketBanner() {
             let b = document.getElementById('ticket-banner');
-            if (!loggedInId || loggedInId === '__admin__' || _tkData.length === 0) { if (b) b.remove(); return; }
+            const _adm = _tkData.filter(t => t.kind !== 'self');
+            if (!loggedInId || loggedInId === '__admin__' || _adm.length === 0) { if (b) b.remove(); return; }
             if (!b) {
                 b = document.createElement('div'); b.id = 'ticket-banner';
                 b.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);width:min(560px,94vw);z-index:9990;direction:rtl;font-family:Cairo,sans-serif;display:flex;flex-direction:column;gap:8px;';
                 document.body.appendChild(b);
             }
-            b.innerHTML = _tkData.map(t => {
+            b.innerHTML = _adm.map(t => {
                 if (t.kind === 'self') {
                     return '<div style="background:#fff;border:2px solid #16a34a;border-radius:16px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.2);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">'
                          + '<div style="font-weight:900;color:#166534;">📩 رسالة واتساب وصلتك</div>'
@@ -1540,44 +1775,134 @@
                      + '<button onclick="window.markTicket(' + Number(t.id) + ',\'solved\')" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">🛠️ تم الحل</button></div></div>';
             }).join('');
         }
-        function ensureTicketFab() {
-            let f = document.getElementById('ticket-fab');
-            const show = !!loggedInId && loggedInId !== '__admin__';
-            if (!show) { if (f) f.remove(); return; }
-            if (f) return;
-            f = document.createElement('div'); f.id = 'ticket-fab';
-            f.style.cssText = 'position:fixed;bottom:18px;left:18px;z-index:9985;display:flex;flex-direction:column;gap:10px;align-items:flex-start;direction:rtl;font-family:Cairo,sans-serif;';
-            const btn = (txt, color) => '<button style="background:' + color + ';color:#fff;border:none;border-radius:999px;padding:14px 20px;font-weight:900;font-size:1rem;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.3);font-family:Cairo,sans-serif;">' + txt + '</button>';
-            f.innerHTML = '<div id="accept-toast" style="display:none;background:#0f172a;color:#fff;border-radius:12px;padding:8px 14px;font-weight:800;font-size:.9rem;"></div>'
-                        + btn('✅ قبلت طلباً', '#2563eb') + btn('📩 وصلتني رسالة', '#16a34a');
-            const [acceptB, msgB] = f.querySelectorAll('button');
-            let _undoTimer = null;
-            acceptB.onclick = async () => {
-                if (!_checkWriteRate()) return;
-                acceptB.disabled = true;
-                const { error } = await supabaseClient.rpc('alsaree3_accept_log');
-                acceptB.disabled = false;
-                if (error) { console.error('[Accept]', error); alert('❌ تعذّر التسجيل. حاول مرة أخرى.'); return; }
-                const t = document.getElementById('accept-toast');
-                t.style.display = 'block';
-                t.innerHTML = '✅ سُجّل قبول طلب &nbsp; <button id="accept-undo" style="background:#fff;color:#0f172a;border:none;border-radius:8px;padding:2px 10px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">↩️ تراجع</button>';
-                document.getElementById('accept-undo').onclick = async () => {
-                    const { error: e2 } = await supabaseClient.rpc('alsaree3_accept_undo');
-                    t.innerHTML = e2 ? '❌ تعذّر التراجع' : '↩️ تم التراجع';
-                    clearTimeout(_undoTimer); _undoTimer = setTimeout(() => { t.style.display = 'none'; }, 3000);
+        function ensureTicketFab() { const f = document.getElementById('ticket-fab'); if (f) f.remove(); }   // الأزرار صارت داخل بطاقة الموظف
+        let _tkToastTimer = null;
+        function _tkToast(msg, undoFn) {
+            let t = document.getElementById('accept-toast');
+            if (!t) {
+                t = document.createElement('div'); t.id = 'accept-toast';
+                t.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:9985;background:#0f172a;color:#fff;border-radius:12px;padding:10px 16px;font-weight:800;font-family:Cairo,sans-serif;direction:rtl;';
+                document.body.appendChild(t);
+            }
+            t.style.display = 'block';
+            t.textContent = msg;
+            if (undoFn) {
+                const u = document.createElement('button');
+                u.textContent = '\u21a9\ufe0f \u062a\u0631\u0627\u062c\u0639';
+                u.style.cssText = 'margin-inline-start:10px;background:#fff;color:#0f172a;border:none;border-radius:8px;padding:2px 10px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;';
+                u.onclick = async () => {
+                    u.disabled = true;
+                    const ok = await undoFn();
+                    t.textContent = ok ? '\u21a9\ufe0f \u062a\u0645 \u0627\u0644\u062a\u0631\u0627\u062c\u0639' : '\u274c \u062a\u0639\u0630\u0651\u0631 \u0627\u0644\u062a\u0631\u0627\u062c\u0639';
+                    clearTimeout(_tkToastTimer); _tkToastTimer = setTimeout(() => { t.style.display = 'none'; }, 2500);
                 };
-                clearTimeout(_undoTimer); _undoTimer = setTimeout(() => { t.style.display = 'none'; }, 8000);
-            };
-            msgB.onclick = async () => {
-                if (!_checkWriteRate()) return;
-                msgB.disabled = true;
-                const { error } = await supabaseClient.rpc('alsaree3_ticket_self_create');
-                msgB.disabled = false;
-                if (error) { console.error('[SelfTicket]', error); alert('❌ تعذّر التسجيل. حاول مرة أخرى.'); return; }
-                await pollMyTickets();
-            };
-            document.body.appendChild(f);
+                t.appendChild(u);
+            }
+            clearTimeout(_tkToastTimer); _tkToastTimer = setTimeout(() => { t.style.display = 'none'; }, undoFn ? 8000 : 2500);
         }
+        window.ticketReceived = async (b) => {
+            if (!_checkWriteRate()) return;
+            if (b) b.classList.add('busy'); if (navigator.vibrate) navigator.vibrate(30);
+            const { error } = await supabaseClient.rpc('alsaree3_ticket_self_create');
+            if (b) b.classList.remove('busy');
+            if (error) { console.error('[SelfTicket]', error); alert('\u274c \u062a\u0639\u0630\u0651\u0631 \u0627\u0644\u062a\u0633\u062c\u064a\u0644. \u062d\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649.'); return; }
+            await pollMyTickets();
+            _tkToast('\U0001f4e9 \u0633\u064f\u062c\u0651\u0644 \u0637\u0644\u0628 \u062c\u062f\u064a\u062f', async () => {
+                const { error: e2 } = await supabaseClient.rpc('alsaree3_ticket_self_undo');
+                if (e2) { console.error('[SelfUndo]', e2); return false; }
+                await pollMyTickets(); return true;
+            });
+        };
+        window.ticketSolved = async (b) => {
+            const open = _tkData.filter(t => t.kind === 'self' && !t.solved_at).sort((x, y) => new Date(x.created_at) - new Date(y.created_at));
+            if (open.length === 0) return;
+            if (!_checkWriteRate()) return;
+            if (b) b.classList.add('busy'); if (navigator.vibrate) navigator.vibrate(30);
+            const { error } = await supabaseClient.rpc('alsaree3_ticket_mark', { p_id: open[0].id, p_what: 'solved' });
+            if (b) b.classList.remove('busy');
+            if (error) { console.error('[SelfSolve]', error); alert('\u274c \u062a\u0639\u0630\u0651\u0631 \u0627\u0644\u062a\u0633\u062c\u064a\u0644. \u062d\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649.'); return; }
+            await pollMyTickets();
+            _tkToast('\u2705 \u062a\u0645 \u062d\u0644 \u0637\u0644\u0628');
+        };
+        let _undoTimer = null;
+        window.acceptRequest = async (b) => {
+            if (!_checkWriteRate()) return;
+            if (b) b.classList.add('busy'); if (navigator.vibrate) navigator.vibrate(30);
+            const { error } = await supabaseClient.rpc('alsaree3_accept_log');
+            if (b) b.classList.remove('busy');
+            if (error) { console.error('[Accept]', error); alert('❌ تعذّر التسجيل. حاول مرة أخرى.'); return; }
+            let t = document.getElementById('accept-toast');
+            if (!t) {
+                t = document.createElement('div'); t.id = 'accept-toast';
+                t.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:9985;background:#0f172a;color:#fff;border-radius:12px;padding:10px 16px;font-weight:800;font-family:Cairo,sans-serif;direction:rtl;';
+                document.body.appendChild(t);
+            }
+            t.style.display = 'block';
+            t.innerHTML = '✅ سُجّل قبول طلب &nbsp; <button id="accept-undo" style="background:#fff;color:#0f172a;border:none;border-radius:8px;padding:2px 10px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">↩️ تراجع</button>';
+            document.getElementById('accept-undo').onclick = async () => {
+                const { error: e2 } = await supabaseClient.rpc('alsaree3_accept_undo');
+                t.innerHTML = e2 ? '❌ تعذّر التراجع' : '↩️ تم التراجع';
+                clearTimeout(_undoTimer); _undoTimer = setTimeout(() => { t.style.display = 'none'; }, 3000);
+            };
+            clearTimeout(_undoTimer); _undoTimer = setTimeout(() => { t.style.display = 'none'; }, 8000);
+        };
+        // ===== فتح واتساب المطاعم / الزبائن من بطاقة الموظف =====
+        // واتساب ويب يمنع فتحه داخل إطار في صفحة أخرى، لذا يُفتح في نافذة مستقلة صغيرة (وعلى الجوال يفتح تطبيق واتساب).
+        // لتخصيص رابط كل نوع: غيّر web (للكمبيوتر) و phone (للجوال). مثال لرقم محدد: 'https://wa.me/9647XXXXXXXXX'
+        const WA_LINKS = {
+            rest: { web: 'https://web.whatsapp.com/', phone: 'https://wa.me/' },   // واتساب المطاعم
+            cust: { web: 'https://web.whatsapp.com/', phone: 'https://wa.me/' }    // واتساب الزبائن
+        };
+        window.openWA = (type) => {
+            const cfg = WA_LINKS[type]; if (!cfg) return;
+            const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+            const url = mobile ? cfg.phone : cfg.web;
+            const w = mobile ? window.open(url, '_blank') : window.open(url, 'wa_' + type, 'popup=yes,width=520,height=820');
+            if (!w) { alert('⚠️ المتصفح منع فتح النافذة. اسمح بالنوافذ المنبثقة لهذا الموقع.'); return; }
+            try { w.opener = null; } catch (e) {}
+            try { w.focus(); } catch (e) {}
+        };
+
+        // ===== توزيع الطلبات يدوياً (Dispatcher): الموظف يكتب رقم الطلب فيُسجَّل =====
+        let _dispData = [], _dispLoadedAt = 0;
+        async function _fetchMyDispatch() {
+            if (!loggedInId || loggedInId === '__admin__') return;
+            try {
+                const { data, error } = await supabaseClient.rpc('alsaree3_dispatch_my_today');
+                if (error) { console.warn('[Dispatch]', error.message); return; }
+                const nd = data || [];
+                const changed = JSON.stringify(nd.map(x => x.id)) !== JSON.stringify(_dispData.map(x => x.id));
+                _dispData = nd;
+                if (changed) { try { render(); } catch (e) {} }
+            } catch (e) { console.warn('[Dispatch]', e); }
+        }
+        window.addDispatch = async (b) => {
+            const inp = document.getElementById('disp-input'); if (!inp) return;
+            const v = inp.value.trim();
+            if (!v) { inp.focus(); return; }
+            if (!/^[0-9A-Za-z\u0600-\u06FF#_\-\/]{1,30}$/.test(v)) { alert('⚠️ رقم الطلب غير صالح'); return; }
+            if (!_checkWriteRate()) return;
+            if (b && b.classList) b.classList.add('busy');
+            const { error } = await supabaseClient.rpc('alsaree3_dispatch_add', { p_order: v });
+            if (b && b.classList) b.classList.remove('busy');
+            if (error) {
+                const dup = String(error.message || '').indexOf('duplicate') !== -1;
+                console.error('[DispatchAdd]', error);
+                alert(dup ? '⚠️ رقم الطلب هذا مسجّل مسبقاً اليوم' : '❌ تعذّر التسجيل. حاول مرة أخرى.');
+                return;
+            }
+            inp.value = '';
+            if (navigator.vibrate) navigator.vibrate(30);
+            _dispLoadedAt = Date.now();
+            await _fetchMyDispatch();
+            try { render(); } catch (e) {}
+            const ni = document.getElementById('disp-input'); if (ni) ni.focus();
+            _tkToast('🚴 سُجّل توزيع الطلب ' + v, async () => {
+                const { error: e2 } = await supabaseClient.rpc('alsaree3_dispatch_undo');
+                if (e2) { console.error('[DispatchUndo]', e2); return false; }
+                await _fetchMyDispatch(); try { render(); } catch (e) {} return true;
+            });
+        };
         window.markTicket = async (id, what) => {
             if (!_checkWriteRate()) return;
             const { error } = await supabaseClient.rpc('alsaree3_ticket_mark', { p_id: id, p_what: what });
@@ -1751,7 +2076,7 @@
 
                             <td class="p-3 font-black text-green-600 bg-green-50/20">${Number(d.rating!==undefined?d.rating:100) || 0}%</td>
                             <td class="p-3 font-black text-blue-600 bg-blue-50/20">${Number(d.monthlyRating!==undefined?d.monthlyRating:100) || 0}%</td>
-                            <td class="p-3 font-black">${_lateCellHtml(d, i)} <button data-emp="${sanitize(i)}" onclick="window.excludeLiveDay(this.dataset.emp)" style="margin-inline-start:6px;background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تصفير</button> <button data-emp="${sanitize(i)}" data-date="${dateStr}" onclick="window.waReport(this.dataset.emp, this.dataset.date)" style="margin-inline-start:6px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📲 واتساب</button> <button data-emp="${sanitize(i)}" onclick="window.sendTicket(this.dataset.emp)" style="margin-inline-start:6px;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📨 مهمة</button></td>
+                            <td class="p-3 font-black">${_tkLabel(i)}${_lateCellHtml(d, i)} <button data-emp="${sanitize(i)}" onclick="window.excludeLiveDay(this.dataset.emp)" style="margin-inline-start:6px;background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تصفير</button> <button data-emp="${sanitize(i)}" data-date="${dateStr}" onclick="window.waReport(this.dataset.emp, this.dataset.date)" style="margin-inline-start:6px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📲 واتساب</button> <button data-emp="${sanitize(i)}" onclick="window.sendTicket(this.dataset.emp)" style="margin-inline-start:6px;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📨 مهمة</button></td>
                          </tr>`;
             }
             tableBody.innerHTML = html;
@@ -2263,6 +2588,38 @@
                 const canControl = isAdmin || (i === loggedInId);
                 const escId = sanitize(String(i).replace(/\\/g, '\\\\').replace(/'/g, "\\'")); // إفلات JS ثم HTML لمنع XSS في onclick
 
+                // أزرار المهمة: تظهر في بطاقة الموظف نفسه حسب المهمة المختارة
+                let taskExtra = '';
+                if (i === loggedInId && !isAdmin) {
+                    const _openN = (typeof _tkData !== 'undefined' ? _tkData : []).filter(t => t.kind === 'self' && !t.solved_at).length;
+                    const _todayStr = getTodayDateString();
+                    const _todaySelf = (typeof _tkData !== 'undefined' ? _tkData : []).filter(t => {
+                        if (t.kind !== 'self') return false;
+                        const x = new Date(t.created_at);
+                        return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0') === _todayStr;
+                    });
+                    const _todayN = _todaySelf.length, _openToday = _todaySelf.filter(t => !t.solved_at).length;
+                    if (d.currentTask === 'واتساب') {
+                        taskExtra = `<div class="tk-row">
+                            <button onclick="window.ticketReceived(this)" class="tk-btn tk-in">📩 وصلني طلب</button>
+                            <button onclick="window.ticketSolved(this)" ${_openN ? '' : 'disabled'} class="tk-btn tk-ok">✅ تم الحل${_openN ? ' <span class="tk-badge">' + _openN + '</span>' : ''}</button>
+                        </div>
+                        <div class="tk-stat">\u0627\u0644\u064a\u0648\u0645: ${_todayN} \u0648\u0635\u0644 \u00b7 ${_todayN - _openToday} \u0627\u0646\u062d\u0644</div>`;
+                    } else if (d.currentTask === 'قبول') {
+                        taskExtra = `<div class="tk-row"><button onclick="window.acceptRequest(this)" class="tk-btn tk-in">✅ قبلت طلباً</button></div>`;
+                    } else if (d.currentTask === 'توزيع') {
+                        if (!_dispLoadedAt || Date.now() - _dispLoadedAt > 20000) { _dispLoadedAt = Date.now(); _fetchMyDispatch(); }
+                        const _dn = _dispData.length;
+                        taskExtra = `<div class="tk-row"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter')window.addDispatch()"><button onclick="window.addDispatch(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
+                        <div class="tk-stat">اليوم: ${_dn} طلب موزّع${_dn ? ' · آخر رقم: ' + sanitize(String(_dispData[0].order_no)) : ''}</div>`;
+                    }
+                }
+                const waBox = (i === loggedInId && !isAdmin) ? `
+                        <div class="block mb-2 text-xs font-bold text-black text-right pr-1">واتساب (WhatsApp):</div>
+                        <div class="tk-row">
+                            <button onclick="window.openWA('rest')" class="tk-btn tk-wa">🍽️ واتساب المطاعم</button>
+                            <button onclick="window.openWA('cust')" class="tk-btn tk-wa">🛍️ واتساب الزبائن</button>
+                        </div>` : '';
                 const taskButtonsHtml = canControl ? `
                         <div class="block mb-3 text-xs font-bold text-black text-right pr-1">المهمة الحالية (Current Task):</div>
                         <div class="grid grid-cols-3 gap-2 mb-5">
@@ -2270,6 +2627,8 @@
                             <button onclick="window.setTask('${escId}', 'توزيع')" class="task-btn ${d.currentTask === 'توزيع' ? 'active' : ''}">🚴 Dispatcher</button>
                             <button onclick="window.setTask('${escId}', 'قبول')" class="task-btn ${d.currentTask === 'قبول' ? 'active' : ''}">✅ Accept</button>
                         </div>
+                        ${taskExtra}
+                        ${waBox}
                         <div class="block mb-2 text-xs font-bold text-black text-right pr-1">الإجراءات (Actions):</div>
                         <div class="grid grid-cols-2 gap-3">
                             ${(d.status === 'بريك' || d.status === 'راحة') ? `<button onclick="window.updateStatus('${escId}', 'حضور')" class="col-span-2 py-3 rounded-2xl bg-green-500 hover:bg-green-600 text-white font-black text-base">✅ إنهاء ${d.status === 'بريك' ? 'البريك' : 'الراحة'} والعودة للعمل</button>` : ''}
@@ -2296,7 +2655,12 @@
                         ${taskButtonsHtml}
                     </div>`;
             }
+            const _di = document.getElementById('disp-input'), _dv = _di ? _di.value : '', _df = !!_di && document.activeElement === _di;
             document.getElementById('app').innerHTML = h;
+            if (_dv || _df) {
+                const _nx = document.getElementById('disp-input');
+                if (_nx) { _nx.value = _dv; if (_df) { _nx.focus(); try { _nx.setSelectionRange(_dv.length, _dv.length); } catch (e) {} } }
+            }
         }
         
         // ===== معالجة لقطة بيانات الموظفين (تُستدعى من Realtime ومن المزامنة الدورية) =====
@@ -2497,5 +2861,6 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
+<div id="ver-tag" style="position:fixed;bottom:4px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.10-wa1</div>
 </body>
 </html>
