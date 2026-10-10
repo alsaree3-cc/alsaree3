@@ -581,6 +581,7 @@
                 _mark('employees');
                 employeesData = _snapshotClone();
                 subscribeEmployees(true);
+                setTimeout(() => { if (window.pollMyTickets) window.pollMyTickets(); }, 500);
                 // التصفير التعويضي يعمل بالخلفية حتى لا يبطّئ الدخول، ثم نحدّث البيانات إن حصل تصفير
                 setTimeout(() => runDayReset('catchup').then(did => { if (did) resyncEmployees().catch(() => {}); })
                     .catch(e => console.warn('[CatchUp-Reset] تعذر:', e.message)), 3000);
@@ -805,6 +806,7 @@
                     <button  onclick="window.downloadPDF()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-green-50 border-green-200 text-green-800 hover:bg-green-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📄</span><span class="text-sm leading-tight text-center">تحميل التقرير PDF</span></button>
                     <button  onclick="window.openAddEmployee()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">➕</span><span class="text-sm">إضافة موظف</span></button>
                     <button  onclick="window.openDeviceLog()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📱</span><span class="text-sm leading-tight text-center">سجل الأجهزة والدخول</span></button>
+                    <button  onclick="window.openTickets()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📋</span><span class="text-sm leading-tight text-center">مهام واتساب والردود</span></button>
                 </div>
 
                 <div class="overflow-x-auto rounded-2xl border border-slate-200 mb-5">
@@ -1405,6 +1407,187 @@
                 alert('✅ تم التصفير، والحساب بدأ من جديد من الآن.');
             } catch (e) { console.error('[ExcludeLive]', e); alert('❌ فشل التصفير'); }
         };
+        // إرسال تقرير موظف عبر واتساب (يفتح واتساب برسالة جاهزة، وأنت تختار المستلم)
+        window._lastHistoryData = {};
+        window.waReport = (id, date) => {
+            if (loggedInId !== '__admin__') return;
+            let name, start, hrs, br, rest, rating;
+            const live = (date === getTodayDateString() && employeesData[id] && !isViewingHistory);
+            if (live) {
+                const d = employeesData[id];
+                name = d.name; start = d.startTime ? new Date(d.startTime).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : 'Absent';
+                const ws = Number(d.totalWorkSeconds) || 0; hrs = Math.floor(ws / 3600) + 'h : ' + Math.floor((ws % 3600) / 60) + 'm';
+                br = Number(d.totalBreakMinutes) || 0; rest = Number(d.totalRestMinutes) || 0; rating = d.rating == null ? 100 : Number(d.rating) || 0;
+            } else {
+                const d = (window._lastHistoryData || {})[id]; if (!d) return;
+                name = d.name; start = _startLabel(id, date, d.startTimeStr);
+                const ws = Number(d.totalWorkSeconds) || 0; hrs = ws > 0 ? Math.floor(ws / 3600) + 'h : ' + Math.floor((ws % 3600) / 60) + 'm' : (d.totalDurationStr || '-');
+                br = Number(d.totalBreakMinutes) || 0; rest = Number(d.totalRestMinutes) || 0; rating = d.rating == null ? 100 : Number(d.rating) || 0;
+            }
+            const txt = '📋 تقرير ' + name + '\n📅 ' + date + '\n🕘 الدخول: ' + start + '\n⏱️ ساعات العمل: ' + hrs + '\n☕ البريك: ' + br + ' د\n🛋️ الراحة: ' + rest + ' د\n⭐ تقييم اليوم: ' + rating + '%';
+            window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
+        };
+
+        // ===== مهام واتساب: المسؤول يرسل مهمة، والموظف يضغط "قرأت" ثم "تم الحل" =====
+        const TICKET_READ_LIMIT_MIN = 5, TICKET_SOLVE_LIMIT_MIN = 15;   // يجب أن تطابق tickets.sql
+        function _ticketPenalty(t) {
+            if (t.kind === 'self') return 0;   // رسالة وصلت للموظف: بدون خصم، تسجيل الأوقات فقط
+            const c = new Date(t.created_at).getTime();
+            const readLate = !t.read_at || (new Date(t.read_at).getTime() - c) > TICKET_READ_LIMIT_MIN * 60000;
+            const solveLate = !t.solved_at || (new Date(t.solved_at).getTime() - c) > TICKET_SOLVE_LIMIT_MIN * 60000;
+            return (readLate ? 1 : 0) + (solveLate ? 2 : 0);
+        }
+        function _minsBetween(a, b) { return Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000)); }
+        function _tm(ts) { return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }); }
+
+        window.sendTicket = async (id) => {
+            if (loggedInId !== '__admin__') return;
+            const emp = employeesData[id]; if (!emp) return;
+            const txt = prompt('اكتب المهمة / المشكلة التي سترسلها إلى ' + emp.name + ':');
+            if (!txt || !txt.trim()) return;
+            if (!_checkWriteRate()) return;
+            const { error } = await supabaseClient.rpc('alsaree3_ticket_create', { p_key: id, p_body: txt.trim() });
+            if (error) { console.error('[Ticket]', error); alert('❌ تعذّر إنشاء المهمة. تأكد أنك شغّلت ملف tickets.sql في Supabase.'); return; }
+            window.open('https://wa.me/?text=' + encodeURIComponent('📨 ' + emp.name + '\n' + txt.trim() + '\n\n(اضغط "قرأت" ثم "تم الحل" في النظام)'), '_blank');
+        };
+
+        window.openTickets = async (date) => {
+            if (loggedInId !== '__admin__') return;
+            date = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date : getTodayDateString();
+            _modal('tickets-overlay', '📋 مهام واتساب والردود', '<div style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div>', 900);
+            const body = document.getElementById('tickets-overlay-body');
+            try {
+                let { data, error } = await supabaseClient.rpc('alsaree3_tickets_admin', { p_date: date });
+                if (error) throw error;
+                let h = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;"><span style="font-weight:800;">📅 التاريخ</span>'
+                      + '<input type="date" value="' + sanitize(date) + '" onchange="window.openTickets(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;"></div>'
+                      + '<div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:10px;">الخصم من تقييم اليوم عند إغلاقه الساعة 7: تأخر القراءة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د = 1، وتأخر الحل أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د أو عدم الحل = 2.</div>';
+                const _st = {};
+                (data || []).filter(t => t.kind === 'self').forEach(t => {
+                    const a = _st[t.employee_key] = _st[t.employee_key] || { n: 0, solved: 0, mins: 0 };
+                    a.n++; if (t.solved_at) { a.solved++; a.mins += _minsBetween(t.created_at, t.solved_at); }
+                });
+                const _ac = {}; let _acTotal = 0;
+                (data || []).filter(t => t.kind === 'accept').forEach(t => { _ac[t.employee_key] = (_ac[t.employee_key] || 0) + 1; _acTotal++; });
+                if (_acTotal) {
+                    h += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:10px 14px;margin-bottom:12px;font-weight:800;color:#1e40af;">✅ الطلبات المقبولة (الإجمالي ' + _acTotal + '):<br>'
+                       + Object.keys(_ac).sort((x, y) => _ac[y] - _ac[x]).map(k => sanitize(employeesData[k] ? employeesData[k].name : k) + ': ' + _ac[k]).join('<br>') + '</div>';
+                }
+                data = (data || []).filter(t => t.kind !== 'accept');
+                const _stKeys = Object.keys(_st);
+                if (_stKeys.length) {
+                    h += '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:14px;padding:10px 14px;margin-bottom:12px;font-weight:800;color:#166534;">📩 الرسائل الواصلة للموظفين اليوم:<br>'
+                       + _stKeys.map(k => sanitize(employeesData[k] ? employeesData[k].name : k) + ': ' + _st[k].n + ' رسالة، حُلّت ' + _st[k].solved + (_st[k].solved ? ' (متوسط الحل ' + Math.round(_st[k].mins / _st[k].solved) + ' د)' : '')).join('<br>') + '</div>';
+                }
+                if (!data || data.length === 0) {
+                    h += '<p style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">لا توجد مهام في هذا اليوم.</p>';
+                } else {
+                    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
+                       + '<th style="padding:9px;">الموظف</th><th style="padding:9px;">المهمة</th><th style="padding:9px;">أُرسلت</th><th style="padding:9px;">القراءة</th><th style="padding:9px;">الحل</th><th style="padding:9px;">الخصم</th></tr></thead><tbody>';
+                    data.forEach(t => {
+                        const emp = employeesData[t.employee_key];
+                        const pen = _ticketPenalty(t);
+                        const isSelf = t.kind === 'self';
+                        const rd = isSelf ? '<span style="color:#64748b;">وصلت ' + _tm(t.created_at) + '</span>' : (t.read_at ? ('✅ ' + _tm(t.read_at) + ' (بعد ' + _minsBetween(t.created_at, t.read_at) + ' د)') : '<span style="color:#dc2626;">لم يقرأ</span>');
+                        const sv = t.solved_at ? ('✅ ' + _tm(t.solved_at) + ' (بعد ' + _minsBetween(t.created_at, t.solved_at) + ' د)') : '<span style="color:#dc2626;">لم يُحل</span>';
+                        h += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + sanitize(emp ? emp.name : t.employee_key) + '</td>'
+                           + '<td style="padding:9px;">' + (isSelf ? '📩 رسالة وصلت للموظف' : '📨 ' + sanitize(t.body)) + '</td><td style="padding:9px;">' + _tm(t.created_at) + '</td>'
+                           + '<td style="padding:9px;">' + rd + '</td><td style="padding:9px;">' + sv + '</td>'
+                           + '<td style="padding:9px;font-weight:900;color:' + (pen ? '#dc2626' : '#16a34a') + ';">' + (pen ? '−' + pen : '0') + '</td></tr>';
+                    });
+                    h += '</tbody></table></div>';
+                }
+                body.innerHTML = h;
+            } catch (e) {
+                console.error('[Tickets]', e);
+                body.innerHTML = '<p style="color:#dc2626;font-weight:700;">❌ تعذّر تحميل المهام. تأكد أنك شغّلت ملف tickets.sql في Supabase.</p>';
+            }
+        };
+
+        // ----- جهة الموظف: شريط يظهر فيه طلبات المسؤول -----
+        let _tkWarned = false, _tkData = [];
+        async function pollMyTickets() {
+            ensureTicketFab();
+            if (!loggedInId || loggedInId === '__admin__') { const b = document.getElementById('ticket-banner'); if (b) b.remove(); return; }
+            try {
+                const { data, error } = await supabaseClient.rpc('alsaree3_my_tickets');
+                if (error) { if (!_tkWarned) { _tkWarned = true; console.warn('[Tickets]', error.message); } return; }
+                _tkData = data || [];
+                renderTicketBanner();
+            } catch (e) { if (!_tkWarned) { _tkWarned = true; console.warn('[Tickets]', e); } }
+        }
+        function renderTicketBanner() {
+            let b = document.getElementById('ticket-banner');
+            if (!loggedInId || loggedInId === '__admin__' || _tkData.length === 0) { if (b) b.remove(); return; }
+            if (!b) {
+                b = document.createElement('div'); b.id = 'ticket-banner';
+                b.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);width:min(560px,94vw);z-index:9990;direction:rtl;font-family:Cairo,sans-serif;display:flex;flex-direction:column;gap:8px;';
+                document.body.appendChild(b);
+            }
+            b.innerHTML = _tkData.map(t => {
+                if (t.kind === 'self') {
+                    return '<div style="background:#fff;border:2px solid #16a34a;border-radius:16px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.2);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">'
+                         + '<div style="font-weight:900;color:#166534;">📩 رسالة واتساب وصلتك</div>'
+                         + '<button onclick="window.markTicket(' + Number(t.id) + ',\'solved\')" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">✅ تم حلها</button></div>';
+                }
+                const el = Math.max(0, Math.floor((Date.now() - new Date(t.created_at).getTime()) / 60000));
+                const readBtn = t.read_at ? '<span style="font-weight:800;color:#15803d;">✅ سُجّلت القراءة</span>'
+                    : '<button onclick="window.markTicket(' + Number(t.id) + ',\'read\')" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">👁️ قرأت</button>';
+                return '<div style="background:#fff;border:2px solid #f59e0b;border-radius:16px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.2);">'
+                     + '<div style="font-weight:900;color:#b45309;margin-bottom:6px;">📨 طلب من المسؤول <span style="font-weight:700;color:#64748b;font-size:.8rem;">(منذ ' + el + ' د)</span></div>'
+                     + '<div style="font-weight:700;color:#0f172a;margin-bottom:10px;white-space:pre-wrap;">' + sanitize(t.body) + '</div>'
+                     + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' + readBtn
+                     + '<button onclick="window.markTicket(' + Number(t.id) + ',\'solved\')" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">🛠️ تم الحل</button></div></div>';
+            }).join('');
+        }
+        function ensureTicketFab() {
+            let f = document.getElementById('ticket-fab');
+            const show = !!loggedInId && loggedInId !== '__admin__';
+            if (!show) { if (f) f.remove(); return; }
+            if (f) return;
+            f = document.createElement('div'); f.id = 'ticket-fab';
+            f.style.cssText = 'position:fixed;bottom:18px;left:18px;z-index:9985;display:flex;flex-direction:column;gap:10px;align-items:flex-start;direction:rtl;font-family:Cairo,sans-serif;';
+            const btn = (txt, color) => '<button style="background:' + color + ';color:#fff;border:none;border-radius:999px;padding:14px 20px;font-weight:900;font-size:1rem;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.3);font-family:Cairo,sans-serif;">' + txt + '</button>';
+            f.innerHTML = '<div id="accept-toast" style="display:none;background:#0f172a;color:#fff;border-radius:12px;padding:8px 14px;font-weight:800;font-size:.9rem;"></div>'
+                        + btn('✅ قبلت طلباً', '#2563eb') + btn('📩 وصلتني رسالة', '#16a34a');
+            const [acceptB, msgB] = f.querySelectorAll('button');
+            let _undoTimer = null;
+            acceptB.onclick = async () => {
+                if (!_checkWriteRate()) return;
+                acceptB.disabled = true;
+                const { error } = await supabaseClient.rpc('alsaree3_accept_log');
+                acceptB.disabled = false;
+                if (error) { console.error('[Accept]', error); alert('❌ تعذّر التسجيل. حاول مرة أخرى.'); return; }
+                const t = document.getElementById('accept-toast');
+                t.style.display = 'block';
+                t.innerHTML = '✅ سُجّل قبول طلب &nbsp; <button id="accept-undo" style="background:#fff;color:#0f172a;border:none;border-radius:8px;padding:2px 10px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">↩️ تراجع</button>';
+                document.getElementById('accept-undo').onclick = async () => {
+                    const { error: e2 } = await supabaseClient.rpc('alsaree3_accept_undo');
+                    t.innerHTML = e2 ? '❌ تعذّر التراجع' : '↩️ تم التراجع';
+                    clearTimeout(_undoTimer); _undoTimer = setTimeout(() => { t.style.display = 'none'; }, 3000);
+                };
+                clearTimeout(_undoTimer); _undoTimer = setTimeout(() => { t.style.display = 'none'; }, 8000);
+            };
+            msgB.onclick = async () => {
+                if (!_checkWriteRate()) return;
+                msgB.disabled = true;
+                const { error } = await supabaseClient.rpc('alsaree3_ticket_self_create');
+                msgB.disabled = false;
+                if (error) { console.error('[SelfTicket]', error); alert('❌ تعذّر التسجيل. حاول مرة أخرى.'); return; }
+                await pollMyTickets();
+            };
+            document.body.appendChild(f);
+        }
+        window.markTicket = async (id, what) => {
+            if (!_checkWriteRate()) return;
+            const { error } = await supabaseClient.rpc('alsaree3_ticket_mark', { p_id: id, p_what: what });
+            if (error) { console.error('[TicketMark]', error); alert('❌ تعذّر تسجيل ذلك. حاول مرة أخرى.'); return; }
+            await pollMyTickets();
+        };
+        window.pollMyTickets = pollMyTickets;
+        setInterval(pollMyTickets, 20000);
+        setInterval(() => { if (_tkData.length) renderTicketBanner(); }, 30000);
+
         window.excludeDayPrompt = async () => {
             const el = document.getElementById('historyDateSelector');
             const date = el ? el.value : '';
@@ -1429,6 +1612,7 @@
             
             try {
                 const historyData = await fetchHistoryFor(selectedDate);
+                window._lastHistoryData = historyData;
                 let html = "";
                 
                 if (Object.keys(historyData).length > 0) {
@@ -1464,7 +1648,7 @@
                                     <td class="p-3 font-bold">${Number(d.totalRestMinutes) || 0} / 15 min</td>
                                     <td class="p-3 font-black text-green-600 bg-green-50/20">${_isExcl ? '-' : (d.rating == null ? 100 : (Number(d.rating) || 0)) + '%'}</td>
                                     <td class="p-3 font-black text-blue-600 bg-blue-50/20">${d.monthlyRating == null ? 100 : (Number(d.monthlyRating) || 0)}%</td>
-                                    <td class="p-3 font-black">${_exclBtn}</td>
+                                    <td class="p-3 font-black">${_exclBtn} <button data-emp="${sanitize(id)}" data-date="${sanitize(selectedDate)}" onclick="window.waReport(this.dataset.emp, this.dataset.date)" style="margin-inline-start:6px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📲 واتساب</button></td>
                                  </tr>`;
                     }
                     tableBody.innerHTML = html;
@@ -1567,7 +1751,7 @@
 
                             <td class="p-3 font-black text-green-600 bg-green-50/20">${Number(d.rating!==undefined?d.rating:100) || 0}%</td>
                             <td class="p-3 font-black text-blue-600 bg-blue-50/20">${Number(d.monthlyRating!==undefined?d.monthlyRating:100) || 0}%</td>
-                            <td class="p-3 font-black">${_lateCellHtml(d, i)} <button data-emp="${sanitize(i)}" onclick="window.excludeLiveDay(this.dataset.emp)" style="margin-inline-start:6px;background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تصفير</button></td>
+                            <td class="p-3 font-black">${_lateCellHtml(d, i)} <button data-emp="${sanitize(i)}" onclick="window.excludeLiveDay(this.dataset.emp)" style="margin-inline-start:6px;background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تصفير</button> <button data-emp="${sanitize(i)}" data-date="${dateStr}" onclick="window.waReport(this.dataset.emp, this.dataset.date)" style="margin-inline-start:6px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📲 واتساب</button> <button data-emp="${sanitize(i)}" onclick="window.sendTicket(this.dataset.emp)" style="margin-inline-start:6px;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📨 مهمة</button></td>
                          </tr>`;
             }
             tableBody.innerHTML = html;
