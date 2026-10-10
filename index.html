@@ -720,8 +720,8 @@
             // FIX: يعمل عند أي ساعة >= 19 وليس فقط عند الدقيقة 00:00
             const _isAdminNow = (loggedInId === '__admin__');
             const _minutesNow = now.getHours() * 60 + now.getMinutes();
-            // المسؤول يحفظ التقرير ويغلق الدوام الساعة 7:00، وبقية الأجهزة تنتظر حتى 7:10 كاحتياط
-            if (_minutesNow >= (_isAdminNow ? 19 * 60 : 19 * 60 + 10) && lastResetDate !== resetKey) {
+            // السيرفر (pg_cron) يحفظ التقرير ويصفّر الساعة 7:00؛ المسؤول احتياط 7:05، وبقية الأجهزة 7:10
+            if (_minutesNow >= (_isAdminNow ? 19 * 60 + 5 : 19 * 60 + 10) && lastResetDate !== resetKey) {
                 lastResetDate = resetKey;
                 console.log(`[Auto-Reset] الساعة ${now.getHours()}:${now.getMinutes()} — جاري التصفير التلقائي...`);
                 (_isAdminNow ? window.endOfDay(true) : runDayReset('evening')).then(did => { if (did) resyncEmployees().catch(() => {}); }).catch(e => { console.warn('[Auto-Reset] تعذر:', e.message); setTimeout(() => { if (lastResetDate === resetKey) lastResetDate = null; }, 60000); });
@@ -826,6 +826,7 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <button onclick="window.triggerInstantGlobalReset()" class="py-3 rounded-xl bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 font-black text-sm transition">🔄 تصفير اليوم وبدء يوم جديد</button>
                         <button onclick="window.resetMonthlySystem()" class="py-3 rounded-xl bg-white border border-red-300 text-red-700 hover:bg-red-50 font-black text-sm transition">🗓️ تصفير الشهر الجديد</button>
+                        <button onclick="window.excludeDayPrompt()" class="py-3 rounded-xl bg-white border border-slate-400 text-slate-700 hover:bg-slate-50 font-black text-sm transition sm:col-span-2">🚫 استثناء يوم مؤرشف من التقييم / 🔄 تصفير الجميع (لليوم الحالي)</button>
                     </div>
                 </div>`;
             
@@ -1259,6 +1260,7 @@
                     const _ls = leaveSet[r.employee_key];
                     if (_ls && _ls.has(r.history_date)) return;   // يوم إجازة معتمدة: لا يدخل في النسبة
                     const st = String(r.start_time_str || '');
+                    if (st === 'EXCLUDED') return;   // يوم مستثنى من التقييم: لا يدخل في أي حساب
                     if (st.toUpperCase().startsWith('OFF')) { a.off++; return; }
                     if (!st || st === 'Absent' || st === 'لم يحضر') { if (isOffDay(r.employee_key, r.history_date)) a.off++; else a.absent++; return; }
                     a.days++;
@@ -1351,6 +1353,66 @@
             }
         };
 
+        // استثناء يوم من التقييم: يصفّر البريك والراحة والساعات ولا يدخل في نسبة الشهر (مسؤول فقط)
+        // id = موظف واحد، أو null = كل موظفي ذلك اليوم
+        window.excludeFromRating = async (date, id) => {
+            if (loggedInId !== '__admin__') { alert('🔒 هذه العملية متاحة للمسؤول فقط!'); return; }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) { alert('⚠️ اختر تاريخاً صحيحاً أولاً'); return; }
+            try {
+                const hist = await fetchHistoryFor(date);
+                const ids = (id ? [id] : Object.keys(hist)).filter(k => hist[k] && String(hist[k].startTimeStr || '') !== 'EXCLUDED');
+                if (ids.length === 0) { alert('لا توجد سجلات لاستثنائها في هذا التاريخ.'); return; }
+                const who = id ? hist[id].name : ('كل الموظفين (' + ids.length + ')');
+                if (!confirm('🚫 استثناء يوم ' + date + ' من التقييم لـ ' + who + '؟\n\nسيتم تصفير البريك والراحة وساعات العمل، ولن يدخل هذا اليوم في نسبة الشهر.\n(لا يمكن التراجع)')) return;
+                if (!_checkWriteRate()) return;
+                const upd = {};
+                ids.forEach(k => {
+                    const d = hist[k];
+                    upd['history/' + date + '/' + k] = {
+                        name: d.name, startTimeStr: 'EXCLUDED', totalDurationStr: '-', currentTask: 'None',
+                        totalBreakMinutes: 0, totalRestMinutes: 0, totalWorkSeconds: 0,
+                        rating: 100, monthlyRating: d.monthlyRating == null ? 100 : d.monthlyRating,
+                        savedAt: new Date().toLocaleTimeString('en-US')
+                    };
+                });
+                await applyHistoryPathUpdates(upd);
+                alert('✅ تم استثناء اليوم من التقييم.');
+                window.fetchHistoryReport(date);
+            } catch (e) { console.error('[Exclude]', e); alert('❌ فشل الاستثناء'); }
+        };
+        // اليوم الحالي (Live): يصفّر البريك والراحة والخصومات والتقييم ويبدأ الحساب من جديد من لحظة الضغط (اليوم يبقى محسوباً)
+        window.excludeLiveDay = async (id) => {
+            if (loggedInId !== '__admin__') { alert('🔒 هذه العملية متاحة للمسؤول فقط!'); return; }
+            const ids = id ? [id] : Object.keys(employeesData);
+            const who = id ? (employeesData[id] && employeesData[id].name) : 'كل الموظفين';
+            if (!confirm('🔄 تصفير التقييم لـ ' + who + ' الآن؟\n\nسيُصفَّر البريك والراحة وكل الخصومات ويصبح التقييم 100%،\nثم يبدأ الحساب من جديد من هذه اللحظة.\n(لا يمكن التراجع)')) return;
+            if (!_checkWriteRate()) return;
+            try {
+                const now = Date.now(), today = getTodayDateString(), upd = {};
+                ids.forEach(k => {
+                    const d = employeesData[k]; if (!d) return;
+                    upd['employees/' + k + '/totalBreakMinutes'] = 0;
+                    upd['employees/' + k + '/totalRestMinutes'] = 0;
+                    upd['employees/' + k + '/hourlyBreaks'] = {};
+                    upd['employees/' + k + '/slotBreaks'] = {};
+                    upd['employees/' + k + '/rating'] = 100;
+                    if ((d.status === 'بريك' || d.status === 'راحة') && d.lastActionTime) upd['employees/' + k + '/lastActionTime'] = now;
+                });
+                await applyEmployeePathUpdates(upd);
+                await resyncEmployees();
+                try { checkAndApplyRatings(); } catch (e) {}
+                if (typeof window.refreshLiveAdminTable === 'function') window.refreshLiveAdminTable();
+                alert('✅ تم التصفير، والحساب بدأ من جديد من الآن.');
+            } catch (e) { console.error('[ExcludeLive]', e); alert('❌ فشل التصفير'); }
+        };
+        window.excludeDayPrompt = async () => {
+            const el = document.getElementById('historyDateSelector');
+            const date = el ? el.value : '';
+            if (!(await _askPin('استثناء يوم كامل من التقييم'))) return;
+            if (date === getTodayDateString()) { window.excludeLiveDay(null); return; }
+            window.excludeFromRating(date, null);
+        };
+
         window.fetchHistoryReport = async (selectedDate) => {
             if (loggedInId !== '__admin__') return;
             if (!/^\d{4}-\d{2}-\d{2}$/.test(String(selectedDate))) return; // SECURITY: تحقق من صيغة التاريخ
@@ -1388,17 +1450,21 @@
                         } else if (d.totalDurationStr && d.totalDurationStr !== '-') {
                             displayDuration = d.totalDurationStr;
                         }
-                        html += `<tr class="border-b">
+                        const _isExcl = String(d.startTimeStr || '') === 'EXCLUDED';
+                        const _exclBtn = _isExcl
+                            ? '<span class="text-slate-500 font-black">🚫 مستثنى</span>'
+                            : '<button data-emp="' + sanitize(id) + '" data-date="' + sanitize(selectedDate) + '" onclick="window.excludeFromRating(this.dataset.date, this.dataset.emp)" style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">🚫 استثناء اليوم</button>';
+                        html += `<tr class="border-b ${_isExcl ? 'opacity-60' : ''}">
                                     <td class="p-3 font-bold text-black">${sanitize(d.name)}</td>
-                                    <td class="p-3 font-semibold text-green-700">${sanitize(_startLabel(id, selectedDate, d.startTimeStr))}</td>
+                                    <td class="p-3 font-semibold text-green-700">${_isExcl ? '🚫 مستثنى' : sanitize(_startLabel(id, selectedDate, d.startTimeStr))}</td>
                                     <td class="p-3 font-black text-slate-700">${sanitize(displayDuration)}</td>
                                     <td class="p-3 text-gray-500">${sanitize(selectedDate)}</td>
                                     <td class="p-3">${sanitize(taskEn)}</td>
                                     <td class="p-3 font-bold text-amber-700">${Number(d.totalBreakMinutes) || 0} min</td>
                                     <td class="p-3 font-bold">${Number(d.totalRestMinutes) || 0} / 15 min</td>
-                                    <td class="p-3 font-black text-green-600 bg-green-50/20">${d.rating == null ? 100 : (Number(d.rating) || 0)}%</td>
+                                    <td class="p-3 font-black text-green-600 bg-green-50/20">${_isExcl ? '-' : (d.rating == null ? 100 : (Number(d.rating) || 0)) + '%'}</td>
                                     <td class="p-3 font-black text-blue-600 bg-blue-50/20">${d.monthlyRating == null ? 100 : (Number(d.monthlyRating) || 0)}%</td>
-                                    <td class="p-3 text-slate-400">-</td>
+                                    <td class="p-3 font-black">${_exclBtn}</td>
                                  </tr>`;
                     }
                     tableBody.innerHTML = html;
@@ -1413,6 +1479,27 @@
             } catch (err) {
                 tableBody.innerHTML = `<tr><td colspan="10" class="p-4 text-center text-red-600 font-bold">❌ فشل تحميل الأرشيف التاريخي!</td></tr>`;
             }
+        };
+
+        function _lateCellHtml(d, i) {
+            const hb = d.hourlyBreaks || {};
+            if (hb.lateDate !== getTodayDateString() || !(Number(hb.lateMinutes) > 0)) return '<span class="text-slate-400">-</span>';
+            const mins = Number(hb.lateMinutes);
+            if (hb.lateWaived) return '<span class="text-green-700">' + mins + ' min (✅ مُسامَح)</span>';
+            return '<span class="text-red-600">' + mins + ' min (−' + (Number(hb.latePenalty) || 0) + '%)</span> '
+                 + '<button data-emp="' + sanitize(i) + '" onclick="window.waiveLate(this.dataset.emp)" '
+                 + 'style="margin-inline-start:6px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">✋ مسامحة</button>';
+        }
+        // مسامحة المسؤول من خصم التأخير (يفرضها السيرفر: للمسؤول فقط)
+        window.waiveLate = async (id) => {
+            if (loggedInId !== '__admin__') { alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
+            if (!employeesData[id]) return;
+            if (!confirm('مسامحة ' + employeesData[id].name + ' من خصم التأخير لهذا اليوم؟\nسيُصفَّر الخصم ويُعاد حساب تقييم اليوم.')) return;
+            if (!_checkWriteRate()) return;
+            const { data, error } = await supabaseClient.rpc('alsaree3_waive_late', { p_key: id });
+            if (error) { _rpcFail(error); return; }
+            _applyServerRow(id, data);
+            if (typeof window.refreshLiveAdminTable === 'function') window.refreshLiveAdminTable();
         };
 
         window.refreshLiveAdminTable = () => {
@@ -1480,7 +1567,7 @@
 
                             <td class="p-3 font-black text-green-600 bg-green-50/20">${Number(d.rating!==undefined?d.rating:100) || 0}%</td>
                             <td class="p-3 font-black text-blue-600 bg-blue-50/20">${Number(d.monthlyRating!==undefined?d.monthlyRating:100) || 0}%</td>
-                            <td class="p-3 font-black ${(d.hourlyBreaks && d.hourlyBreaks.lateMinutes > 0) ? 'text-red-600' : 'text-slate-400'}">${(d.hourlyBreaks && d.hourlyBreaks.lateDate === getTodayDateString() && d.hourlyBreaks.lateMinutes > 0) ? (Number(d.hourlyBreaks.lateMinutes) + ' min (−' + (Number(d.hourlyBreaks.latePenalty) || 0) + '%)') : '-'}</td>
+                            <td class="p-3 font-black">${_lateCellHtml(d, i)} <button data-emp="${sanitize(i)}" onclick="window.excludeLiveDay(this.dataset.emp)" style="margin-inline-start:6px;background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تصفير</button></td>
                          </tr>`;
             }
             tableBody.innerHTML = html;
@@ -1696,6 +1783,7 @@
                 let d = freshData[id];
                 // لا تكتب فوق تقرير محفوظ بصفر إذا كان الموظف قد صُفّر مسبقاً (مثلاً بتصفير آخر)
                 const _ex = _existingToday[id];
+                if (_ex && _ex.startTimeStr === 'EXCLUDED') continue;   // يوم مستثنى من التقييم
                 if (_ex && _ex.startTimeStr && _ex.startTimeStr !== 'Absent' && _ex.startTimeStr !== 'لم يحضر' && !d.startTime && d.status !== 'أوف') continue;
                 const _offToday = (d.status === 'أوف') || (!d.startTime && isOffDay(id, todayStr));
                 let startStr = _offToday ? "OFF" : (d.startTime ? new Date(d.startTime).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : "Absent");
@@ -1726,15 +1814,16 @@
                 else if (taskEn === 'لا يوجد') taskEn = 'None';
                 else if (taskEn === 'OFF') taskEn = 'OFF';
 
+                const _exclLive = !!(d.hourlyBreaks && d.hourlyBreaks.excluded === todayStr);
                 historyUpdates[`history/${todayStr}/${id}`] = {
                     name: d.name,
-                    startTimeStr: startStr,
-                    totalDurationStr: duration,
-                    currentTask: taskEn,
-                    totalBreakMinutes: d.totalBreakMinutes || 0,
-                    totalRestMinutes: d.totalRestMinutes || 0,
-                    totalWorkSeconds: finalWorkSeconds,
-                    rating: d.rating !== undefined ? d.rating : 100,
+                    startTimeStr: _exclLive ? 'EXCLUDED' : startStr,
+                    totalDurationStr: _exclLive ? '-' : duration,
+                    currentTask: _exclLive ? 'None' : taskEn,
+                    totalBreakMinutes: _exclLive ? 0 : (d.totalBreakMinutes || 0),
+                    totalRestMinutes: _exclLive ? 0 : (d.totalRestMinutes || 0),
+                    totalWorkSeconds: _exclLive ? 0 : finalWorkSeconds,
+                    rating: _exclLive ? 100 : (d.rating !== undefined ? d.rating : 100),
                     monthlyRating: d.monthlyRating !== undefined ? d.monthlyRating : 100,
                     savedAt: new Date().toLocaleTimeString('en-US')
                 };
@@ -1817,7 +1906,8 @@
                     const k = r.employee_key;
                     const a = agg[k] = agg[k] || { name: r.name || k, days: 0, off: 0, absent: 0, leave: 0, sum: 0, br: 0, rest: 0, secs: 0 };
                     let st = _startLabel(k, r.history_date, r.start_time_str), rating = '-', hrs = r.total_duration_str || '-';
-                    if (leaveSet[k] && leaveSet[k].has(r.history_date)) { st = 'LEAVE'; a.leave++; hrs = '-'; }
+                    if (String(r.start_time_str || '') === 'EXCLUDED') { st = 'EXCLUDED'; hrs = '-'; }
+                    else if (leaveSet[k] && leaveSet[k].has(r.history_date)) { st = 'LEAVE'; a.leave++; hrs = '-'; }
                     else if (String(st).toUpperCase().startsWith('OFF')) { a.off++; hrs = 'OFF'; }
                     else if (st === 'Absent' || st === '-') { a.absent++; hrs = '-'; }
                     else {
