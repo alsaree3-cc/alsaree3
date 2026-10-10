@@ -192,7 +192,7 @@
                 navigator.geolocation.getCurrentPosition(
                     pos => {
                         const dist = distanceMeters(pos.coords.latitude, pos.coords.longitude, WORK_LOCATION.lat, WORK_LOCATION.lng);
-                        if (dist <= WORK_RADIUS_METERS) resolve({ ok: true });
+                        if (dist <= WORK_RADIUS_METERS) resolve({ ok: true, lat: pos.coords.latitude, lng: pos.coords.longitude });
                         else resolve({ ok: false, msg: 'أنت بعيد عن موقع العمل (' + Math.round(dist) + ' متر). يجب أن تكون ضمن ' + WORK_RADIUS_METERS + ' متر لتسجيل الحضور.' });
                     },
                     err => resolve({ ok: false, msg: err.code === 1 ? 'يجب السماح للموقع (Location) في المتصفح لتسجيل الحضور' : 'تعذّر تحديد موقعك، حاول مرة أخرى' }),
@@ -268,7 +268,29 @@
             return map;
         }
 
-        // تحديث بطاقة موظف واحد (الموظف لا يكتب إلا بطاقته — والسيرفر يفرض ذلك أيضاً)
+        // ===== تطبيق نتيجة السيرفر على الواجهة (السيرفر هو المرجع الوحيد للأوقات والتقييم) =====
+        function _applyServerRow(id, row) {
+            if (!row || typeof row !== 'object') return;
+            const parsed = empFromRow(row);
+            _serverEmployees[id] = Object.assign({}, _serverEmployees[id] || {}, parsed);
+            employeesData[id] = Object.assign({}, employeesData[id] || {}, parsed);
+            try { checkAndApplyRatings(); } catch (e) {}
+            render();
+        }
+        function _rpcFail(error) {
+            const m = String((error && error.message) || '');
+            if (m.startsWith('[A3]')) { alert(m.slice(4)); return; }
+            reportSyncError(error, 'حفظ التغيير');
+        }
+        async function _syncMyDay() {
+            try {
+                const { data, error } = await supabaseClient.rpc('alsaree3_sync_my_day');
+                if (error) console.warn('[SyncDay]', error.message);
+                else if (data && loggedInId) _applyServerRow(loggedInId, data);
+            } catch (e) { console.warn('[SyncDay]', e); }
+        }
+
+        // تحديث بطاقة موظف واحد (للمسؤول فقط الآن؛ الموظف يمر عبر دوال السيرفر — والسيرفر يفرض ذلك أيضاً)
         const _writeChain = {};   // id -> آخر عملية كتابة (لضمان ترتيب الكتابات وعدم تقدّم القديمة على الجديدة)
         function safeUpdateEmployee(id, data) {
             const prev = _writeChain[id] || Promise.resolve();
@@ -594,12 +616,7 @@
             if (loggedInId !== '__admin__') {
                 const today = getTodayDateString();
                 const empData = employeesData[loggedInId];
-                if (empData && empData.lastActiveDate !== today) {
-                    // تحديث محلي فوري + حفظ بالخلفية (لا ننتظر السيرفر قبل عرض الصفحة)
-                    const fresh = { status: 'خارج العمل', lastActionTime: null, startTime: null, lastActiveDate: today };
-                    employeesData[loggedInId] = { ...empData, ...fresh };
-                    safeUpdateEmployee(loggedInId, fresh);
-                }
+                if (empData && empData.lastActiveDate !== today) { _syncMyDay(); }
             }
 
             render();
@@ -1534,7 +1551,7 @@
         function backupCurrentDataToHistory(id, force = false) {
             if (isViewingHistory) return;
             // ===== SECURITY: يسمح فقط للمسؤول أو الموظف نفسه بالكتابة =====
-            if (loggedInId !== '__admin__' && loggedInId !== id) return;
+            if (loggedInId !== '__admin__') return;   // الموظف لا يكتب الأرشيف: السيرفر يكتبه عند كل تغيير حالة
 
             // FIX: throttle — لا تكتب أكثر من مرة كل 60 ثانية لكل موظف (إلا عند force)
             const now = Date.now();
@@ -1836,158 +1853,36 @@
         }
 
         window.updateStatus = async (id, status, auto) => {
-            // ===== SECURITY: السماح بحالات معروفة فقط وموظف موجود فقط =====
             if (!['حضور','بريك','راحة','أوف','خارج العمل'].includes(status)) return;
             if (!employeesData[id]) return;
-            // ===== SECURITY: منع الموظف من التحكم ببطاقة موظف آخر =====
             const isAdmin = (loggedInId === '__admin__');
-            const isMe = (id === loggedInId);
-            if (!isAdmin && !isMe) {
-                alert("🔒 لا يمكنك التحكم ببطاقة موظف آخر!");
-                return;
-            }
-            let d = employeesData[id], now = Date.now(), today = getTodayDateString();
-
-            // ===== قاعدة الموقع: تسجيل الحضور فقط ضمن 1 كم من موقع العمل (المسؤول مستثنى) =====
+            if (!isAdmin && id !== loggedInId) { alert("🔒 لا يمكنك التحكم ببطاقة موظف آخر!"); return; }
+            const d = employeesData[id];
+            // الموقع: نجمع الإحداثيات هنا ويتحقق منها السيرفر (المسؤول مستثنى)
+            let lat = null, lng = null;
             const isRealCheckIn = (status === 'حضور') && (d.status === 'خارج العمل' || d.status === 'أوف' || !d.startTime);
             if (!isAdmin && isRealCheckIn && !auto) {
                 const loc = await verifyWorkLocation();
                 if (!loc.ok) { alert('📍 ' + loc.msg); return; }
+                lat = (loc.lat === undefined ? null : loc.lat); lng = (loc.lng === undefined ? null : loc.lng);
             }
-
-            // ===== قاعدة البريك الجماعي: بريك واحد فقط في المجموعة في نفس الوقت =====
-            let groupPenalty = 0;
-            if (status === 'بريك' && d.status !== 'بريك' && !isAdmin) {
-                const mate = getMateOnBreak(id);
-                if (mate) {
-                    if (BLOCK_BREAK_IF_GROUP_BUSY) {
-                        alert('⛔ لا يمكنك أخذ بريك الآن: الزميل ' + mate.name + ' في بريك حالياً. انتظر حتى يعود.');
-                        return;
-                    }
-                    groupPenalty = GROUP_BREAK_PENALTY_POINTS;
-                    alert('⚠️ الزميل ' + mate.name + ' في بريك حالياً — سيتم خصم ' + groupPenalty + ' من تقييمك.');
-                }
-            }
-            // بريك/راحة يتطلب أن يكون الموظف في حالة حضور (وإلا يصبح startTime فارغاً ويتعلق العداد)
-            if (!auto && (status === 'بريك' || status === 'راحة') && !d.startTime) {
-                alert('⚠️ يجب تسجيل Check-In أولاً قبل أخذ ' + (status === 'بريك' ? 'بريك' : 'راحة') + '.');
-                return;
-            }
-            if ((status === 'بريك' || status === 'راحة') && (d.status === 'خارج العمل' || d.status === 'أوف')) {
-                alert('⚠️ يجب تسجيل Check-In أولاً.');
-                return;
-            }
-            const SLOT_MS = 5 * 60 * 1000;
-            let currentHourIndex = d.startTime ? Math.floor((now - d.startTime) / 3600000) : 0;
-            let currentSlotIndex = d.startTime ? Math.floor((now - d.startTime) / SLOT_MS) : 0;
-            let hourlyBreaks = JSON.parse(JSON.stringify(d.hourlyBreaks || {}));
-            let slotBreaks = JSON.parse(JSON.stringify(d.slotBreaks || {}));
-            // دائماً ابدأ من القيم المحفوظة لضمان عدم فقدانها
-            let totalBreakMinutes = d.totalBreakMinutes || 0;
-            let totalRestMinutes = d.totalRestMinutes || 0;
-
-            // احسب وقت العمل المتراكم حتى الآن قبل أي تغيير في الحالة
-            let totalWorkSeconds = d.totalWorkSeconds || 0;
-            if (d.status === 'حضور' && d.lastActionTime) {
-                let sessionSecs = Math.floor((now - d.lastActionTime) / 1000);
-                if (sessionSecs > 0) totalWorkSeconds += sessionSecs;
-            }
-
-            // إذا كان الموظف في بريك أو راحة، احسب الوقت المنقضي وأضفه
-            if (d.lastActionTime && (d.status === 'بريك' || d.status === 'راحة')) {
-                let elapsed = Math.floor((now - d.lastActionTime) / 60000);
-                if (d.status === 'بريك') {
-                    totalBreakMinutes += elapsed;
-                    hourlyBreaks[currentHourIndex] = (hourlyBreaks[currentHourIndex] || 0) + elapsed;
-                    // حفظ البريك في slotBreaks بالثواني — البريك قد يمتد عبر عدة slots
-                    let cursor = d.lastActionTime;
-                    let sIdx = d.startTime ? Math.floor((cursor - d.startTime) / SLOT_MS) : 0;
-                    while (cursor < now) {
-                        let slotEnd = d.startTime + ((sIdx + 1) * SLOT_MS);
-                        let segEnd = Math.min(now, slotEnd);
-                        let segSec = Math.floor((segEnd - cursor) / 1000);
-                        if (segSec > 0) slotBreaks[sIdx] = (slotBreaks[sIdx] || 0) + segSec;
-                        cursor = slotEnd;
-                        sIdx++;
-                    }
-                } else if (d.status === 'راحة') {
-                    totalRestMinutes += elapsed;
-                }
-            }
-
-            if (groupPenalty) hourlyBreaks.groupPenalty = (hourlyBreaks.groupPenalty || 0) + groupPenalty;
-            // خصم التأخير: يُحسب مرة واحدة في اليوم عند أول تسجيل حضور
-            let latePenaltyMsg = '';
-            if (status === 'حضور' && !auto && (d.status === 'خارج العمل' || !d.startTime) && hourlyBreaks.lateDate !== today) {
-                await _loadEmpMeta();
-                const lp = calcLatePenalty(id, now);
-                hourlyBreaks.lateDate = today;
-                hourlyBreaks.latePenalty = lp ? lp.points : 0;
-                hourlyBreaks.lateMinutes = lp ? lp.late : 0;
-                if (lp) latePenaltyMsg = '⏰ تأخرت ' + lp.late + ' دقيقة عن بداية الدوام (' + lp.start + ').';
-            }
-            // دائماً ضع القيم المحسوبة في الـ updates لضمان عدم فقدانها في السيرفر
-            let updates = {
-                status: status,
-                lastActiveDate: today,
-                totalBreakMinutes: totalBreakMinutes,
-                totalRestMinutes: totalRestMinutes,
-                totalWorkSeconds: totalWorkSeconds,
-                hourlyBreaks: hourlyBreaks,
-                slotBreaks: slotBreaks
-            };
-
-            if (status === 'حضور') {
-                // عند Check-In: احتفظ بالبريك والراحة المتراكمة ولا تصفّرها أبداً
-                if (d.status === 'خارج العمل' || d.status === 'أوف' || !d.startTime) {
-                    updates.startTime = now;
-                    updates.rating = 100;
-                    // لا تصفّر currentTask — يبقى كما هو
-                    // لا تصفّر totalWorkSeconds — فقط نهاية الدوام تصفّر
-                }
-                updates.lastActionTime = now;
-            } else if (status === 'بريك' || status === 'راحة') {
-                updates.lastActionTime = now;
-            } else if (status === 'أوف') {
-                updates.startTime = now; updates.rating = 100; updates.currentTask = 'OFF';
-                updates.lastActionTime = null;
-                // لا تصفّر Break/Rest/Work — فقط نهاية الدوام تصفّر
-            } else if (status === 'خارج العمل') {
-                updates.currentTask = 'None'; updates.lastActionTime = null;
-                setTimeout(() => { backupCurrentDataToHistory(id); }, 500);
-            }
-            // تحديث محلي فوري مع قفل لمنع التحديث اللحظي من التدخل
-            const _seq = _markPending(id, updates);
-            employeesData[id] = { ...employeesData[id], ...updates };
-            checkAndApplyRatings();
-            updates.rating = employeesData[id].rating;
-            render();
-            safeUpdateEmployee(id, updates).then((res) => {
-                console.log('[Save]', id, status, res);
-                _settlePending(id, _seq, res);
-                if (res && res.ok) backupCurrentDataToHistory(id);
+            if (!_checkWriteRate()) return;
+            const { data, error } = await supabaseClient.rpc('alsaree3_set_status', {
+                p_key: id, p_status: status, p_auto: auto === true, p_lat: lat, p_lng: lng
             });
+            if (error) { _rpcFail(error); try { await resyncEmployees(); } catch (e) {} return; }
+            _applyServerRow(id, data);
         };
 
         window.setTask = async (id, taskName) => {
-            // ===== SECURITY: السماح بمهام معروفة فقط =====
             if (!['واتساب','توزيع','قبول'].includes(taskName)) return;
             if (!employeesData[id]) return;
-            // ===== SECURITY: منع الموظف من التحكم ببطاقة موظف آخر =====
             const isAdmin = (loggedInId === '__admin__');
-            const isMe = (id === loggedInId);
-            if (!isAdmin && !isMe) {
-                alert("🔒 لا يمكنك التحكم ببطاقة موظف آخر!");
-                return;
-            }
-            // تحديث محلي فوري
-            const _seq = _markPending(id, { currentTask: taskName });
-            employeesData[id] = { ...employeesData[id], currentTask: taskName };
-            render();
-            safeUpdateEmployee(id, { currentTask: taskName }).then((res) => {
-                _settlePending(id, _seq, res);
-                if (res && res.ok) backupCurrentDataToHistory(id);
-            });
+            if (!isAdmin && id !== loggedInId) { alert("🔒 لا يمكنك التحكم ببطاقة موظف آخر!"); return; }
+            if (!_checkWriteRate()) return;
+            const { data, error } = await supabaseClient.rpc('alsaree3_set_task', { p_key: id, p_task: taskName });
+            if (error) { _rpcFail(error); return; }
+            _applyServerRow(id, data);
         };
 
         // عداد الخمول مُعطَّل — لأن الشاشة مشتركة بين جميع الموظفين
@@ -2155,7 +2050,8 @@
                     };
                     if (!_staleResetAt[id] || Date.now() - _staleResetAt[id] > 15000) {
                         _staleResetAt[id] = Date.now();
-                        safeUpdateEmployee(id, { status: 'خارج العمل', lastActionTime: null, startTime: null, lastActiveDate: today });
+                        if (loggedInId === '__admin__') safeUpdateEmployee(id, { status: 'خارج العمل', lastActionTime: null, startTime: null, lastActiveDate: today });
+                        else if (id === loggedInId) _syncMyDay();
                     }
                 }
             }
