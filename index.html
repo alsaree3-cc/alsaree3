@@ -2,9 +2,10 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
+    <script>if (window.top !== window.self) { document.documentElement.innerHTML = ""; throw new Error("framing blocked"); }</script>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'">
     <meta name="referrer" content="no-referrer">
     <title>Alsaree3 - Digital Monitoring System v6.4</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -53,7 +54,6 @@
 <body>
 
     <!-- شاشة تسجيل الدخول -->
-    <div id="ver-badge" style="position:fixed;bottom:6px;left:8px;z-index:10000;font:11px monospace;color:#64748b;background:#ffffffcc;padding:2px 6px;border-radius:6px;">v6.4</div>
     <div id="login-screen">
         <div class="login-card">
             <div class="text-center mb-8">
@@ -86,7 +86,7 @@
         <div id="admin-section" class="admin-panel hidden mt-8"></div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js" integrity="sha384-KX6Y/AMIv9qA8TLCDul2JatZWeyrJVgj3Xu/0r30Nr05xO8md1+wHAgtdsRV9LoE" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script>
         // ===== Supabase: الاتصال (المفتاح publishable مخصص للمتصفح — الحماية الفعلية عبر RLS في قاعدة البيانات) =====
         const SUPABASE_URL = 'https://eygohyybhidlsycblfop.supabase.co';
@@ -506,19 +506,21 @@
         }
 
         // ===== تسجيل الدخول عبر Supabase (اسم مستخدم + كلمة مرور) =====
+        let _loginFails = 0, _loginLockUntil = 0;
         const _doLoginInner = async () => {
             const userEl = document.getElementById('login-username');
             const passEl = document.getElementById('login-password');
             const errorEl = document.getElementById('login-error');
             const btn = document.getElementById('login-btn');
-            const username = userEl.value.trim().toLowerCase();
+            const username = userEl.value.trim().toLowerCase().slice(0, 64);
             const password = passEl.value;
             errorEl.textContent = '';
             if (!username) { errorEl.textContent = '⚠️ أدخل اسم المستخدم'; return; }
+            if (!/^[a-z0-9._@+-]{2,64}$/.test(username)) { errorEl.textContent = '❌ اسم المستخدم أو كلمة المرور غير صحيحة'; return; }
+            if (Date.now() < _loginLockUntil) { errorEl.textContent = '⛔ محاولات كثيرة، انتظر ' + Math.ceil((_loginLockUntil - Date.now()) / 1000) + ' ثانية'; return; }
             if (!password) { errorEl.textContent = '⚠️ أدخل كلمة المرور'; return; }
             const _t0 = performance.now(), _T = [];
-            const _mark = n => { _T.push(n + ' ' + Math.round(performance.now() - _t0) + 'ms'); const el = document.getElementById('login-timing'); if (el) el.textContent = '⏱ ' + _T.join(' → '); };
-            if (!document.getElementById('login-timing')) errorEl.insertAdjacentHTML('afterend', '<div id="login-timing" style="font:11px monospace;color:#64748b;margin-bottom:8px;direction:ltr;text-align:left"></div>');
+            const _mark = n => { _T.push(n + ' ' + Math.round(performance.now() - _t0) + 'ms'); };
             btn.disabled = true; btn.textContent = 'جاري التحقق...';
             const resetBtn = () => { btn.disabled = false; btn.textContent = 'دخول ←'; };
 
@@ -528,6 +530,7 @@
             _mark('auth');
             if (error) {
                 console.error(error);
+                if (++_loginFails >= 5) { _loginLockUntil = Date.now() + Math.min(900000, 30000 * Math.pow(2, Math.floor(_loginFails / 5) - 1)); }
                 errorEl.textContent = '❌ اسم المستخدم أو كلمة المرور غير صحيحة';
                 resetBtn(); passEl.value = ''; passEl.focus(); return;
             }
@@ -580,6 +583,7 @@
             _sessionStart = Date.now();
             logDeviceAccess(loggedInId, loggedInId === '__admin__' ? 'Admin' : employeesData[loggedInId].name);
 
+            _loginFails = 0; _loginLockUntil = 0;
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('main-app').style.display = 'block';
             document.getElementById('logout-btn').style.display = 'block';
@@ -600,7 +604,6 @@
 
             render();
             _mark('render');
-            console.log('[Login timing]', _T.join(' → '));
             if (loggedInId === '__admin__') setTimeout(() => window.openAdmin(), 300);
         };
 
@@ -616,7 +619,7 @@
                 ]);
             } catch (e) {
                 console.error('[Login]', e);
-                errorEl.textContent = '❌ خطأ: ' + (e && e.message ? e.message : e);
+                errorEl.textContent = '❌ تعذّر تسجيل الدخول، حاول مرة أخرى';
                 btn.disabled = false; btn.textContent = 'دخول ←';
                 if (document.getElementById('login-screen').style.display !== 'none') {
                     loggedInId = null; employeesData = {}; unsubscribeEmployees();
@@ -662,7 +665,7 @@
                 await resyncEmployees();
                 if (!isAutomated) alert("✅ تم التصفير وبدء يوم جديد!");
             } catch (e) {
-                alert("❌ فشل التصفير: " + (e.message || e));
+                console.error(e); alert("❌ فشل التصفير");
             }
         }
 
@@ -815,12 +818,19 @@
             section.scrollIntoView({ behavior: 'smooth' });
         };
 
-        // ===== الرمز السري للعمليات الحساسة (يُخزَّن كبصمة SHA-256 وليس نصاً) =====
-        const ADMIN_PIN_SHA256 = '20ee235b5de5b36244da6f9aa1cbdd032a90867ba92276ccc8c38c0d0d57fcec';
+        // ===== تأكيد العمليات الحساسة: إعادة إدخال كلمة مرور المسؤول (يتحقق منها السيرفر — لا رمز ثابت في الصفحة) =====
         let _pinFails = 0, _pinLockUntil = 0;
-        async function _sha256Hex(s) {
-            const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
-            return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join('');
+        async function _verifyAdminPassword(pw) {
+            if (loggedInId !== '__admin__' || !pw) return false;
+            const { data: ud } = await supabaseClient.auth.getUser();
+            const user = ud && ud.user;
+            if (!user || !user.email) return false;
+            // عميل مؤقت حتى لا نمس الجلسة الحالية؛ scope:'local' كي لا تُلغى الجلسات الأخرى
+            const tmp = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+            const { data, error } = await tmp.auth.signInWithPassword({ email: user.email, password: pw });
+            if (error || !data || !data.user || data.user.id !== user.id) return false;
+            try { await tmp.auth.signOut({ scope: 'local' }); } catch (e) {}
+            return true;
         }
         function _askPin(title) {
             return new Promise(resolve => {
@@ -830,9 +840,9 @@
                 o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.65);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;';
                 o.innerHTML = `<div style="background:#fff;border-radius:24px;padding:28px;width:100%;max-width:340px;direction:rtl;font-family:Cairo,sans-serif;text-align:center;box-shadow:0 25px 50px rgba(0,0,0,0.25);">
                     <div style="font-size:2.2rem;">🔒</div>
-                    <h3 style="font-weight:900;font-size:1.1rem;color:#334155;margin:6px 0 4px;">${title}</h3>
-                    <p style="font-size:0.8rem;color:#94a3b8;font-weight:700;margin-bottom:14px;">أدخل الرمز السري للمتابعة</p>
-                    <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" class="pin-input" style="margin-bottom:8px;">
+                    <h3 style="font-weight:900;font-size:1.1rem;color:#334155;margin:6px 0 4px;">${sanitize(title)}</h3>
+                    <p style="font-size:0.8rem;color:#94a3b8;font-weight:700;margin-bottom:14px;">أعد إدخال كلمة مرور المسؤول للمتابعة</p>
+                    <input id="pin-input" type="password" autocomplete="current-password" maxlength="128" class="pin-input" style="margin-bottom:8px;letter-spacing:normal;font-size:1rem;">
                     <div id="pin-err" class="error-msg" style="margin-bottom:10px;"></div>
                     <div style="display:flex;gap:8px;">
                         <button id="pin-ok" class="login-btn" style="width:auto;flex:2;padding:12px;">تأكيد</button>
@@ -840,19 +850,23 @@
                     </div>
                 </div>`;
                 document.body.appendChild(o);
-                const inp = o.querySelector('#pin-input'), err = o.querySelector('#pin-err');
+                const inp = o.querySelector('#pin-input'), err = o.querySelector('#pin-err'), okBtn = o.querySelector('#pin-ok');
                 const done = ok => { o.remove(); resolve(ok); };
+                let busy = false;
                 const submit = async () => {
+                    if (busy) return;
                     if (Date.now() < _pinLockUntil) { err.textContent = '⛔ محاولات كثيرة، انتظر ' + Math.ceil((_pinLockUntil - Date.now()) / 1000) + ' ثانية'; return; }
+                    busy = true; okBtn.disabled = true;
                     let ok = false;
-                    try { ok = (await _sha256Hex(inp.value)) === ADMIN_PIN_SHA256; }
-                    catch (e) { err.textContent = '❌ تعذر التحقق من الرمز'; return; }
+                    try { ok = await _verifyAdminPassword(inp.value); }
+                    catch (e) { err.textContent = '❌ تعذر التحقق'; busy = false; okBtn.disabled = false; return; }
+                    busy = false; okBtn.disabled = false;
                     if (ok) { _pinFails = 0; done(true); return; }
                     inp.value = ''; inp.focus();
-                    if (++_pinFails >= 5) { _pinLockUntil = Date.now() + 30000; _pinFails = 0; err.textContent = '⛔ محاولات كثيرة، انتظر 30 ثانية'; }
-                    else err.textContent = '❌ الرمز غير صحيح';
+                    if (++_pinFails >= 5) { _pinLockUntil = Date.now() + 60000; _pinFails = 0; err.textContent = '⛔ محاولات كثيرة، انتظر 60 ثانية'; }
+                    else err.textContent = '❌ كلمة المرور غير صحيحة';
                 };
-                o.querySelector('#pin-ok').onclick = submit;
+                okBtn.onclick = submit;
                 o.querySelector('#pin-cancel').onclick = () => done(false);
                 inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') done(false); });
                 setTimeout(() => inp.focus(), 50);
@@ -1010,7 +1024,7 @@
             btn.disabled = true; msg.textContent = '';
             const { error } = await supabaseClient.from('alsaree3_leave_requests').insert(row);
             btn.disabled = false;
-            if (error) { console.error('[Leave]', error); msg.textContent = '❌ تعذر إرسال الطلب: ' + error.message; return; }
+            if (error) { console.error('[Leave]', error); msg.textContent = '❌ تعذر إرسال الطلب، تحقق من البيانات وحاول مرة أخرى'; return; }
             msg.style.color = '#16a34a'; msg.textContent = '✅ تم إرسال الطلب وبانتظار موافقة المسؤول';
             document.getElementById('lv-note').value = '';
             window._lvLoadMine();
@@ -1081,7 +1095,7 @@
                         <td style="${th}font-weight:900;color:${left <= 3 ? '#dc2626' : '#16a34a'};">${left}</td>
                         <td style="${th}">${Math.round(hrs * 100) / 100}</td>
                         <td style="${th}white-space:nowrap;"><input type="number" step="0.5" min="0" max="365" value="${usedTotal}" id="lvbal-${sanitize(k)}" style="width:70px;padding:5px;border:1px solid #cbd5e1;border-radius:8px;font-weight:900;text-align:center;">
-                        <button onclick="window.saveLeaveBalance('${sanitize(k)}')" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:6px 12px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">حفظ</button></td></tr>`;
+                        <button onclick="window.saveLeaveBalance('${sanitize(String(k).replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:6px 12px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">حفظ</button></td></tr>`;
                 });
                 html += '</tbody></table></div>';
                 // آخر القرارات
@@ -1114,7 +1128,7 @@
             if (!_checkWriteRate()) return;
             const { data, error } = await supabaseClient.from('alsaree3_employees').update({ leave_adjust: adj }).eq('employee_key', k).select('employee_key');
             if (error || !data || data.length === 0) {
-                alert('❌ تعذر حفظ الرصيد: ' + (error ? error.message : 'لا صلاحية') + '\nتأكد من تنفيذ ملف leave_balance.sql في Supabase.');
+                alert('❌ تعذر حفظ الرصيد (لا صلاحية أو خطأ بالاتصال)');
                 return;
             }
             window._lvAdminLoad();
@@ -1151,7 +1165,7 @@
             row.employee_key = key; row.shift_start = shift || null; row.off_day = offV === '' ? null : Number(offV);
             const { error } = await supabaseClient.from('alsaree3_employees').insert(row);
             btn.disabled = false;
-            if (error) { console.error('[AddEmp]', error); msg.textContent = '❌ تعذر الإضافة: ' + error.message + ' (نفّذ leave_balance.sql)'; return; }
+            if (error) { console.error('[AddEmp]', error); msg.textContent = '❌ تعذر إضافة الموظف (تحقق من الصلاحيات)'; return; }
             document.getElementById('add-emp-overlay').remove();
             _metaAt = 0;
             try { await resyncEmployees(); } catch (e) {}
@@ -1606,35 +1620,13 @@
             if (confirm("⚠️ هل أنت متأكد من مسح التقييم الشهري؟")) {
                 const { error: mErr } = await supabaseClient.from('alsaree3_employees')
                     .update({ monthly_rating: 100, monthly_history: {} }).not('employee_key', 'is', null);
-                if (mErr) { alert("❌ فشل تصفير الشهر: " + mErr.message); return; }
+                if (mErr) { alert("❌ فشل تصفير الشهر"); return; }
                 await resyncEmployees().catch(() => {}); alert("✅ تم تصفير الشهر الجديد!");
             }
         };
 
         // ===== إنهاء اليوم: يحفظ كل شيء ثم يصفر =====
-        const ADMIN_ACTION_PIN = '1975';
-        function askAdminPin(label) {
-            return new Promise(resolve => {
-                const o = document.createElement('div');
-                o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;';
-                o.innerHTML = `<div style="background:#fff;border-radius:24px;padding:28px;width:100%;max-width:340px;direction:rtl;font-family:Cairo,sans-serif;text-align:center;">
-                    <h3 style="font-weight:900;font-size:1.1rem;color:#334155;margin-bottom:12px;">🔐 ${label}</h3>
-                    <input id="admpin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" class="pin-input" placeholder="••••">
-                    <div id="admpin-err" class="error-msg"></div>
-                    <div style="display:flex;gap:8px;margin-top:10px;">
-                        <button id="admpin-ok" class="login-btn" style="padding:12px;">تأكيد</button>
-                        <button id="admpin-cancel" style="flex:1;background:#f1f5f9;border:none;border-radius:18px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">إلغاء</button>
-                    </div></div>`;
-                document.body.appendChild(o);
-                const inp = o.querySelector('#admpin-input'), err = o.querySelector('#admpin-err');
-                const done = ok => { o.remove(); resolve(ok); };
-                const check = () => { if (inp.value === ADMIN_ACTION_PIN) done(true); else { err.textContent = '❌ الرمز غير صحيح'; inp.value = ''; inp.focus(); } };
-                o.querySelector('#admpin-ok').onclick = check;
-                o.querySelector('#admpin-cancel').onclick = () => done(false);
-                inp.addEventListener('keydown', e => { if (e.key === 'Enter') check(); });
-                setTimeout(() => inp.focus(), 50);
-            });
-        }
+        const askAdminPin = (label) => _askPin(label);
 
         window.endOfDay = async (auto = false) => {
             auto = (auto === true);   // true فقط عند التشغيل التلقائي الساعة 7 مساءً
