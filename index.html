@@ -1459,7 +1459,7 @@
                 const ordCnt = {}; let ordOk = true;
                 const _addOrd = (k, ds) => { const m = ordCnt[k] = ordCnt[k] || {}; m[ds] = (m[ds] || 0) + 1; };
                 const ores = await Promise.all(dates.map(ds => supabaseClient.rpc('alsaree3_dispatch_admin', { p_date: ds }).then(r => ({ ds, r })).catch(() => ({ ds, r: { error: true } }))));
-                ores.forEach(({ ds, r }) => { if (r.error) { ordOk = false; return; } if (ds === today) return; (r.data || []).forEach(o => _addOrd(o.employee_key, ds)); });
+                ores.forEach(({ ds, r }) => { if (r.error) { ordOk = false; return; } if (ds === today) return; (r.data || []).forEach(o => { if (String(o.kind || '').endsWith('_late')) return; _addOrd(o.employee_key, ds); }); });
                 const res = await Promise.all(dates.map(ds => supabaseClient.rpc('alsaree3_tickets_admin', { p_date: ds }).then(r => ({ ds, r })).catch(() => ({ ds, r: { error: true } }))));
                 res.forEach(({ ds, r }) => {
                     if (r.error) { tkOk = false; return; }
@@ -1698,32 +1698,33 @@
 
                 // ملخص لكل موظف
                 const S = {};
-                const _s = (k) => (S[k] = S[k] || { recv: 0, solved: 0, sent: 0, acc: 0, dis: 0, oldAcc: 0 });
+                const _s = (k) => (S[k] = S[k] || { recv: 0, solved: 0, sent: 0, acc: 0, dis: 0, oldAcc: 0, accLate: 0, disLate: 0 });
                 data.forEach(t => {
                     const a = _s(t.employee_key);
                     if (t.kind === 'self') { a.recv++; if (t.solved_at) a.solved++; }
                     else if (t.kind === 'accept') a.oldAcc++;
                     else a.sent++;
                 });
-                orders.forEach(o => { const a = _s(o.employee_key); if ((o.kind || 'dispatch') === 'accept') a.acc++; else a.dis++; });
-                const T = { recv: 0, solved: 0, sent: 0, acc: 0, dis: 0, oldAcc: 0 };
+                orders.forEach(o => { const a = _s(o.employee_key); const _kk = o.kind || 'dispatch'; if (_kk === 'accept') a.acc++; else if (_kk === 'accept_late') a.accLate++; else if (_kk === 'dispatch_late') a.disLate++; else a.dis++; });
+                const T = { recv: 0, solved: 0, sent: 0, acc: 0, dis: 0, oldAcc: 0, accLate: 0, disLate: 0 };
                 Object.keys(S).forEach(k => Object.keys(T).forEach(f => { T[f] += S[k][f]; }));
                 const td = 'padding:8px;border-bottom:1px solid #e2e8f0;';
-                const rowS = (name, a, bold) => '<tr' + (bold ? ' style="background:#f8fafc;font-weight:900;"' : '') + '><td style="' + td + 'font-weight:900;">' + name + '</td><td style="' + td + '">' + a.recv + '</td><td style="' + td + '">' + a.solved + '</td><td style="' + td + '">' + a.sent + '</td><td style="' + td + '">' + a.acc + (a.oldAcc ? ' <span style="color:#64748b;font-size:.75rem;">(+' + a.oldAcc + ' قديم)</span>' : '') + '</td><td style="' + td + '">' + a.dis + '</td></tr>';
+                const rowS = (name, a, bold) => '<tr' + (bold ? ' style="background:#f8fafc;font-weight:900;"' : '') + '><td style="' + td + 'font-weight:900;">' + name + '</td><td style="' + td + '">' + a.recv + '</td><td style="' + td + '">' + a.solved + '</td><td style="' + td + '">' + a.sent + '</td><td style="' + td + '">' + a.acc + (a.oldAcc ? ' <span style="color:#64748b;font-size:.75rem;">(+' + a.oldAcc + ' قديم)</span>' : '') + '</td><td style="' + td + '">' + a.dis + '</td><td style="' + td + 'color:#b91c1c;">' + a.accLate + '</td><td style="' + td + 'color:#b91c1c;">' + a.disLate + '</td></tr>';
                 h += '<div style="font-weight:900;color:#334155;margin:6px 0;">📊 ملخص اليوم لكل موظف</div>'
                    + '<div style="overflow-x:auto;margin-bottom:14px;"><table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
-                   + '<th style="padding:8px;">الموظف</th><th style="padding:8px;">📩 رسائل واصلة</th><th style="padding:8px;">✅ محلولة</th><th style="padding:8px;">📨 مهام مرسلة</th><th style="padding:8px;">✅ طلبات مقبولة</th><th style="padding:8px;">🚴 طلبات موزّعة</th></tr></thead><tbody>'
+                   + '<th style="padding:8px;">الموظف</th><th style="padding:8px;">📩 رسائل واصلة</th><th style="padding:8px;">✅ محلولة</th><th style="padding:8px;">📨 مهام مرسلة</th><th style="padding:8px;">✅ طلبات مقبولة</th><th style="padding:8px;">🚴 طلبات موزّعة</th><th style="padding:8px;">⏱️ متأخر تجهيز</th><th style="padding:8px;">⏱️ متأخر وصول</th></tr></thead><tbody>'
                    + Object.keys(S).map(k => rowS(_nm(k), S[k], false)).join('')
-                   + (Object.keys(S).length ? rowS('الإجمالي', T, true) : '<tr><td colspan="6" style="padding:14px;text-align:center;color:#94a3b8;font-weight:700;">لا توجد بيانات في هذا اليوم.</td></tr>')
+                   + (Object.keys(S).length ? rowS('الإجمالي', T, true) : '<tr><td colspan="8" style="padding:14px;text-align:center;color:#94a3b8;font-weight:700;">لا توجد بيانات في هذا اليوم.</td></tr>')
                    + '</tbody></table></div>';
 
                 // الطلبات اليدوية: مقبول / موزّع (تعديل وحذف)
-                [['accept', '✅ الطلبات المقبولة يدوياً', '#eff6ff', '#bfdbfe', '#1e40af'], ['dispatch', '🚴 الطلبات الموزّعة يدوياً', '#fffbeb', '#fde68a', '#92400e']].forEach(([kd, title, bg, bd, col]) => {
+                [['accept', '✅ الطلبات المقبولة يدوياً', '#eff6ff', '#bfdbfe', '#1e40af'], ['accept_late', '⏱️ طلبات متأخرة في التجهيز', '#fef2f2', '#fecaca', '#b91c1c'], ['dispatch', '🚴 الطلبات الموزّعة يدوياً', '#fffbeb', '#fde68a', '#92400e'], ['dispatch_late', '⏱️ طلبات متأخرة في الوصول للزبون', '#fef2f2', '#fecaca', '#b91c1c']].forEach(([kd, title, bg, bd, col]) => {
                     const rows = orders.filter(x => (x.kind || 'dispatch') === kd);
                     if (!rows.length) return;
                     h += '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:14px;padding:10px 14px;margin-bottom:12px;color:' + col + ';"><div style="font-weight:900;margin-bottom:6px;">' + title + ' (الإجمالي ' + rows.length + ')</div>'
                        + '<table style="width:100%;border-collapse:collapse;font-size:0.88rem;text-align:right;"><tbody>'
                        + rows.map(x => '<tr style="border-top:1px solid ' + bd + ';"><td style="padding:6px;font-weight:900;">' + _nm(x.employee_key) + '</td><td style="padding:6px;font-weight:800;">#' + sanitize(String(x.order_no)) + '</td><td style="padding:6px;">' + (x.created_at ? _tm(x.created_at) : '') + '</td>'
+                           + (kd.endsWith('_late') ? '<td style="padding:6px;font-weight:700;">📝 ' + (x.reason ? sanitize(String(x.reason)) : '<span style="opacity:.6;">بدون سبب</span>') + '</td>' : '')
                            + '<td style="padding:6px;white-space:nowrap;">' + (canEditOrders && x.id != null ? _edtB('window.adminEditOrder(' + Number(x.id) + ')') + _delB('window.adminDelOrder(' + Number(x.id) + ')') : '') + '</td></tr>').join('')
                        + '</tbody></table></div>';
                 });
@@ -1934,7 +1935,7 @@
             if (b) b.classList.add('busy'); if (navigator.vibrate) navigator.vibrate(30);
             const { error } = await supabaseClient.rpc('alsaree3_accept_log');
             if (b) b.classList.remove('busy');
-            if (error) { console.error('[Accept]', error); alert('❌ تعذّر التسجيل. حاول مرة أخرى.'); return; }
+            if (error) { console.error('[Accept]', error); const _em = String(error.message || ''); alert(_em.startsWith('[A3]') ? '⚠️ ' + _em.slice(4) : '❌ تعذّر التسجيل. حاول مرة أخرى.\n\nالسبب: ' + (error.code ? '[' + error.code + '] ' : '') + _em.slice(0, 200)); return; }
             let t = document.getElementById('accept-toast');
             if (!t) {
                 t = document.createElement('div'); t.id = 'accept-toast';
@@ -1964,7 +1965,7 @@
         };
 
         // ===== تسجيل الطلبات يدوياً برقمها: التوزيع (Dispatcher) والقبول (Accept) =====
-        let _ordData = { dispatch: [], accept: [] }, _ordLoadedAt = { dispatch: 0, accept: 0 };
+        let _ordData = { dispatch: [], accept: [], accept_late: [], dispatch_late: [] }, _ordLoadedAt = { dispatch: 0, accept: 0, accept_late: 0, dispatch_late: 0 };
         function _ordKind() { const me = employeesData[loggedInId]; return me && me.currentTask === 'قبول' ? 'accept' : 'dispatch'; }
         async function _fetchMyOrders(kind) {
             if (!loggedInId || loggedInId === '__admin__') return;
@@ -1977,29 +1978,42 @@
                 if (changed) { try { render(); } catch (e) {} }
             } catch (e) { console.warn('[Orders]', e); }
         }
-        window.addOrder = async (b) => {
-            const kind = _ordKind();
-            const inp = document.getElementById('disp-input'); if (!inp) return;
+        window.addOrder = async (b, late) => {
+            const baseKind = _ordKind();
+            const kind = late ? baseKind + '_late' : baseKind;
+            const inp = document.getElementById(late ? 'late-input' : 'disp-input'); if (!inp) return;
             const v = inp.value.trim();
             if (!v) { inp.focus(); return; }
+            let reason = null;
+            if (late) {
+                const ri = document.getElementById('late-reason');
+                reason = ri ? ri.value.trim() : '';
+                if (!reason) { alert('⚠️ اكتب سبب التأخير أولاً'); if (ri) ri.focus(); return; }
+                if (reason.length > 100) reason = reason.slice(0, 100);
+            }
             if (!/^[0-9A-Za-z\u0600-\u06FF#_\-\/]{1,30}$/.test(v)) { alert('⚠️ رقم الطلب غير صالح'); return; }
             if (!_checkWriteRate()) return;
             if (b && b.classList) b.classList.add('busy');
-            const { error } = await supabaseClient.rpc('alsaree3_dispatch_add', { p_order: v, p_kind: kind });
+            const { error } = await supabaseClient.rpc('alsaree3_dispatch_add', late ? { p_order: v, p_kind: kind, p_reason: reason } : { p_order: v, p_kind: kind });
             if (b && b.classList) b.classList.remove('busy');
             if (error) {
-                const dup = String(error.message || '').indexOf('duplicate') !== -1;
+                const _em = String(error.message || '');
+                const dup = _em.indexOf('duplicate') !== -1 || error.code === '23505';
                 console.error('[OrderAdd]', error);
-                alert(dup ? '⚠️ رقم الطلب هذا مسجّل مسبقاً اليوم' : '❌ تعذّر التسجيل. حاول مرة أخرى.');
+                alert(dup ? '⚠️ رقم الطلب هذا مسجّل مسبقاً اليوم'
+                    : _em.startsWith('[A3]') ? '⚠️ ' + _em.slice(4)
+                    : '❌ تعذّر التسجيل. حاول مرة أخرى.\n\nالسبب: ' + (error.code ? '[' + error.code + '] ' : '') + _em.slice(0, 200));
                 return;
             }
             inp.value = '';
+            if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; }
             if (navigator.vibrate) navigator.vibrate(30);
             _ordLoadedAt[kind] = Date.now();
             await _fetchMyOrders(kind);
             try { render(); } catch (e) {}
-            const ni = document.getElementById('disp-input'); if (ni) ni.focus();
-            _tkToast((kind === 'accept' ? '✅ سُجّل قبول الطلب ' : '🚴 سُجّل توزيع الطلب ') + v, async () => {
+            const ni = document.getElementById(late ? 'late-input' : 'disp-input'); if (ni) ni.focus();
+            const _msg = { accept: '✅ سُجّل قبول الطلب ', dispatch: '🚴 سُجّل توزيع الطلب ', accept_late: '⏱️ سُجّل تأخّر تجهيز الطلب ', dispatch_late: '⏱️ سُجّل تأخّر وصول الطلب للزبون ' }[kind];
+            _tkToast(_msg + v, async () => {
                 const { error: e2 } = await supabaseClient.rpc('alsaree3_dispatch_undo', { p_kind: kind });
                 if (e2) { console.error('[OrderUndo]', e2); return false; }
                 await _fetchMyOrders(kind); try { render(); } catch (e) {} return true;
@@ -2710,9 +2724,18 @@
                     } else if (d.currentTask === 'توزيع' || d.currentTask === 'قبول') {
                         const _k = d.currentTask === 'قبول' ? 'accept' : 'dispatch';
                         if (!_ordLoadedAt[_k] || Date.now() - _ordLoadedAt[_k] > 20000) { _ordLoadedAt[_k] = Date.now(); _fetchMyOrders(_k); }
+                        const _lk = _k + '_late';
+                        if (!_ordLoadedAt[_lk] || Date.now() - _ordLoadedAt[_lk] > 20000) { _ordLoadedAt[_lk] = Date.now(); _fetchMyOrders(_lk); }
                         const _ol = _ordData[_k], _dn = _ol.length;
+                        const _ll = _ordData[_lk], _ln = _ll.length;
+                        const _lateReasons = { accept: ['ازدحام في المطعم', 'نقص مواد', 'المطعم لم يستلم الطلب', 'المطعم مغلق', 'مشكلة في النظام'], dispatch: ['لا يوجد سائق متاح', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'تأخير في التجهيز من المطعم', 'تبديل السائق', 'سائق عطلان', 'مشكلة في النظام'] };
+                        const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
+                        const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
                         taskExtra = `<div class="tk-row"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
-                        <div class="tk-stat">اليوم: ${_dn} طلب ${_k === 'accept' ? 'مقبول' : 'موزّع'}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>`;
+                        <div class="tk-stat">اليوم: ${_dn} طلب ${_k === 'accept' ? 'مقبول' : 'موزّع'}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="late-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="${_latePh}" class="tk-input" onkeydown="if(event.key===\'Enter\'){var r=document.getElementById(\'late-reason\');if(r)r.focus();}"></div>
+                        <div class="tk-row"><input id="late-reason" type="text" list="late-reasons-${_k}" maxlength="100" autocomplete="off" placeholder="سبب التأخير (إجباري)" class="tk-input" style="direction:rtl;" onkeydown="if(event.key===\'Enter\')window.addOrder(null, true)"><datalist id="late-reasons-${_k}">${_lateReasons[_k].map(r => '<option value="' + r + '">').join('')}</datalist><button onclick="window.addOrder(this, true)" class="tk-btn" style="flex:0 0 auto;background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر</button></div>
+                        <div class="tk-stat">اليوم: ${_ln} ${_lateTx}${_ln ? ' · آخر رقم: ' + sanitize(String(_ll[0].order_no)) : ''}</div>`;
                     }
                 }
                 const waBox = (i === loggedInId && !isAdmin) ? `
