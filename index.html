@@ -39,6 +39,7 @@
         .tk-badge { background:#16a34a; color:#fff; border-radius:999px; min-width:18px; padding:0 6px; font-size:0.7rem; font-weight:900; }
         .tk-input { flex:1; min-width:0; padding:7px 10px; border-radius:12px; border:1px solid #cbd5e1; background:#fff; font-family:inherit; font-size:0.85rem; font-weight:700; color:#0f172a; direction:ltr; text-align:center; }
         .tk-input:focus { outline:none; border-color:#f59e0b; box-shadow:0 0 0 2px #fde68a; }
+        .tk-small { flex:none; display:inline-flex; padding:4px 12px; font-size:0.74rem; border-radius:10px; }
         .tk-wa { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
         .tk-wa:hover { background:#d1fae5; }
         .tk-stat { text-align:center; font-size:0.72rem; font-weight:800; color:#64748b; margin:-4px 0 12px; }
@@ -1653,54 +1654,99 @@
         window.openTickets = async (date) => {
             if (loggedInId !== '__admin__') return;
             date = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date : getTodayDateString();
-            _modal('tickets-overlay', '📋 مهام واتساب والردود', '<div style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div>', 900);
+            window._tkDate = date;
+            _modal('tickets-overlay', '📋 مهام واتساب والردود', '<div style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div>', 1000);
             const body = document.getElementById('tickets-overlay-body');
+            const _btn = (label, fn, bg, bd, col) => '<button onclick="' + fn + '" style="background:' + bg + ';border:1px solid ' + bd + ';color:' + col + ';border-radius:8px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;margin-inline-start:4px;">' + label + '</button>';
+            const _delB = (fn) => _btn('🗑️ حذف', fn, '#fef2f2', '#fca5a5', '#b91c1c');
+            const _edtB = (fn) => _btn('✏️ تعديل', fn, '#eff6ff', '#93c5fd', '#1d4ed8');
+            const _nm = (k) => sanitize(employeesData[k] ? employeesData[k].name : k);
             try {
                 let { data, error } = await supabaseClient.rpc('alsaree3_tickets_admin', { p_date: date });
                 if (error) throw error;
-                let h = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;"><span style="font-weight:800;">📅 التاريخ</span>'
-                      + '<input type="date" value="' + sanitize(date) + '" onchange="window.openTickets(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;"></div>'
-                      + '<div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:10px;">الخصم من تقييم اليوم عند إغلاقه الساعة 7: تأخر القراءة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د = 1، وتأخر الحل أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د أو عدم الحل = 2 (على مهامك 📨 فقط). ومكافأة +1 لكل رسالة واتساب يحلّها الموظف (حتى +10) والتقييم لا يتجاوز 100.</div>';
-                const _st = {};
-                (data || []).filter(t => t.kind === 'self').forEach(t => {
-                    const a = _st[t.employee_key] = _st[t.employee_key] || { n: 0, solved: 0, mins: 0 };
-                    a.n++; if (t.solved_at) { a.solved++; a.mins += _minsBetween(t.created_at, t.solved_at); }
-                });
-                const _ac = {}; let _acTotal = 0;
-                (data || []).filter(t => t.kind === 'accept').forEach(t => { _ac[t.employee_key] = (_ac[t.employee_key] || 0) + 1; _acTotal++; });
-                if (_acTotal) {
-                    h += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:10px 14px;margin-bottom:12px;font-weight:800;color:#1e40af;">✅ الطلبات المقبولة (الإجمالي ' + _acTotal + '):<br>'
-                       + Object.keys(_ac).sort((x, y) => _ac[y] - _ac[x]).map(k => sanitize(employeesData[k] ? employeesData[k].name : k) + ': ' + _ac[k]).join('<br>') + '</div>';
-                }
+                data = data || [];
+                window._tkRows = {}; data.forEach(t => { window._tkRows[t.id] = t; });
+
+                // الطلبات اليدوية (مقبول / موزّع) مع المعرّف لإمكانية التعديل والحذف
+                let orders = [], canEditOrders = true;
                 try {
-                    const { data: dp } = await supabaseClient.rpc('alsaree3_dispatch_admin', { p_date: date });
-                    if (dp && dp.length) {
-                        const g = {}; dp.forEach(x => { (g[x.employee_key] = g[x.employee_key] || []).push(x); });
-                        h += '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:14px;padding:10px 14px;margin-bottom:12px;font-weight:800;color:#92400e;">🚴 الطلبات الموزّعة يدوياً (الإجمالي ' + dp.length + '):<br>'
-                           + Object.keys(g).map(k => sanitize(employeesData[k] ? employeesData[k].name : k) + ': ' + g[k].length + ' — ' + g[k].map(x => sanitize(String(x.order_no))).join('، ')).join('<br>') + '</div>';
-                    }
-                } catch (e) {}
-                data = (data || []).filter(t => t.kind !== 'accept');
-                const _stKeys = Object.keys(_st);
-                if (_stKeys.length) {
-                    h += '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:14px;padding:10px 14px;margin-bottom:12px;font-weight:800;color:#166534;">📩 الرسائل الواصلة للموظفين اليوم:<br>'
-                       + _stKeys.map(k => sanitize(employeesData[k] ? employeesData[k].name : k) + ': ' + _st[k].n + ' رسالة، حُلّت ' + _st[k].solved + (_st[k].solved ? ' (متوسط الحل ' + Math.round(_st[k].mins / _st[k].solved) + ' د)' : '')).join('<br>') + '</div>';
+                    const r = await supabaseClient.rpc('alsaree3_orders_admin', { p_date: date });
+                    if (r.error) throw r.error;
+                    orders = r.data || [];
+                } catch (e) {
+                    canEditOrders = false;
+                    console.warn('[Orders admin]', e);
+                    try { const r2 = await supabaseClient.rpc('alsaree3_dispatch_admin', { p_date: date }); orders = r2.data || []; } catch (e2) {}
                 }
-                if (!data || data.length === 0) {
+                window._ordRows = {}; orders.forEach(o => { if (o.id != null) window._ordRows[o.id] = o; });
+
+                let h = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;"><span style="font-weight:800;">📅 التاريخ</span>'
+                      + '<input type="date" value="' + sanitize(date) + '" onchange="window.openTickets(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
+                      + '<button onclick="window.openTickets(window._tkDate)" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:4px 10px;font-weight:800;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تحديث</button></div>'
+                      + '<div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:10px;">الخصم من تقييم اليوم عند إغلاقه الساعة 7: تأخر القراءة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د = 1، وتأخر الحل أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د أو عدم الحل = 2 (على مهامك 📨 فقط). ومكافأة +1 لكل رسالة واتساب يحلّها الموظف (حتى +10) والتقييم لا يتجاوز 100. حذف أي سجل يُلغي أثره عند إغلاق اليوم.</div>';
+                if (!canEditOrders) {
+                    h += '<div style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:12px;padding:8px 12px;margin-bottom:10px;font-weight:800;font-size:0.85rem;">⚠️ أزرار التعديل والحذف للطلبات اليدوية غير مفعّلة — شغّل ملف admin_tools.sql في Supabase ثم اضغط تحديث.</div>';
+                }
+
+                // ملخص لكل موظف
+                const S = {};
+                const _s = (k) => (S[k] = S[k] || { recv: 0, solved: 0, sent: 0, acc: 0, dis: 0, oldAcc: 0 });
+                data.forEach(t => {
+                    const a = _s(t.employee_key);
+                    if (t.kind === 'self') { a.recv++; if (t.solved_at) a.solved++; }
+                    else if (t.kind === 'accept') a.oldAcc++;
+                    else a.sent++;
+                });
+                orders.forEach(o => { const a = _s(o.employee_key); if ((o.kind || 'dispatch') === 'accept') a.acc++; else a.dis++; });
+                const T = { recv: 0, solved: 0, sent: 0, acc: 0, dis: 0, oldAcc: 0 };
+                Object.keys(S).forEach(k => Object.keys(T).forEach(f => { T[f] += S[k][f]; }));
+                const td = 'padding:8px;border-bottom:1px solid #e2e8f0;';
+                const rowS = (name, a, bold) => '<tr' + (bold ? ' style="background:#f8fafc;font-weight:900;"' : '') + '><td style="' + td + 'font-weight:900;">' + name + '</td><td style="' + td + '">' + a.recv + '</td><td style="' + td + '">' + a.solved + '</td><td style="' + td + '">' + a.sent + '</td><td style="' + td + '">' + a.acc + (a.oldAcc ? ' <span style="color:#64748b;font-size:.75rem;">(+' + a.oldAcc + ' قديم)</span>' : '') + '</td><td style="' + td + '">' + a.dis + '</td></tr>';
+                h += '<div style="font-weight:900;color:#334155;margin:6px 0;">📊 ملخص اليوم لكل موظف</div>'
+                   + '<div style="overflow-x:auto;margin-bottom:14px;"><table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
+                   + '<th style="padding:8px;">الموظف</th><th style="padding:8px;">📩 رسائل واصلة</th><th style="padding:8px;">✅ محلولة</th><th style="padding:8px;">📨 مهام مرسلة</th><th style="padding:8px;">✅ طلبات مقبولة</th><th style="padding:8px;">🚴 طلبات موزّعة</th></tr></thead><tbody>'
+                   + Object.keys(S).map(k => rowS(_nm(k), S[k], false)).join('')
+                   + (Object.keys(S).length ? rowS('الإجمالي', T, true) : '<tr><td colspan="6" style="padding:14px;text-align:center;color:#94a3b8;font-weight:700;">لا توجد بيانات في هذا اليوم.</td></tr>')
+                   + '</tbody></table></div>';
+
+                // الطلبات اليدوية: مقبول / موزّع (تعديل وحذف)
+                [['accept', '✅ الطلبات المقبولة يدوياً', '#eff6ff', '#bfdbfe', '#1e40af'], ['dispatch', '🚴 الطلبات الموزّعة يدوياً', '#fffbeb', '#fde68a', '#92400e']].forEach(([kd, title, bg, bd, col]) => {
+                    const rows = orders.filter(x => (x.kind || 'dispatch') === kd);
+                    if (!rows.length) return;
+                    h += '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:14px;padding:10px 14px;margin-bottom:12px;color:' + col + ';"><div style="font-weight:900;margin-bottom:6px;">' + title + ' (الإجمالي ' + rows.length + ')</div>'
+                       + '<table style="width:100%;border-collapse:collapse;font-size:0.88rem;text-align:right;"><tbody>'
+                       + rows.map(x => '<tr style="border-top:1px solid ' + bd + ';"><td style="padding:6px;font-weight:900;">' + _nm(x.employee_key) + '</td><td style="padding:6px;font-weight:800;">#' + sanitize(String(x.order_no)) + '</td><td style="padding:6px;">' + (x.created_at ? _tm(x.created_at) : '') + '</td>'
+                           + '<td style="padding:6px;white-space:nowrap;">' + (canEditOrders && x.id != null ? _edtB('window.adminEditOrder(' + Number(x.id) + ')') + _delB('window.adminDelOrder(' + Number(x.id) + ')') : '') + '</td></tr>').join('')
+                       + '</tbody></table></div>';
+                });
+
+                // سجل قديم للقبول (بدون أرقام)
+                const oldAcc = data.filter(t => t.kind === 'accept');
+                if (oldAcc.length) {
+                    h += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:10px 14px;margin-bottom:12px;color:#1e40af;"><div style="font-weight:900;margin-bottom:6px;">✅ الطلبات المقبولة — سجل سابق بدون أرقام (' + oldAcc.length + ')</div>'
+                       + '<table style="width:100%;border-collapse:collapse;font-size:0.88rem;text-align:right;"><tbody>'
+                       + oldAcc.map(t => '<tr style="border-top:1px solid #bfdbfe;"><td style="padding:6px;font-weight:900;">' + _nm(t.employee_key) + '</td><td style="padding:6px;">' + _tm(t.created_at) + '</td><td style="padding:6px;">' + _delB('window.adminDelTicket(' + Number(t.id) + ')') + '</td></tr>').join('')
+                       + '</tbody></table></div>';
+                }
+
+                // المهام والرسائل (تعديل وحذف)
+                const list = data.filter(t => t.kind !== 'accept');
+                h += '<div style="font-weight:900;color:#334155;margin:6px 0;">📋 المهام والرسائل</div>';
+                if (!list.length) {
                     h += '<p style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">لا توجد مهام في هذا اليوم.</p>';
                 } else {
                     h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
-                       + '<th style="padding:9px;">الموظف</th><th style="padding:9px;">المهمة</th><th style="padding:9px;">أُرسلت</th><th style="padding:9px;">القراءة</th><th style="padding:9px;">الحل</th><th style="padding:9px;">الخصم</th></tr></thead><tbody>';
-                    data.forEach(t => {
-                        const emp = employeesData[t.employee_key];
+                       + '<th style="padding:9px;">الموظف</th><th style="padding:9px;">المهمة</th><th style="padding:9px;">أُرسلت</th><th style="padding:9px;">القراءة</th><th style="padding:9px;">الحل</th><th style="padding:9px;">الخصم</th><th style="padding:9px;">إجراء</th></tr></thead><tbody>';
+                    list.forEach(t => {
                         const pen = _ticketPenalty(t);
                         const isSelf = t.kind === 'self';
                         const rd = isSelf ? '<span style="color:#64748b;">وصلت ' + _tm(t.created_at) + '</span>' : (t.read_at ? ('✅ ' + _tm(t.read_at) + ' (بعد ' + _minsBetween(t.created_at, t.read_at) + ' د)') : '<span style="color:#dc2626;">لم يقرأ</span>');
                         const sv = t.solved_at ? ('✅ ' + _tm(t.solved_at) + ' (بعد ' + _minsBetween(t.created_at, t.solved_at) + ' د)') : '<span style="color:#dc2626;">لم يُحل</span>';
-                        h += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + sanitize(emp ? emp.name : t.employee_key) + '</td>'
+                        h += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + _nm(t.employee_key) + '</td>'
                            + '<td style="padding:9px;">' + (isSelf ? '📩 رسالة وصلت للموظف' : '📨 ' + sanitize(t.body)) + '</td><td style="padding:9px;">' + _tm(t.created_at) + '</td>'
                            + '<td style="padding:9px;">' + rd + '</td><td style="padding:9px;">' + sv + '</td>'
-                           + '<td style="padding:9px;font-weight:900;color:' + (pen ? '#dc2626' : '#16a34a') + ';">' + (pen ? '−' + pen : '0') + '</td></tr>';
+                           + '<td style="padding:9px;font-weight:900;color:' + (pen ? '#dc2626' : '#16a34a') + ';">' + (pen ? '−' + pen : '0') + '</td>'
+                           + '<td style="padding:9px;white-space:nowrap;">' + (isSelf ? '' : _edtB('window.adminEditTicket(' + Number(t.id) + ')')) + _delB('window.adminDelTicket(' + Number(t.id) + ')') + '</td></tr>';
                     });
                     h += '</tbody></table></div>';
                 }
@@ -1709,6 +1755,56 @@
                 console.error('[Tickets]', e);
                 body.innerHTML = '<p style="color:#dc2626;font-weight:700;">❌ تعذّر تحميل المهام. تأكد أنك شغّلت ملف tickets.sql في Supabase.</p>';
             }
+        };
+
+        // ----- تعديل وحذف (للمسؤول فقط، ويفرض السيرفر ذلك أيضاً — ملف admin_tools.sql) -----
+        function _adminToolFail(error) {
+            const m = String((error && error.message) || '');
+            if (m.startsWith('[A3]')) { alert('⚠️ ' + m.slice(4)); return; }
+            console.error('[AdminTools]', error);
+            alert('❌ تعذّر تنفيذ العملية. تأكد أنك شغّلت ملف admin_tools.sql في Supabase.');
+        }
+        async function _adminToolDone() {
+            await window.openTickets(window._tkDate);
+            try { pollAdminTickets(); } catch (e) {}
+        }
+        window.adminDelTicket = async (id) => {
+            if (loggedInId !== '__admin__') return;
+            if (!confirm('حذف هذا السجل نهائياً؟')) return;
+            if (!_checkWriteRate()) return;
+            const { error } = await supabaseClient.rpc('alsaree3_ticket_delete', { p_id: Number(id) });
+            if (error) { _adminToolFail(error); return; }
+            await _adminToolDone();
+        };
+        window.adminEditTicket = async (id) => {
+            if (loggedInId !== '__admin__') return;
+            const t = (window._tkRows || {})[id]; if (!t) return;
+            const v = prompt('تعديل نص المهمة:', t.body || '');
+            if (v === null || !v.trim() || v.trim() === (t.body || '')) return;
+            if (!_checkWriteRate()) return;
+            const { error } = await supabaseClient.rpc('alsaree3_ticket_edit', { p_id: Number(id), p_body: v.trim() });
+            if (error) { _adminToolFail(error); return; }
+            await _adminToolDone();
+        };
+        window.adminDelOrder = async (id) => {
+            if (loggedInId !== '__admin__') return;
+            const o = (window._ordRows || {})[id];
+            if (!confirm('حذف الطلب ' + (o ? '#' + o.order_no : '') + ' نهائياً؟')) return;
+            if (!_checkWriteRate()) return;
+            const { error } = await supabaseClient.rpc('alsaree3_order_delete', { p_id: Number(id) });
+            if (error) { _adminToolFail(error); return; }
+            await _adminToolDone();
+        };
+        window.adminEditOrder = async (id) => {
+            if (loggedInId !== '__admin__') return;
+            const o = (window._ordRows || {})[id]; if (!o) return;
+            const v = (prompt('تعديل رقم الطلب:', String(o.order_no)) || '').trim();
+            if (!v || v === String(o.order_no)) return;
+            if (!/^[0-9A-Za-z\u0600-\u06FF#_\-\/]{1,30}$/.test(v)) { alert('⚠️ رقم الطلب غير صالح'); return; }
+            if (!_checkWriteRate()) return;
+            const { error } = await supabaseClient.rpc('alsaree3_order_edit', { p_id: Number(id), p_order: v });
+            if (error) { _adminToolFail(error); return; }
+            await _adminToolDone();
         };
 
         // ----- جهة المسؤول: متابعة الرسائل المفتوحة/المحلولة لكل موظف (تحديث كل 30 ثانية) -----
@@ -1846,61 +1942,59 @@
             };
             clearTimeout(_undoTimer); _undoTimer = setTimeout(() => { t.style.display = 'none'; }, 8000);
         };
-        // ===== فتح واتساب المطاعم / الزبائن من بطاقة الموظف =====
+        // ===== فتح واتساب الزبائن من بطاقة الموظف =====
         // واتساب ويب يمنع فتحه داخل إطار في صفحة أخرى، لذا يُفتح في نافذة مستقلة صغيرة (وعلى الجوال يفتح تطبيق واتساب).
-        // لتخصيص رابط كل نوع: غيّر web (للكمبيوتر) و phone (للجوال). مثال لرقم محدد: 'https://wa.me/9647XXXXXXXXX'
-        const WA_LINKS = {
-            rest: { web: 'https://web.whatsapp.com/', phone: 'https://wa.me/' },   // واتساب المطاعم
-            cust: { web: 'https://web.whatsapp.com/', phone: 'https://wa.me/' }    // واتساب الزبائن
-        };
-        window.openWA = (type) => {
-            const cfg = WA_LINKS[type]; if (!cfg) return;
+        // لتخصيص الرابط: غيّر web (للكمبيوتر) و phone (للجوال). مثال لرقم محدد: 'https://wa.me/9647XXXXXXXXX'
+        const WA_LINK = { web: 'https://web.whatsapp.com/', phone: 'https://wa.me/' };
+        window.openWA = () => {
             const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-            const url = mobile ? cfg.phone : cfg.web;
-            const w = mobile ? window.open(url, '_blank') : window.open(url, 'wa_' + type, 'popup=yes,width=520,height=820');
+            const url = mobile ? WA_LINK.phone : WA_LINK.web;
+            const w = mobile ? window.open(url, '_blank') : window.open(url, 'wa_customers', 'popup=yes,width=520,height=820');
             if (!w) { alert('⚠️ المتصفح منع فتح النافذة. اسمح بالنوافذ المنبثقة لهذا الموقع.'); return; }
             try { w.opener = null; } catch (e) {}
             try { w.focus(); } catch (e) {}
         };
 
-        // ===== توزيع الطلبات يدوياً (Dispatcher): الموظف يكتب رقم الطلب فيُسجَّل =====
-        let _dispData = [], _dispLoadedAt = 0;
-        async function _fetchMyDispatch() {
+        // ===== تسجيل الطلبات يدوياً برقمها: التوزيع (Dispatcher) والقبول (Accept) =====
+        let _ordData = { dispatch: [], accept: [] }, _ordLoadedAt = { dispatch: 0, accept: 0 };
+        function _ordKind() { const me = employeesData[loggedInId]; return me && me.currentTask === 'قبول' ? 'accept' : 'dispatch'; }
+        async function _fetchMyOrders(kind) {
             if (!loggedInId || loggedInId === '__admin__') return;
             try {
-                const { data, error } = await supabaseClient.rpc('alsaree3_dispatch_my_today');
-                if (error) { console.warn('[Dispatch]', error.message); return; }
+                const { data, error } = await supabaseClient.rpc('alsaree3_dispatch_my_today', { p_kind: kind });
+                if (error) { console.warn('[Orders]', error.message); return; }
                 const nd = data || [];
-                const changed = JSON.stringify(nd.map(x => x.id)) !== JSON.stringify(_dispData.map(x => x.id));
-                _dispData = nd;
+                const changed = JSON.stringify(nd.map(x => x.id)) !== JSON.stringify(_ordData[kind].map(x => x.id));
+                _ordData[kind] = nd;
                 if (changed) { try { render(); } catch (e) {} }
-            } catch (e) { console.warn('[Dispatch]', e); }
+            } catch (e) { console.warn('[Orders]', e); }
         }
-        window.addDispatch = async (b) => {
+        window.addOrder = async (b) => {
+            const kind = _ordKind();
             const inp = document.getElementById('disp-input'); if (!inp) return;
             const v = inp.value.trim();
             if (!v) { inp.focus(); return; }
             if (!/^[0-9A-Za-z\u0600-\u06FF#_\-\/]{1,30}$/.test(v)) { alert('⚠️ رقم الطلب غير صالح'); return; }
             if (!_checkWriteRate()) return;
             if (b && b.classList) b.classList.add('busy');
-            const { error } = await supabaseClient.rpc('alsaree3_dispatch_add', { p_order: v });
+            const { error } = await supabaseClient.rpc('alsaree3_dispatch_add', { p_order: v, p_kind: kind });
             if (b && b.classList) b.classList.remove('busy');
             if (error) {
                 const dup = String(error.message || '').indexOf('duplicate') !== -1;
-                console.error('[DispatchAdd]', error);
+                console.error('[OrderAdd]', error);
                 alert(dup ? '⚠️ رقم الطلب هذا مسجّل مسبقاً اليوم' : '❌ تعذّر التسجيل. حاول مرة أخرى.');
                 return;
             }
             inp.value = '';
             if (navigator.vibrate) navigator.vibrate(30);
-            _dispLoadedAt = Date.now();
-            await _fetchMyDispatch();
+            _ordLoadedAt[kind] = Date.now();
+            await _fetchMyOrders(kind);
             try { render(); } catch (e) {}
             const ni = document.getElementById('disp-input'); if (ni) ni.focus();
-            _tkToast('🚴 سُجّل توزيع الطلب ' + v, async () => {
-                const { error: e2 } = await supabaseClient.rpc('alsaree3_dispatch_undo');
-                if (e2) { console.error('[DispatchUndo]', e2); return false; }
-                await _fetchMyDispatch(); try { render(); } catch (e) {} return true;
+            _tkToast((kind === 'accept' ? '✅ سُجّل قبول الطلب ' : '🚴 سُجّل توزيع الطلب ') + v, async () => {
+                const { error: e2 } = await supabaseClient.rpc('alsaree3_dispatch_undo', { p_kind: kind });
+                if (e2) { console.error('[OrderUndo]', e2); return false; }
+                await _fetchMyOrders(kind); try { render(); } catch (e) {} return true;
             });
         };
         window.markTicket = async (id, what) => {
@@ -1973,7 +2067,7 @@
                                     <td class="p-3 font-bold">${Number(d.totalRestMinutes) || 0} / 15 min</td>
                                     <td class="p-3 font-black text-green-600 bg-green-50/20">${_isExcl ? '-' : (d.rating == null ? 100 : (Number(d.rating) || 0)) + '%'}</td>
                                     <td class="p-3 font-black text-blue-600 bg-blue-50/20">${d.monthlyRating == null ? 100 : (Number(d.monthlyRating) || 0)}%</td>
-                                    <td class="p-3 font-black">${_exclBtn} <button data-emp="${sanitize(id)}" data-date="${sanitize(selectedDate)}" onclick="window.waReport(this.dataset.emp, this.dataset.date)" style="margin-inline-start:6px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📲 واتساب</button></td>
+                                    <td class="p-3 font-black">${_exclBtn}</td>
                                  </tr>`;
                     }
                     tableBody.innerHTML = html;
@@ -2076,7 +2170,7 @@
 
                             <td class="p-3 font-black text-green-600 bg-green-50/20">${Number(d.rating!==undefined?d.rating:100) || 0}%</td>
                             <td class="p-3 font-black text-blue-600 bg-blue-50/20">${Number(d.monthlyRating!==undefined?d.monthlyRating:100) || 0}%</td>
-                            <td class="p-3 font-black">${_tkLabel(i)}${_lateCellHtml(d, i)} <button data-emp="${sanitize(i)}" onclick="window.excludeLiveDay(this.dataset.emp)" style="margin-inline-start:6px;background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تصفير</button> <button data-emp="${sanitize(i)}" data-date="${dateStr}" onclick="window.waReport(this.dataset.emp, this.dataset.date)" style="margin-inline-start:6px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📲 واتساب</button> <button data-emp="${sanitize(i)}" onclick="window.sendTicket(this.dataset.emp)" style="margin-inline-start:6px;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📨 مهمة</button></td>
+                            <td class="p-3 font-black">${_tkLabel(i)}${_lateCellHtml(d, i)} <button data-emp="${sanitize(i)}" onclick="window.excludeLiveDay(this.dataset.emp)" style="margin-inline-start:6px;background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تصفير</button> <button data-emp="${sanitize(i)}" onclick="window.sendTicket(this.dataset.emp)" style="margin-inline-start:6px;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">📨 مهمة</button></td>
                          </tr>`;
             }
             tableBody.innerHTML = html;
@@ -2605,21 +2699,16 @@
                             <button onclick="window.ticketSolved(this)" ${_openN ? '' : 'disabled'} class="tk-btn tk-ok">✅ تم الحل${_openN ? ' <span class="tk-badge">' + _openN + '</span>' : ''}</button>
                         </div>
                         <div class="tk-stat">\u0627\u0644\u064a\u0648\u0645: ${_todayN} \u0648\u0635\u0644 \u00b7 ${_todayN - _openToday} \u0627\u0646\u062d\u0644</div>`;
-                    } else if (d.currentTask === 'قبول') {
-                        taskExtra = `<div class="tk-row"><button onclick="window.acceptRequest(this)" class="tk-btn tk-in">✅ قبلت طلباً</button></div>`;
-                    } else if (d.currentTask === 'توزيع') {
-                        if (!_dispLoadedAt || Date.now() - _dispLoadedAt > 20000) { _dispLoadedAt = Date.now(); _fetchMyDispatch(); }
-                        const _dn = _dispData.length;
-                        taskExtra = `<div class="tk-row"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter')window.addDispatch()"><button onclick="window.addDispatch(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
-                        <div class="tk-stat">اليوم: ${_dn} طلب موزّع${_dn ? ' · آخر رقم: ' + sanitize(String(_dispData[0].order_no)) : ''}</div>`;
+                    } else if (d.currentTask === 'توزيع' || d.currentTask === 'قبول') {
+                        const _k = d.currentTask === 'قبول' ? 'accept' : 'dispatch';
+                        if (!_ordLoadedAt[_k] || Date.now() - _ordLoadedAt[_k] > 20000) { _ordLoadedAt[_k] = Date.now(); _fetchMyOrders(_k); }
+                        const _ol = _ordData[_k], _dn = _ol.length;
+                        taskExtra = `<div class="tk-row"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
+                        <div class="tk-stat">اليوم: ${_dn} طلب ${_k === 'accept' ? 'مقبول' : 'موزّع'}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>`;
                     }
                 }
                 const waBox = (i === loggedInId && !isAdmin) ? `
-                        <div class="block mb-2 text-xs font-bold text-black text-right pr-1">واتساب (WhatsApp):</div>
-                        <div class="tk-row">
-                            <button onclick="window.openWA('rest')" class="tk-btn tk-wa">🍽️ واتساب المطاعم</button>
-                            <button onclick="window.openWA('cust')" class="tk-btn tk-wa">🛍️ واتساب الزبائن</button>
-                        </div>` : '';
+                        <div class="mb-3"><button onclick="window.openWA()" class="tk-btn tk-wa tk-small">💬 واتساب الزبائن</button></div>` : '';
                 const taskButtonsHtml = canControl ? `
                         <div class="block mb-3 text-xs font-bold text-black text-right pr-1">المهمة الحالية (Current Task):</div>
                         <div class="grid grid-cols-3 gap-2 mb-5">
@@ -2861,6 +2950,6 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed;bottom:4px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.10-wa1</div>
+<div id="ver-tag" style="position:fixed;bottom:4px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.10-orders2</div>
 </body>
 </html>
