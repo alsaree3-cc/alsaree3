@@ -1319,7 +1319,8 @@
         };
 
         // ===== بطاقة الأداء الشهرية (للمسؤول): درجة من 100 بأوزان قابلة للتعديل =====
-        const SC_WEIGHTS = { att: 50, brk: 30, tkt: 10, hrs: 10 };   // المجموع = 100
+        const SC_WEIGHTS = { att: 40, brk: 25, tkt: 10, ord: 15, hrs: 10 };   // المجموع = 100
+        const SC_ORDERS_DAILY_TARGET = 20;   // هدف الطلبات اليدوية (قبول + توزيع) باليوم لدرجة 100%
         const SC_BREAK_ALLOW_PER_HOUR_MIN = 5;   // مسموح البريك: 5 دقائق لكل ساعة عمل فعلية
         const SC_REST_ALLOW_MIN = 15;     // مسموح الاستراحة يومياً (دقيقة)
         const SC_DAILY_HOURS = 8;         // ساعات العمل المطلوبة يومياً
@@ -1394,7 +1395,7 @@
                 + '<h2 style="font-size:1.3rem;font-weight:900;color:#334155;">🏆 بطاقة الأداء الشهرية</h2>'
                 + '<div style="display:flex;gap:10px;align-items:center;"><input type="month" value="' + ym + '" onchange="window.loadScoreCard(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
                 + '<button onclick="document.getElementById(\'score-overlay\').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:8px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button></div></div>'
-                + '<div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:12px;line-height:1.7;">الأوزان: الحضور والتأخير ' + SC_WEIGHTS.att + '% · البريك والاستراحة ' + SC_WEIGHTS.brk + '% · سرعة حل الطلبات ' + SC_WEIGHTS.tkt + '% · ساعات الحضور ' + SC_WEIGHTS.hrs + '%.<br>لا تُحتسب: أيام OFF، والإجازات المعتمدة، والأيام المستثناة، وغياب اليوم الحالي. الإذن الزمني المعتمد لا يُحتسب تأخيراً ويُخصم من الساعات المطلوبة ويُضاف لوقت البريك المسموح. ساعات اليوم الحالي لا تدخل في الحساب حتى ينتهي اليوم. أي معيار ليس له بيانات يُعاد توزيع وزنه على الباقي.</div>'
+                + '<div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:12px;line-height:1.7;">الأوزان: الحضور والتأخير ' + SC_WEIGHTS.att + '% · البريك والاستراحة ' + SC_WEIGHTS.brk + '% · سرعة حل الطلبات ' + SC_WEIGHTS.tkt + '% · قبول وتوزيع الطلبات ' + SC_WEIGHTS.ord + '% (درجة 100 عند ' + SC_ORDERS_DAILY_TARGET + ' طلب باليوم فأكثر، وتُحسب فقط للأيام التي سجّل فيها الموظف طلبات) · ساعات الحضور ' + SC_WEIGHTS.hrs + '%.<br>لا تُحتسب: أيام OFF، والإجازات المعتمدة، والأيام المستثناة، وغياب اليوم الحالي. الإذن الزمني المعتمد لا يُحتسب تأخيراً ويُخصم من الساعات المطلوبة ويُضاف لوقت البريك المسموح. ساعات اليوم الحالي لا تدخل في الحساب حتى ينتهي اليوم. أي معيار ليس له بيانات يُعاد توزيع وزنه على الباقي.</div>'
                 + '<div id="score-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div></div>';
             document.body.appendChild(o);
             window.loadScoreCard(ym);
@@ -1455,10 +1456,15 @@
                 // الطلبات: استدعاء يوم بيوم (بالتوازي) حتى اليوم الحالي
                 const tk = {}; let tkOk = true;
                 const dates = []; for (let d = 1; d <= lastDay; d++) { const ds = ym + '-' + String(d).padStart(2, '0'); if (ds <= today) dates.push(ds); }
+                const ordCnt = {}; let ordOk = true;
+                const _addOrd = (k, ds) => { const m = ordCnt[k] = ordCnt[k] || {}; m[ds] = (m[ds] || 0) + 1; };
+                const ores = await Promise.all(dates.map(ds => supabaseClient.rpc('alsaree3_dispatch_admin', { p_date: ds }).then(r => ({ ds, r })).catch(() => ({ ds, r: { error: true } }))));
+                ores.forEach(({ ds, r }) => { if (r.error) { ordOk = false; return; } if (ds === today) return; (r.data || []).forEach(o => _addOrd(o.employee_key, ds)); });
                 const res = await Promise.all(dates.map(ds => supabaseClient.rpc('alsaree3_tickets_admin', { p_date: ds }).then(r => ({ ds, r })).catch(() => ({ ds, r: { error: true } }))));
                 res.forEach(({ ds, r }) => {
                     if (r.error) { tkOk = false; return; }
                     (r.data || []).forEach(t => {
+                        if (t.kind === 'accept') { if (ds !== today) _addOrd(t.employee_key, ds); return; }   // سجل قبول قديم (بدون رقم) يُحسب كطلب
                         if (!t.solved_at && ds === today) return;   // طلب اليوم المفتوح لم ينتهِ وقته بعد
                         const sc = _scTicketScore(t); if (sc === null) return;
                         (tk[t.employee_key] = tk[t.employee_key] || []).push(sc);
@@ -1472,26 +1478,28 @@
                     const reqSecs = a.hrDays * SC_DAILY_HOURS * 3600 - a.hrPermMin * 60;
                     const hrs = a.hrDays > 0 ? Math.min(100, a.hrSecs / Math.max(3600, reqSecs) * 100) : null;
                     const tkt = tkOk ? avg(tk[k] || []) : null;
-                    const comps = { att, brk, tkt, hrs };
+                    const od = Object.values(ordCnt[k] || {}).filter(n => n > 0);
+                    const ord = (ordOk && od.length) ? avg(od.map(n => Math.min(100, n / SC_ORDERS_DAILY_TARGET * 100))) : null;
+                    const comps = { att, brk, tkt, ord, hrs };
                     let ws = 0, tot = 0;
                     Object.keys(SC_WEIGHTS).forEach(c => { if (comps[c] !== null) { ws += SC_WEIGHTS[c]; tot += comps[c] * SC_WEIGHTS[c]; } });
-                    return { name: a.name || k, att, brk, tkt, hrs, total: ws ? tot / ws : 0, days: a.days, absent: a.absent };
+                    return { name: a.name || k, att, brk, tkt, ord, hrs, total: ws ? tot / ws : 0, days: a.days, absent: a.absent };
                 }).sort((p, q) => q.total - p.total);
                 if (rows.length === 0) { box.innerHTML = '<p>لا توجد بيانات لهذا الشهر.</p>'; return; }
                 const c = v => v === null ? '#64748b' : v >= 90 ? '#16a34a' : v >= 75 ? '#d97706' : '#dc2626';
                 const f = v => v === null ? '-' : Math.round(v) + '%';
                 const medals = ['🥇', '🥈', '🥉'];
                 let html = '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
-                    + ['#', 'الموظف', 'الدرجة النهائية', 'الحضور والتأخير', 'البريك والاستراحة', 'سرعة الطلبات', 'ساعات الحضور', 'أيام/غياب'].map(h => '<th style="padding:10px;">' + h + '</th>').join('') + '</tr></thead><tbody>';
+                    + ['#', 'الموظف', 'الدرجة النهائية', 'الحضور والتأخير', 'البريك والاستراحة', 'سرعة الطلبات', 'قبول وتوزيع الطلبات', 'ساعات الحضور', 'أيام/غياب'].map(h => '<th style="padding:10px;">' + h + '</th>').join('') + '</tr></thead><tbody>';
                 rows.forEach((r, i) => {
                     html += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + (medals[i] || (i + 1)) + '</td>'
                         + '<td style="padding:9px;font-weight:900;">' + sanitize(r.name) + '</td>'
                         + '<td style="padding:9px;font-weight:900;font-size:1.1rem;color:' + c(r.total) + ';">' + Math.round(r.total) + '</td>'
-                        + [r.att, r.brk, r.tkt, r.hrs].map(v => '<td style="padding:9px;font-weight:800;color:' + c(v) + ';">' + f(v) + '</td>').join('')
+                        + [r.att, r.brk, r.tkt, r.ord, r.hrs].map(v => '<td style="padding:9px;font-weight:800;color:' + c(v) + ';">' + f(v) + '</td>').join('')
                         + '<td style="padding:9px;direction:ltr;text-align:right;">' + r.days + ' / ' + r.absent + '</td></tr>';
                 });
                 box.style.cssText = 'padding:0;color:#000;';
-                box.innerHTML = html + '</tbody></table>' + (tkOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل الطلبات، فحُسبت الدرجة بدون معيار الطلبات.</p>');
+                box.innerHTML = html + '</tbody></table>' + (tkOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل الطلبات، فحُسبت الدرجة بدون معيار الطلبات.</p>') + (ordOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل القبول والتوزيع، فحُسبت الدرجة بدونه.</p>');
             } catch (e) {
                 console.error('[ScoreCard]', e);
                 box.innerHTML = '<p style="color:#dc2626;">❌ فشل تحميل بطاقة الأداء</p>';
