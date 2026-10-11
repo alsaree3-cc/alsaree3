@@ -47,6 +47,10 @@
         .task-btn:hover { border-color: #22c55e; }
         .task-btn.active { background: #22c55e; color: #ffffff !important; border-color: #22c55e; }
         .admin-panel { background-color: #ffffff; border: 1px solid #cbd5e1; padding: 30px; border-radius: 24px; margin-top: 25px; text-align: right; direction: rtl; }
+        details.oc > summary { list-style: none; cursor: pointer; }
+        details.oc > summary::-webkit-details-marker { display: none; }
+        details.oc .chev { display: inline-block; transition: transform .15s; font-size: 0.8rem; }
+        details.oc[open] .chev { transform: rotate(180deg); }
         .timer-text { color: #16a34a !important; font-weight: 900; font-size: 1.2rem; margin-left: 10px; }
         .card-box.break-active .timer-text { color: #dc2626 !important; }
 
@@ -126,11 +130,11 @@
             { match: /هبه|hiba|heba|hebah/i,             start: '10:00', off: 5 },
             { match: /احمد|ahmed|ahmad/i,                start: '07:30', off: 6 }
         ];
-        const LATE_GRACE_MIN = 5;         // سماحية بالدقائق بعد بداية الدوام
-        const LATE_BASE_POINTS = 5;       // الخصم الأساسي عند تجاوز السماحية
-        const LATE_EXTRA_POINTS = 5;      // خصم إضافي لكل خطوة تأخير إضافية
-        const LATE_EXTRA_STEP_MIN = 15;   // طول الخطوة بالدقائق
-        const LATE_MAX_POINTS = 50;       // أقصى خصم للتأخير في اليوم
+        let LATE_GRACE_MIN = 5;         // سماحية بالدقائق بعد بداية الدوام
+        let LATE_BASE_POINTS = 5;       // الخصم الأساسي عند تجاوز السماحية
+        let LATE_EXTRA_POINTS = 3;      // خصم إضافي لكل خطوة تأخير إضافية
+        let LATE_EXTRA_STEP_MIN = 5;    // طول الخطوة بالدقائق
+        let LATE_MAX_POINTS = 30;       // أقصى خصم للتأخير في اليوم
         function _normAr(s) { return String(s || '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه'); }
         function _ruleFor(id) {
             const hay = _normAr(id) + ' ' + _normAr((employeesData[id] || {}).name);
@@ -142,6 +146,7 @@
             const r = _ruleFor(id); return r ? r.start : null;
         }
         function getOffDay(id) {
+            const _r = _ruleFor(id); if (_r && _r.off !== null && _r.off !== undefined) return _r.off;   // أيام الأوف المحددة في SHIFT_RULES هي المرجع
             const m = _empMeta[id];
             if (m && m.off !== null && m.off !== undefined) return m.off;
             const r = _ruleFor(id); return r ? r.off : null;
@@ -169,6 +174,162 @@
 
         const MAX_BREAK_MINUTES = 15;   // البريك ينتهي تلقائياً بعد هذه المدة (غيّر الرقم أو ضع 0 للتعطيل)
         const MAX_REST_MINUTES = 20;    // الراحة تنتهي تلقائياً بعد هذه المدة (0 للتعطيل)
+        let BREAK_SCORE_MAX_PENALTY = 10;      // أقصى خصم متدرج على استهلاك البريك (من 100). من يأخذ بريك أقل يحصل على تقييم أعلى. ضع 0 للتعطيل
+        let BREAK_SCORE_ALLOW_PER_HOUR = 5;    // مسموح البريك (دقائق لكل ساعة عمل) — يُستخدم كمقياس للنسبة
+        // خصم متدرج حسب كمية البريك: 0 بريك = 0 خصم، والخصم يزيد تدريجياً حتى يبلغ الحد الأقصى عند استهلاك كامل المسموح
+        // إجازات معتمدة (أيام) وأذونات زمنية لليوم الحالي — تُحدَّث من refreshMonthlyRatings (جهاز المسؤول)
+        let _leaveDays = {}, _permToday = {};
+        function onLeaveDay(id, ds) { const st = _leaveDays[id]; return !!(st && st.has(ds)); }
+        function permMinutesToday(id) { return (_permToday[id] || []).reduce((a, p) => a + (p.mins || 0), 0); }
+        // التأخير مع احتساب الإذن الزمني: null = لا إذن مؤثر، وإلا عدد نقاط الخصم (0 إن غُطّي التأخير)
+        function lateWithPerm(id, d) {
+            try {
+                const perms = _permToday[id]; if (!perms || !perms.length || !d || !d.startTime) return null;
+                const sh = getShiftStart(id); if (!sh) return null;
+                const sm = _scParseMin(sh); if (sm === null) return null;
+                const ex = _scExcuseTo(perms, sm); if (ex === null) return null;
+                const dt = new Date(d.startTime), am = dt.getHours() * 60 + dt.getMinutes();
+                const late = am - ex; if (late <= LATE_GRACE_MIN) return 0;
+                return Math.min(LATE_MAX_POINTS, LATE_BASE_POINTS + LATE_EXTRA_POINTS * Math.floor((late - LATE_GRACE_MIN) / LATE_EXTRA_STEP_MIN));
+            } catch (e) { return null; }
+        }
+        function breakUsagePenalty(d, now, id) {
+            if (!BREAK_SCORE_MAX_PENALTY || !d || !d.startTime) return 0;
+            const live = (d.status === 'بريك' && d.lastActionTime) ? Math.max(0, Math.floor((now - d.lastActionTime) / 60000)) : 0;
+            const used = (Number(d.totalBreakMinutes) || 0) + live;
+            if (used <= 0) return 0;
+            const hrs = Math.min(12, Math.max(1, (now - d.startTime) / 3600000));
+            const allow = BREAK_SCORE_ALLOW_PER_HOUR * hrs + (id ? permMinutesToday(id) : 0);
+            return Math.round(BREAK_SCORE_MAX_PENALTY * Math.min(1, used / allow));
+        }
+        let VIOLATION_POINTS = 3;             // خصم كل مخالفة (ساعة بريك زائدة / استراحة زائدة)
+        let REST_SCORE_MAX_PENALTY = 5;        // أقصى خصم متدرج على استهلاك الاستراحة (المسموح 15 د). من يأخذ استراحة أقل تقييمه أعلى. 0 للتعطيل
+        let REST_SCORE_ALLOW_MIN = 15;         // مسموح الاستراحة يومياً (دقيقة) كمقياس للنسبة
+        let ORDERS_BONUS_MAX = 5;              // أقصى مكافأة على الطلبات (قبول + توزيع) في اليوم، تُبلغ حدها عند الوصول لهدف SC_ORDERS_DAILY_TARGET. 0 للتعطيل
+        function restUsagePenalty(d, now, id) {
+            if (!REST_SCORE_MAX_PENALTY || !d || !d.startTime) return 0;
+            const live = (d.status === 'راحة' && d.lastActionTime) ? Math.max(0, Math.floor((now - d.lastActionTime) / 60000)) : 0;
+            const used = (Number(d.totalRestMinutes) || 0) + live;
+            if (used <= 0) return 0;
+            return Math.round(REST_SCORE_MAX_PENALTY * Math.min(1, used / (REST_SCORE_ALLOW_MIN + (id ? permMinutesToday(id) : 0))));
+        }
+        // جلب طلبات يوم للمسؤول: الدالة الأحدث alsaree3_orders_admin ثم القديمة alsaree3_dispatch_admin كاحتياط (نفس منطق نافذة المهام)
+        async function _ordersAdminRpc(date) {
+            try {
+                const r = await supabaseClient.rpc('alsaree3_orders_admin', { p_date: date });
+                if (!r.error) return r;
+                const r2 = await supabaseClient.rpc('alsaree3_dispatch_admin', { p_date: date });
+                return r2.error ? r2 : r2;
+            } catch (e) { return { error: { message: String((e && e.message) || e) } }; }
+        }
+        // عدد طلبات اليوم (قبول + توزيع، بدون المتأخرة) لكل موظف — يُحدَّث من السيرفر بشكل دوري
+        let _ordCountToday = {}, _ordCountDate = '', _ordCountBusy = false, _ordCountAt = 0;
+        async function refreshOrderCounts(force) {
+            if (!loggedInId || _ordCountBusy) return;
+            if (!force && Date.now() - _ordCountAt < 45000) return;
+            _ordCountBusy = true;
+            try {
+                const today = getTodayDateString();
+                const cnt = {};
+                if (loggedInId === '__admin__') {
+                    const [o, t] = await Promise.all([
+                        _ordersAdminRpc(today),
+                        supabaseClient.rpc('alsaree3_tickets_admin', { p_date: today })
+                    ]);
+                    if (o.error) return;
+                    (o.data || []).forEach(r => { if (String(r.kind || '').endsWith('_late')) return; cnt[r.employee_key] = (cnt[r.employee_key] || 0) + 1; });
+                    if (!t.error) (t.data || []).forEach(r => { if (r.kind === 'accept') cnt[r.employee_key] = (cnt[r.employee_key] || 0) + 1; });
+                } else {
+                    const [a, b] = await Promise.all(['accept', 'dispatch'].map(k => supabaseClient.rpc('alsaree3_dispatch_my_today', { p_kind: k })));
+                    if (a.error || b.error) return;
+                    cnt[loggedInId] = (a.data || []).length + (b.data || []).length;
+                }
+                _ordCountToday = cnt; _ordCountDate = today; _ordCountAt = Date.now();
+                try { checkAndApplyRatings(); } catch (e) {}
+            } catch (e) { console.warn('[OrderCounts]', e); }
+            finally { _ordCountBusy = false; }
+        }
+        function ordersBonus(id) {
+            if (!ORDERS_BONUS_MAX || _ordCountDate !== getTodayDateString()) return 0;
+            const n = _ordCountToday[id] || 0;
+            if (n <= 0) return 0;
+            return Math.round(ORDERS_BONUS_MAX * Math.min(1, n / SC_ORDERS_DAILY_TARGET));
+        }
+        // خصم التأخير عن بداية الدوام المحددة للموظف (احتياطي إن لم يسجّله السيرفر). يحترم المسامحة ويوم الأوف
+        function lateFallbackPenalty(id, d) {
+            try {
+                if (!d || !d.startTime) return 0;
+                const hb = d.hourlyBreaks || {};
+                if (hb.lateWaived) return 0;
+                if (onLeaveDay(id, getTodayDateString())) return 0;
+                if (lateWithPerm(id, d) !== null) return 0;
+                if (_ymd(new Date(d.startTime)) !== getTodayDateString()) return 0;
+                const lp = calcLatePenalty(id, d.startTime);
+                if (!lp) return 0;
+                return Math.max(0, lp.points - (Number(hb.latePenalty) || 0));   // الفرق فقط، حتى لا يُخصم مرتين
+            } catch (e) { return 0; }
+        }
+        // ===== التقييم الشهري الحي: متوسط التقييم اليومي لأيام الدوام الفعلية في الشهر + تقييم اليوم الحالي =====
+        let _monthHist = {}, _todayHist = {}, _monthHistAt = 0, _monthHistBusy = false;
+        async function refreshMonthlyRatings(force) {
+            if (loggedInId !== '__admin__' || _monthHistBusy) return;
+            if (!force && Date.now() - _monthHistAt < 120000) return;
+            _monthHistBusy = true;
+            try {
+                const today = getTodayDateString(), start = today.slice(0, 7) + '-01';
+                const { data, error } = await supabaseClient.from('alsaree3_history')
+                    .select('employee_key,history_date,start_time_str,rating').gte('history_date', start).lte('history_date', today).limit(5000);
+                if (error) return;
+                try { await _loadEmpMeta(); } catch (e) {}
+                const leaveSet = {};
+                try {
+                    const { data: lv } = await supabaseClient.from('alsaree3_leave_requests').select('employee_key,kind,start_date,days,from_time,to_time').eq('status', 'approved');
+                    const _pt = {};
+                    (lv || []).forEach(q => {
+                        if (q.kind === 'day') _expandDates(q.start_date, q.days).forEach(ds => { (leaveSet[q.employee_key] = leaveSet[q.employee_key] || new Set()).add(ds); });
+                        else if (q.start_date === today) { const f = _scParseMin(q.from_time), t = _scParseMin(q.to_time); if (f !== null && t !== null && t > f) (_pt[q.employee_key] = _pt[q.employee_key] || []).push({ from: f, to: t, mins: t - f }); }
+                    });
+                    _leaveDays = leaveSet; _permToday = _pt;
+                } catch (e) {}
+                const agg = {}, tod = {};
+                (data || []).forEach(r => {
+                    const k = r.employee_key;
+                    const rd = _resetUpTo(k);
+                    if (rd && r.history_date <= rd) return;                          // قبل التصفير
+                    if (leaveSet[k] && leaveSet[k].has(r.history_date)) return;      // إجازة معتمدة
+                    const st = String(r.start_time_str || '');
+                    if (!st || st === 'EXCLUDED' || st === 'Absent' || st === 'لم يحضر' || st.toUpperCase().startsWith('OFF')) return;
+                    if (isOffDay(k, r.history_date)) return;
+                    const rt = r.rating == null ? 100 : (Number(r.rating) || 0);
+                    if (r.history_date === today) { tod[k] = rt; return; }
+                    const a = agg[k] = agg[k] || { sum: 0, days: 0 };
+                    a.sum += rt; a.days++;
+                });
+                _monthHist = agg; _todayHist = tod; _monthHistAt = Date.now();
+                applyMonthlyRatings();
+            } catch (e) { console.warn('[MonthlyRatings]', e); }
+            finally { _monthHistBusy = false; }
+        }
+        function monthlyWith(id, todayRating) {
+            if (!_monthHistAt) return null;
+            const h = _monthHist[id] || { sum: 0, days: 0 };
+            let sum = h.sum, days = h.days;
+            if (todayRating !== null && todayRating !== undefined && !isNaN(todayRating)) { sum += Number(todayRating); days++; }
+            return days > 0 ? Math.round(sum / days) : 100;
+        }
+        function applyMonthlyRatings() {
+            if (loggedInId !== '__admin__' || !_monthHistAt) return;
+            const today = getTodayDateString();
+            for (const id in employeesData) {
+                const d = employeesData[id]; if (!d) continue;
+                const hb = d.hourlyBreaks || {};
+                let tr = null;
+                if (isOffDay(id, today) || onLeaveDay(id, today) || (_resetUpTo(id) && _resetUpTo(id) >= today)) tr = null;
+                else if (d.startTime && d.status !== 'أوف' && _ymd(new Date(d.startTime)) === today && hb.excluded !== today) tr = Number(d.rating);
+                else if (!isOffDay(id, today) && !onLeaveDay(id, today) && _todayHist[id] !== undefined) tr = _todayHist[id];
+                d.monthlyRating = monthlyWith(id, tr);
+            }
+        }
         const BREAK_GROUPS = [];                          // مثال: [['ahmed','ali','sara'], ['omar','huda']]
         const BLOCK_BREAK_IF_GROUP_BUSY = true;           // true = منع البريك | false = السماح مع خصم من التقييم
         const GROUP_BREAK_PENALTY_POINTS = 5;             // الخصم عند بريك أثناء بريك زميل (يُطبق فقط إذا BLOCK = false)
@@ -758,6 +919,7 @@
             for (let i in employeesData) {
                 let d = employeesData[i];
                 if (!d.startTime || d.status === 'أوف') continue;
+                if (isOffDay(i, getTodayDateString()) || onLeaveDay(i, getTodayDateString())) { employeesData[i].rating = 100; continue; }   // أوف أو إجازة معتمدة: لا تقييم ولا خصم   // يوم الأوف: لا خصم ولا تقييم أبداً
                 
                 let currentHourIndex = Math.floor((now - d.startTime) / 3600000);
                 // احسب فقط دقائق البريك الحالي التي تقع ضمن الساعة الحالية
@@ -785,14 +947,17 @@
                 
                 let currentHourBreak = (hourlyBreaks[currentHourIndex] || 0) + curB;
                 if (currentHourBreak > 5) totalViolations += Math.floor((currentHourBreak - 5) / 60) + 1;
-                if (totalR > 15) totalViolations += Math.floor((totalR - 15) / 60) + 1;
+                const _permM = permMinutesToday(i);
+                if (totalR > 15 + _permM) totalViolations += Math.floor((totalR - 15 - _permM) / 60) + 1;
                 
                 let groupPen = hourlyBreaks.groupPenalty || 0;
-                let latePen = Number(hourlyBreaks.latePenalty) || 0;
-                let calcRating = Math.max(0, 100 - (totalViolations * 5) - groupPen - latePen);
+                const _lwp = lateWithPerm(i, d);
+                let latePen = _lwp !== null ? _lwp : ((Number(hourlyBreaks.latePenalty) || 0) || lateFallbackPenalty(i, d));
+                let calcRating = Math.max(0, Math.min(100, 100 - (totalViolations * VIOLATION_POINTS) - groupPen - latePen - breakUsagePenalty(d, now, i) - restUsagePenalty(d, now, i) + ordersBonus(i)));
                 // تحديث محلي فقط — بدون كتابة للسيرفر لتجنب إطلاق تحديث لحظي
                 employeesData[i].rating = calcRating;
             }
+            try { applyMonthlyRatings(); } catch (e) {}
         }
 
         window.openAdmin = () => {
@@ -803,28 +968,30 @@
             isViewingHistory = false;
 
             let html = `
-                <div class="flex flex-col md:flex-row justify-between items-center mb-5 gap-4">
-                    <div class="text-right">
-                        <h2 class="text-2xl font-black text-slate-800">⚙️ لوحة المسؤول</h2>
-                        <p class="text-sm font-bold text-slate-500">التقارير والرقابة وإدارة الدوام</p>
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <div class="text-right flex items-baseline gap-2 flex-wrap">
+                        <h2 class="text-lg font-black text-slate-800">⚙️ لوحة المسؤول</h2>
+                        <span class="text-xs font-bold text-slate-400">التقارير والرقابة وإدارة الدوام</span>
                     </div>
-                    <div class="flex items-center gap-2 flex-wrap justify-center">
-                        <div class="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
-                            <label class="font-bold text-slate-600 text-sm">📅 تاريخ التقرير</label>
-                            <input type="date" id="historyDateSelector" value="${todayStr}" onchange="window.fetchHistoryReport(this.value)" class="bg-white border border-slate-300 px-2 py-1 rounded-lg font-bold text-slate-800 text-sm">
+                    <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                            <label class="font-bold text-slate-500 text-xs">📅 التاريخ</label>
+                            <input type="date" id="historyDateSelector" value="${todayStr}" onchange="window.fetchHistoryReport(this.value)" class="bg-white border border-slate-300 px-1.5 py-0.5 rounded-md font-bold text-slate-800 text-xs">
                         </div>
-                        <button onclick="window.closeAdmin()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 font-bold text-slate-600 text-sm transition">✕ إغلاق</button>
+                        <button onclick="window.closeAdmin()" title="إغلاق" class="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-red-50 hover:text-red-600 border border-slate-200 font-black text-slate-500 text-sm transition">✕</button>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                    <button id="leave-admin-btn" onclick="window.openLeaveAdmin()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-purple-50 border-purple-200 text-purple-800 hover:bg-purple-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📥</span><span class="text-sm leading-tight text-center">طلبات الإجازة والإذن</span><span id="leave-badge" class="hidden absolute top-2 left-2 bg-red-600 text-white text-xs font-black rounded-full px-2 py-0.5">0</span></button>
-                    <button  onclick="window.openMonthSummary()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📊</span><span class="text-sm leading-tight text-center">ملخص الشهر ونسبة الموظفين</span></button>
-                    <button  onclick="window.openScoreCard()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">🏆</span><span class="text-sm leading-tight text-center">بطاقة الأداء وترتيب الموظفين</span></button>
-                    <button  onclick="window.downloadPDF()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-green-50 border-green-200 text-green-800 hover:bg-green-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📄</span><span class="text-sm leading-tight text-center">تحميل التقرير PDF</span></button>
-                    <button  onclick="window.openAddEmployee()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">➕</span><span class="text-sm">إضافة موظف</span></button>
-                    <button  onclick="window.openDeviceLog()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📱</span><span class="text-sm leading-tight text-center">سجل الأجهزة والدخول</span></button>
-                    <button  onclick="window.openTickets()" class="relative flex flex-col items-center justify-center gap-1 py-4 px-2 rounded-2xl border bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100 font-black transition hover:-translate-y-0.5 hover:shadow-md"><span class="text-2xl">📋</span><span class="text-sm leading-tight text-center">مهام واتساب والردود</span><span id="tickets-badge" class="hidden absolute top-2 left-2 bg-red-600 text-white text-xs font-black rounded-full px-2 py-0.5">0</span></button>
+                <div class="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 rounded-2xl bg-slate-50 border border-slate-200">
+                    <button onclick="window.openMonthSummary()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100"><span class="text-sm">📊</span><span>ملخص الشهر</span></button>
+                    <button onclick="window.openScoreCard()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100"><span class="text-sm">🏆</span><span>بطاقة الأداء</span></button>
+                    <button onclick="window.downloadPDF()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-green-50 border-green-200 text-green-800 hover:bg-green-100"><span class="text-sm">📄</span><span>تقرير PDF</span></button>
+                    <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
+                    <button id="leave-admin-btn" onclick="window.openLeaveAdmin()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-purple-50 border-purple-200 text-purple-800 hover:bg-purple-100"><span class="text-sm">📥</span><span>الإجازات والأذونات</span><span id="leave-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
+                    <button onclick="window.openTickets()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"><span class="text-sm">📋</span><span>مهام واتساب</span><span id="tickets-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
+                    <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
+                    <button onclick="window.openAddEmployee()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"><span class="text-sm">➕</span><span>إضافة موظف</span></button>
+                    <button onclick="window.openDeviceLog()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">📱</span><span>سجل الأجهزة</span></button>
                 </div>
 
                 <div class="overflow-x-auto rounded-2xl border border-slate-200 mb-5">
@@ -839,14 +1006,17 @@
                     </table>
                 </div>
 
-                <button onclick="window.endOfDay()" class="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow transition">🌙 إنهاء اليوم وحفظ التقرير</button>
+                <div class="flex flex-col md:flex-row md:items-stretch gap-3">
+                    <button onclick="window.runRatingDiagnostic()" title="يفحص هل السيرفر يحسب التقييم ويسجّل خصم التأخير" class="md:w-36 shrink-0 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-black text-sm shadow-sm transition"><span>🔍</span><span>فحص التقييم</span></button>
+                    <button onclick="window.endOfDay()" class="md:w-56 shrink-0 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm shadow-sm transition"><span>🌙</span><span>إنهاء اليوم وحفظ التقرير</span></button>
 
-                <div class="mt-5 rounded-2xl border border-red-200 bg-red-50/60 p-4">
-                    <div class="mb-3 text-red-700 font-black text-sm">🔒 منطقة حساسة — تتطلب الرمز السري</div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <button onclick="window.triggerInstantGlobalReset()" class="py-3 rounded-xl bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 font-black text-sm transition">🔄 تصفير اليوم وبدء يوم جديد</button>
-                        <button onclick="window.resetMonthlySystem()" class="py-3 rounded-xl bg-white border border-red-300 text-red-700 hover:bg-red-50 font-black text-sm transition">🗓️ تصفير الشهر الجديد</button>
-                        <button onclick="window.excludeDayPrompt()" class="py-3 rounded-xl bg-white border border-slate-400 text-slate-700 hover:bg-slate-50 font-black text-sm transition sm:col-span-2">🚫 استثناء يوم مؤرشف من التقييم / 🔄 تصفير الجميع (لليوم الحالي)</button>
+                    <div class="flex-1 rounded-xl border border-red-200 bg-red-50/60 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2">
+                        <div class="text-red-700 font-black text-xs whitespace-nowrap sm:ml-2">🔒 منطقة حساسة <span class="font-bold text-red-400">· تتطلب الرمز السري</span></div>
+                        <div class="flex flex-wrap gap-2 flex-1 sm:justify-end">
+                            <button onclick="window.triggerInstantGlobalReset()" class="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 font-black text-xs transition whitespace-nowrap">🔄 تصفير اليوم</button>
+                            <button onclick="window.resetMonthlySystem()" class="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-white border border-red-300 text-red-700 hover:bg-red-50 font-black text-xs transition whitespace-nowrap">🗓️ تصفير الشهر</button>
+                            <button onclick="window.excludeDayPrompt()" title="استثناء يوم مؤرشف من التقييم / تصفير الجميع لليوم الحالي" class="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-white border border-slate-400 text-slate-700 hover:bg-slate-50 font-black text-xs transition whitespace-nowrap">🚫 استثناء يوم / تصفير الجميع</button>
+                        </div>
                     </div>
                 </div>`;
             
@@ -1278,6 +1448,7 @@
                 (data || []).forEach(r => {
                     const a = agg[r.employee_key] = agg[r.employee_key] || { name: r.name, days: 0, off: 0, absent: 0, leave: 0, permH: 0, sum: 0, br: 0, rest: 0, secs: 0 };
                     if (r.name) a.name = r.name;
+                    const _rs0 = _resetUpTo(r.employee_key); if (_rs0 && r.history_date <= _rs0) return;   // قبل التصفير
                     const _ls = leaveSet[r.employee_key];
                     if (_ls && _ls.has(r.history_date)) return;   // يوم إجازة معتمدة: لا يدخل في النسبة
                     const st = String(r.start_time_str || '');
@@ -1319,11 +1490,11 @@
         };
 
         // ===== بطاقة الأداء الشهرية (للمسؤول): درجة من 100 بأوزان قابلة للتعديل =====
-        const SC_WEIGHTS = { att: 40, brk: 25, tkt: 10, ord: 15, hrs: 10 };   // المجموع = 100
-        const SC_ORDERS_DAILY_TARGET = 20;   // هدف الطلبات اليدوية (قبول + توزيع) باليوم لدرجة 100%
-        const SC_BREAK_ALLOW_PER_HOUR_MIN = 5;   // مسموح البريك: 5 دقائق لكل ساعة عمل فعلية
-        const SC_REST_ALLOW_MIN = 15;     // مسموح الاستراحة يومياً (دقيقة)
-        const SC_DAILY_HOURS = 8;         // ساعات العمل المطلوبة يومياً
+        const SC_WEIGHTS = { att: 35, brk: 25, tkt: 20, ord: 5, hrs: 20 };   // att+brk+tkt+hrs = 100 ، و ord = نقاط مكافأة إضافية (لا خصم)
+        let SC_ORDERS_DAILY_TARGET = 10;   // هدف الطلبات اليدوية (قبول + توزيع) باليوم لدرجة 100%
+        let SC_BREAK_ALLOW_PER_HOUR_MIN = 5;   // مسموح البريك: 5 دقائق لكل ساعة عمل فعلية
+        let SC_REST_ALLOW_MIN = 15;     // مسموح الاستراحة يومياً (دقيقة)
+        let SC_DAILY_HOURS = 8;         // ساعات العمل المطلوبة يومياً
         function _scParseMin(str) {
             const m = String(str || '').match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
             if (!m) return null;
@@ -1383,42 +1554,339 @@
                 if (!e2) { _applyServerRow(k, data); if (typeof window.refreshLiveAdminTable === 'function') window.refreshLiveAdminTable(); }
             }
         }
+        // ===== إعدادات التقييم القابلة للتعديل (تُحفظ على جهاز المسؤول) =====
+        let CARD_AUTO_ARCHIVE = 1;   // 1 = أرشفة البطاقة وتصفيرها تلقائياً نهاية كل شهر، 0 = إيقاف
+        const RS_KEY = 'a3_rating_settings_v3';
+        const RS_DEFS = [
+            ['أوزان الدرجة النهائية (بطاقة الأداء) — الحضور+البريك+الحل+الساعات = 100', [
+                ['w_att', 'الحضور والتأخير', 35, 0, v => { SC_WEIGHTS.att = v; }, () => SC_WEIGHTS.att],
+                ['w_brk', 'البريك والاستراحة', 25, 0, v => { SC_WEIGHTS.brk = v; }, () => SC_WEIGHTS.brk],
+                ['w_tkt', 'سرعة حل الطلبات', 20, 0, v => { SC_WEIGHTS.tkt = v; }, () => SC_WEIGHTS.tkt],
+                ['w_ord', 'مكافأة الطلبات (نقاط إضافية، بلا خصم)', 5, 0, v => { SC_WEIGHTS.ord = v; }, () => SC_WEIGHTS.ord],
+                ['w_hrs', 'ساعات الحضور', 20, 0, v => { SC_WEIGHTS.hrs = v; }, () => SC_WEIGHTS.hrs]
+            ]],
+            ['المسموح والأهداف', [
+                ['ord_target', 'هدف الطلبات باليوم (= 100%)', 10, 1, v => { SC_ORDERS_DAILY_TARGET = v; }, () => SC_ORDERS_DAILY_TARGET],
+                ['brk_hour', 'مسموح البريك (د لكل ساعة)', 5, 1, v => { SC_BREAK_ALLOW_PER_HOUR_MIN = v; BREAK_SCORE_ALLOW_PER_HOUR = v; }, () => SC_BREAK_ALLOW_PER_HOUR_MIN],
+                ['rest_day', 'مسموح الاستراحة (د باليوم)', 15, 1, v => { SC_REST_ALLOW_MIN = v; REST_SCORE_ALLOW_MIN = v; }, () => SC_REST_ALLOW_MIN],
+                ['day_hours', 'ساعات الدوام المطلوبة يومياً', 8, 1, v => { SC_DAILY_HOURS = v; }, () => SC_DAILY_HOURS]
+            ]],
+            ['خصم التأخير عن بداية الدوام', [
+                ['late_grace', 'السماحية (دقيقة)', 5, 0, v => { LATE_GRACE_MIN = v; }, () => LATE_GRACE_MIN],
+                ['late_base', 'الخصم الأساسي (نقطة)', 5, 0, v => { LATE_BASE_POINTS = v; }, () => LATE_BASE_POINTS],
+                ['late_extra', 'خصم إضافي لكل خطوة (نقطة)', 3, 0, v => { LATE_EXTRA_POINTS = v; }, () => LATE_EXTRA_POINTS],
+                ['late_step', 'طول الخطوة (دقيقة)', 5, 1, v => { LATE_EXTRA_STEP_MIN = v; }, () => LATE_EXTRA_STEP_MIN],
+                ['late_max', 'أقصى خصم في اليوم (نقطة)', 30, 0, v => { LATE_MAX_POINTS = v; }, () => LATE_MAX_POINTS]
+            ]],
+            ['التقييم اليومي: بريك واستراحة وطلبات', [
+                ['viol_pts', 'خصم كل مخالفة بريك/استراحة (نقطة)', 3, 0, v => { VIOLATION_POINTS = v; }, () => VIOLATION_POINTS],
+                ['brk_pen', 'أقصى خصم متدرج للبريك (نقطة)', 10, 0, v => { BREAK_SCORE_MAX_PENALTY = v; }, () => BREAK_SCORE_MAX_PENALTY],
+                ['rest_pen', 'أقصى خصم متدرج للاستراحة (نقطة)', 5, 0, v => { REST_SCORE_MAX_PENALTY = v; }, () => REST_SCORE_MAX_PENALTY],
+                ['ord_bonus', 'أقصى مكافأة للطلبات (نقطة)', 5, 0, v => { ORDERS_BONUS_MAX = v; }, () => ORDERS_BONUS_MAX]
+            ]],
+            ['الأرشفة والتصفير الشهري (1 = تشغيل، 0 = إيقاف)', [
+                ['auto_arch', 'أرشفة البطاقة وتصفيرها تلقائياً نهاية كل شهر', 1, 0, v => { CARD_AUTO_ARCHIVE = v ? 1 : 0; }, () => CARD_AUTO_ARCHIVE]
+            ]]
+        ];
+        function rsApply(o) {
+            o = o || {};
+            RS_DEFS.forEach(g => g[1].forEach(d => {
+                const raw = o[d[0]];
+                const n = (raw === undefined || raw === null || raw === '') ? NaN : Number(raw);
+                d[4](isFinite(n) && n >= d[3] ? n : d[2]);
+            }));
+        }
+        function rsLoad() { try { const raw = localStorage.getItem(RS_KEY); if (raw) rsApply(JSON.parse(raw)); } catch (e) {} }
+        rsLoad();
+
+        function _scDayLate(id, st, perms) {
+            const shift = getShiftStart(id); if (!shift) return null;
+            let sm = _scParseMin(shift); const am = _scParseMin(st); if (sm === null || am === null) return null;
+            const ex = _scExcuseTo(perms, sm); if (ex !== null) sm = ex;
+            let late = am - sm; if (late < -720) late += 1440; if (late > 720) late -= 1440;
+            return late;
+        }
+        const _SC_DN = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+        function _scDayName(ds) { const p = String(ds).split('-').map(Number); return _SC_DN[new Date(p[0], p[1] - 1, p[2]).getDay()]; }
+        function _scDescHtml() {
+            return 'الأوزان: الحضور والتأخير ' + SC_WEIGHTS.att + ' · البريك والاستراحة ' + SC_WEIGHTS.brk + ' · سرعة حل الطلبات ' + SC_WEIGHTS.tkt + ' · ساعات الحضور ' + SC_WEIGHTS.hrs + '<br>مكافأة الطلبات: حتى +' + SC_WEIGHTS.ord + ' نقطة تُضاف للدرجة (كاملة عند ' + SC_ORDERS_DAILY_TARGET + ' طلب باليوم) — من لا طلبات له لا يُخصم منه شيء. ساعات الحضور تُقاس بعد استثناء البريك المسموح ودقائق التأخير (التأخير يُخصم مرة واحدة فقط في بند الحضور)'
+                + '<br>لا تُحتسب أيام OFF والإجازات المعتمدة والأيام المستثناة. اضغط على اسم الموظف لرؤية تفصيل كل يوم وتعديل دوامه ويوم الأوف.';
+        }
+
         window.openScoreCard = () => {
             if (loggedInId !== '__admin__') return;
             const old = document.getElementById('score-overlay'); if (old) old.remove();
-            const ym = getTodayDateString().slice(0, 7);
+            const today = getTodayDateString();
             const o = document.createElement('div');
             o.id = 'score-overlay';
             o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
-            o.innerHTML = '<div style="background:#fff;border-radius:24px;padding:24px;width:100%;max-width:980px;max-height:88vh;overflow:auto;direction:rtl;font-family:Cairo,sans-serif;">'
+            const inp = 'border:1px solid #94a3b8;border-radius:8px;padding:3px 6px;font-weight:700;font-size:0.8rem;font-family:Cairo,sans-serif;';
+            const qb = 'background:#f8fafc;border:1px solid #cbd5e1;border-radius:999px;padding:3px 11px;font-size:0.75rem;font-weight:800;cursor:pointer;font-family:Cairo,sans-serif;color:#334155;';
+            o.innerHTML = '<div style="background:#fff;border-radius:24px;padding:22px;width:100%;max-width:1040px;max-height:90vh;overflow:auto;direction:rtl;font-family:Cairo,sans-serif;">'
                 + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">'
-                + '<h2 style="font-size:1.3rem;font-weight:900;color:#334155;">🏆 بطاقة الأداء الشهرية</h2>'
-                + '<div style="display:flex;gap:10px;align-items:center;"><input type="month" value="' + ym + '" onchange="window.loadScoreCard(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
-                + '<button onclick="document.getElementById(\'score-overlay\').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:8px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button></div></div>'
-                + '<div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:12px;line-height:1.7;">الأوزان: الحضور والتأخير ' + SC_WEIGHTS.att + '% · البريك والاستراحة ' + SC_WEIGHTS.brk + '% · سرعة حل الطلبات ' + SC_WEIGHTS.tkt + '% · قبول وتوزيع الطلبات ' + SC_WEIGHTS.ord + '% (درجة 100 عند ' + SC_ORDERS_DAILY_TARGET + ' طلب باليوم فأكثر، وتُحسب فقط للأيام التي سجّل فيها الموظف طلبات) · ساعات الحضور ' + SC_WEIGHTS.hrs + '%.<br>لا تُحتسب: أيام OFF، والإجازات المعتمدة، والأيام المستثناة، وغياب اليوم الحالي. الإذن الزمني المعتمد لا يُحتسب تأخيراً ويُخصم من الساعات المطلوبة ويُضاف لوقت البريك المسموح. ساعات اليوم الحالي لا تدخل في الحساب حتى ينتهي اليوم. أي معيار ليس له بيانات يُعاد توزيع وزنه على الباقي.</div>'
+                + '<h2 style="font-size:1.25rem;font-weight:900;color:#334155;">🏆 بطاقة الأداء وترتيب الموظفين</h2>'
+                + '<button onclick="document.getElementById(\'score-overlay\').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:6px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button></div>'
+                + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;">'
+                + '<span style="font-size:0.8rem;font-weight:800;color:#475569;">من</span><input id="sc-from" type="date" value="' + today.slice(0, 7) + '-01" onchange="window.scReload()" style="' + inp + '">'
+                + '<span style="font-size:0.8rem;font-weight:800;color:#475569;">إلى</span><input id="sc-to" type="date" value="' + today + '" onchange="window.scReload()" style="' + inp + '">'
+                + '<button onclick="window.scQuick(\'today\')" style="' + qb + '">اليوم</button>'
+                + '<button onclick="window.scQuick(\'7\')" style="' + qb + '">آخر 7 أيام</button>'
+                + '<button onclick="window.scQuick(\'month\')" style="' + qb + '">هذا الشهر</button>'
+                + '<button onclick="window.scQuick(\'prev\')" style="' + qb + '">الشهر الماضي</button>'
+                + '<button onclick="window.scToggleSettings()" style="' + qb + 'margin-inline-start:auto;background:#fffbeb;border-color:#fcd34d;color:#92400e;">⚙️ التحكم بالتقييم</button>'
+                + '<button onclick="window.scResetCard(null)" style="' + qb + 'background:#fef2f2;border-color:#fca5a5;color:#b91c1c;">🔄 تصفير البطاقة</button>'
+                + '<button onclick="window.scClearReset(null)" style="' + qb + '">↩️ إلغاء التصفير</button>'
+                + '<button onclick="window.scSaveNow()" style="' + qb + '">💾 حفظ نسخة</button>'
+                + '<button onclick="window.scShowArchive()" style="' + qb + 'background:#eff6ff;border-color:#93c5fd;color:#1d4ed8;">📚 الأرشيف</button></div>'
+                + '<div id="sc-settings" style="display:none;margin-bottom:12px;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;"></div>'
+                + '<div id="sc-resetinfo" style="font-size:0.75rem;color:#b45309;font-weight:800;margin-bottom:6px;"></div>'
+                + '<div id="sc-desc" style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:12px;line-height:1.8;">' + _scDescHtml() + '</div>'
                 + '<div id="score-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div></div>';
             document.body.appendChild(o);
-            window.loadScoreCard(ym);
+            window.scReload();
         };
-        window.loadScoreCard = async (ym) => {
+        window.scReload = () => {
+            const f = document.getElementById('sc-from'), t = document.getElementById('sc-to');
+            if (f && t) window.loadScoreCard(f.value, t.value);
+        };
+        window.scQuick = (k) => {
+            const f = document.getElementById('sc-from'), t = document.getElementById('sc-to'); if (!f || !t) return;
+            const now = new Date(); const today = getTodayDateString();
+            if (k === 'today') { f.value = today; t.value = today; }
+            else if (k === '7') { f.value = _ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)); t.value = today; }
+            else if (k === 'month') { f.value = today.slice(0, 7) + '-01'; t.value = today; }
+            else if (k === 'prev') { f.value = _ymd(new Date(now.getFullYear(), now.getMonth() - 1, 1)); t.value = _ymd(new Date(now.getFullYear(), now.getMonth(), 0)); }
+            window.scReload();
+        };
+        window.scToggleSettings = () => {
+            const el = document.getElementById('sc-settings'); if (!el) return;
+            if (el.style.display === 'none') { window.scRenderSettings(); el.style.display = 'block'; } else el.style.display = 'none';
+        };
+        window.scRenderSettings = () => {
+            const el = document.getElementById('sc-settings'); if (!el) return;
+            const btn = 'border-radius:10px;padding:5px 14px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.8rem;cursor:pointer;';
+            let h = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;">';
+            RS_DEFS.forEach(g => {
+                h += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px;"><div style="font-weight:900;font-size:0.8rem;color:#334155;margin-bottom:8px;">' + g[0] + '</div>';
+                g[1].forEach(d => {
+                    h += '<label style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:0.78rem;font-weight:700;color:#475569;margin-bottom:6px;"><span>' + d[1] + '</span>'
+                        + '<input id="rs-' + d[0] + '" type="number" min="' + d[3] + '" step="1" value="' + d[5]() + '" style="width:62px;border:1px solid #94a3b8;border-radius:8px;padding:2px 4px;text-align:center;font-weight:800;direction:ltr;"></label>';
+                });
+                h += '</div>';
+            });
+            h += '</div><div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">'
+                + '<button onclick="window.scSaveSettings()" style="' + btn + 'background:#16a34a;color:#fff;border:none;">💾 حفظ وتطبيق</button>'
+                + '<button onclick="window.scResetSettings()" style="' + btn + 'background:#fff;color:#475569;border:1px solid #cbd5e1;">↩️ استعادة الافتراضي</button>'
+                + '<span id="rs-msg" style="font-size:0.8rem;font-weight:800;"></span></div>'
+                + '<div style="font-size:0.72rem;color:#94a3b8;font-weight:700;margin-top:8px;line-height:1.7;">تُحفظ هذه القيم على هذا الجهاز (جهاز المسؤول) وتُطبَّق على بطاقة الأداء وعلى التقييم اليومي الذي يحسبه جهازك وعلى حفظ «إنهاء اليوم». شاشات الموظفين تستخدم القيم الافتراضية. تغيير قيم التأخير أو المسموح يعيد حساب الأيام السابقة في هذه البطاقة.</div>';
+            el.innerHTML = h;
+        };
+        window.scSaveSettings = () => {
+            const o = {}; let bad = null;
+            RS_DEFS.forEach(g => g[1].forEach(d => {
+                const inp = document.getElementById('rs-' + d[0]); const v = inp ? inp.value.trim() : '';
+                const n = Number(v);
+                if (v === '' || !isFinite(n) || n < d[3]) bad = bad || d[1]; else o[d[0]] = n;
+            }));
+            const msg = document.getElementById('rs-msg');
+            if (bad) { if (msg) { msg.style.color = '#dc2626'; msg.textContent = '⚠️ قيمة غير صحيحة: ' + bad; } return; }
+            rsApply(o);
+            let saved = true; try { localStorage.setItem(RS_KEY, JSON.stringify(o)); } catch (e) { saved = false; }
+            try { checkAndApplyRatings(); } catch (e) {}
+            const dd = document.getElementById('sc-desc'); if (dd) dd.innerHTML = _scDescHtml();
+            if (msg) { msg.style.color = saved ? '#16a34a' : '#b45309'; msg.textContent = saved ? '✅ تم الحفظ والتطبيق' : '⚠️ طُبّقت لكن تعذّر الحفظ الدائم في المتصفح'; }
+            window.scReload();
+        };
+        window.scResetSettings = () => {
+            if (!confirm('استعادة كل قيم التقييم إلى الافتراضي؟')) return;
+            rsApply({}); try { localStorage.removeItem(RS_KEY); } catch (e) {}
+            try { checkAndApplyRatings(); } catch (e) {}
+            const dd = document.getElementById('sc-desc'); if (dd) dd.innerHTML = _scDescHtml();
+            window.scRenderSettings(); window.scReload();
+        };
+        window.scToggle = (i) => { const el = document.getElementById('scd-' + i); if (el) el.style.display = el.style.display === 'none' ? 'table-row' : 'none'; };
+        window.scExclude = async (date, key) => {
+            try { await window.excludeFromRating(date, key); } catch (e) { console.warn(e); }
+            window.scReload();
+        };
+        // تعديل بداية الدوام ويوم الأوف لموظف (يُحفظ في جدول الموظفين)
+        window.saveEmpSchedule = async (key) => {
             if (loggedInId !== '__admin__') return;
-            if (!/^\d{4}-\d{2}$/.test(String(ym))) return;
-            const box = document.getElementById('score-content'); if (!box) return;
+            const q = cls => Array.from(document.querySelectorAll('.' + cls)).find(x => x.dataset.key === key);
+            const sh = q('es-shift'), of = q('es-off'); if (!sh || !of) return;
+            if (!_checkWriteRate()) return;
+            const row = { shift_start: sh.value || null, off_day: of.value === '' ? null : Number(of.value) };
+            const { error } = await supabaseClient.from('alsaree3_employees').update(row).eq('employee_key', key);
+            if (error) { alert('❌ تعذّر الحفظ: ' + (error.message || 'تحقق من الصلاحيات / أعمدة shift_start و off_day')); return; }
+            _metaAt = 0; try { await _loadEmpMeta(true); } catch (e) {}
+            alert('✅ تم حفظ دوام ويوم أوف الموظف.');
+            window.scReload();
+        };
+
+
+        // ===== تصفير وأرشفة بطاقة الأداء (تُحفظ داخل monthly_history لكل موظف: cardReset و cardArchive) =====
+        const _isoDate = x => /^\d{4}-\d{2}-\d{2}$/.test(String(x || ''));
+        function _resetUpTo(k) {   // تصفير واحد يسري على البطاقة والتقييم الشهري وملخص الشهر: الأيام حتى هذا التاريخ لا تُحتسب
+            const mh = (employeesData[k] || {}).monthlyHistory; if (!mh || typeof mh !== 'object') return null;
+            const a = _isoDate(mh.resetDate) ? mh.resetDate : null, b = _isoDate(mh.cardReset) ? mh.cardReset : null;
+            return a && b ? (a > b ? a : b) : (a || b);
+        }
+        function _cardResetOf(k) {
+            return _resetUpTo(k);   // الأيام حتى هذا التاريخ (شاملاً) لا تُحتسب
+        }
+        function _parseMH(v) {
+            if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = {}; } }
+            return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+        }
+        // يقرأ monthly_history الطازج ويدمج التعديل دون مسح الحقول الأخرى. keys = null يعني كل الموظفين
+        async function _mhPatch(keys, patchFn) {
+            let q = supabaseClient.from('alsaree3_employees').select('employee_key,monthly_history');
+            if (keys) { if (!keys.length) return; q = q.in('employee_key', keys); }
+            const { data, error } = await q; if (error) throw error;
+            for (const r of (data || [])) {
+                const next = patchFn(_parseMH(r.monthly_history), r.employee_key) || {};
+                if (!_checkWriteRate()) throw new Error('عدد كبير من الكتابات، أعد المحاولة بعد دقيقة');
+                const { data: up, error: e2 } = await supabaseClient.from('alsaree3_employees').update({ monthly_history: next }).eq('employee_key', r.employee_key).select('employee_key');
+                if (e2) throw e2;
+                if (!up || !up.length) throw new Error('رُفض الحفظ (صلاحيات)');
+                if (employeesData[r.employee_key]) employeesData[r.employee_key].monthlyHistory = next;
+            }
+            try { await refreshMonthlyRatings(true); if (typeof window.refreshLiveAdminTable === 'function') window.refreshLiveAdminTable(); } catch (e) {}
+        }
+        function _scSnapshotRows(rows, from, to, auto) {
+            const rd = v => (v === null || v === undefined) ? null : Math.round(v), m = {};
+            const at = new Date().toISOString().slice(0, 16).replace('T', ' ');
+            rows.forEach(r => { m[r.k] = { from, to, name: r.name, total: r.hasData ? Math.round(r.total) : null, att: rd(r.att), brk: rd(r.brk), tkt: rd(r.tkt), ord: rd(r.ord), hrs: rd(r.hrs), days: r.days, absent: r.absent, auto: !!auto, savedAt: at }; });
+            return m;
+        }
+        async function _scSaveSnapshot(rows, from, to, auto) {
+            const snaps = _scSnapshotRows(rows, from, to, auto), key = from + '_' + to;
+            await _mhPatch(Object.keys(snaps), (mh, k) => { mh.cardArchive = Object.assign({}, mh.cardArchive || {}); mh.cardArchive[key] = snaps[k]; return mh; });
+            return key;
+        }
+        function _scResetInfoHtml() {
+            const list = Object.keys(employeesData).filter(k => _cardResetOf(k)).map(k => sanitize(employeesData[k].name || k) + ': بعد ' + _cardResetOf(k));
+            return list.length ? '🔄 تصفير مفعّل (يسري على البطاقة والتقييم الشهري) — لا يُحتسب ما قبل: ' + list.join(' · ') : 'لا يوجد تصفير مفعّل: الحساب من بداية الفترة المختارة.';
+        }
+        window.scSaveNow = async () => {
+            if (loggedInId !== '__admin__') return;
+            const last = window._scLast; if (!last || !last.rows || !last.rows.length) { alert('⚠️ افتح البطاقة أولاً.'); return; }
+            if (!confirm('💾 حفظ نسخة من الدرجات الحالية (' + last.from + ' → ' + last.to + ') في الأرشيف؟\n(لا يغيّر الحساب الحالي)')) return;
+            try { await _scSaveSnapshot(last.rows, last.from, last.to, false); alert('✅ تم الحفظ في الأرشيف.'); }
+            catch (e) { console.error(e); alert('❌ فشل الحفظ: ' + ((e && e.message) || '')); }
+        };
+        window.scResetCard = async (key) => {
+            if (loggedInId !== '__admin__') { alert('🔒 هذه العملية متاحة للمسؤول فقط!'); return; }
+            if (!(await _askPin('تصفير بطاقة الأداء'))) return;
+            const last = window._scLast;
+            const keys = key ? [key] : Object.keys(employeesData);
+            const who = key ? ((employeesData[key] && employeesData[key].name) || key) : 'كل الموظفين';
+            let d = prompt('🔄 تصفير بطاقة الأداء لـ ' + who + '\n\nأدخل تاريخ آخر يوم يُستثنى من الحساب (يُحتسب ما بعده فقط).\nمثال: تاريخ اليوم = يبدأ الحساب من الغد.', getTodayDateString());
+            if (d === null) return; d = d.trim();
+            if (!_isoDate(d)) { alert('⚠️ صيغة التاريخ غير صحيحة (YYYY-MM-DD).'); return; }
+            try {
+                if (last && last.rows && last.rows.length && confirm('💾 حفظ نسخة من الدرجات الحالية (' + last.from + ' → ' + last.to + ') في الأرشيف قبل التصفير؟\n\nموافق = احفظ ثم صفّر   |   إلغاء = صفّر بدون حفظ')) {
+                    await _scSaveSnapshot(key ? last.rows.filter(r => r.k === key) : last.rows, last.from, last.to, false);
+                }
+                await _mhPatch(keys, mh => { mh.cardReset = d; return mh; });
+                alert('✅ تم التصفير. الحساب يبدأ بعد ' + d + '.');
+                window.scReload();
+            } catch (e) { console.error('[CardReset]', e); alert('❌ فشل التصفير: ' + ((e && e.message) || '')); }
+        };
+        window.scClearReset = async (key) => {
+            if (loggedInId !== '__admin__') { alert('🔒 هذه العملية متاحة للمسؤول فقط!'); return; }
+            const keys = key ? [key] : Object.keys(employeesData);
+            if (!keys.some(k => _cardResetOf(k))) { alert('لا يوجد تصفير مفعّل لإلغائه.'); return; }
+            if (!confirm('↩️ إلغاء التصفير؟ ستعود الأيام السابقة للحساب ضمن الفترة المختارة.')) return;
+            try { await _mhPatch(keys, mh => { delete mh.cardReset; delete mh.resetDate; return mh; }); window.scReload(); }
+            catch (e) { console.error(e); alert('❌ فشل الإلغاء: ' + ((e && e.message) || '')); }
+        };
+        window.scShowArchive = async () => {
+            if (loggedInId !== '__admin__') return;
+            const old = document.getElementById('sca-overlay'); if (old) old.remove();
+            const o = document.createElement('div'); o.id = 'sca-overlay';
+            o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.65);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px;';
+            o.innerHTML = '<div style="background:#fff;border-radius:24px;padding:22px;width:100%;max-width:900px;max-height:90vh;overflow:auto;direction:rtl;font-family:Cairo,sans-serif;">'
+                + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="font-weight:900;font-size:1.1rem;color:#334155;">📚 أرشيف بطاقة الأداء</h3>'
+                + '<button onclick="document.getElementById(\'sca-overlay\').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:6px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button></div>'
+                + '<div id="sca-body" style="color:#94a3b8;font-weight:700;">⏳ جاري التحميل...</div></div>';
+            document.body.appendChild(o);
+            try {
+                const { data, error } = await supabaseClient.from('alsaree3_employees').select('employee_key,monthly_history'); if (error) throw error;
+                const by = {};
+                (data || []).forEach(r => { const a = _parseMH(r.monthly_history).cardArchive || {}; Object.keys(a).forEach(k => { (by[k] = by[k] || []).push(Object.assign({ k: r.employee_key }, a[k])); }); });
+                const keys = Object.keys(by).sort().reverse();
+                const body = document.getElementById('sca-body'); if (!body) return;
+                if (!keys.length) { body.innerHTML = 'لا توجد نسخ محفوظة بعد.'; return; }
+                const th = 'padding:6px;font-size:0.78rem;', f = v => v === null || v === undefined ? '-' : v + '%';
+                body.style.cssText = 'color:#000;';
+                body.innerHTML = keys.map(k => {
+                    const rs = by[k].sort((a, b) => (b.total || 0) - (a.total || 0)), h0 = rs[0];
+                    return '<div style="border:1px solid #e2e8f0;border-radius:14px;padding:10px;margin-bottom:12px;"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">'
+                        + '<b style="color:#334155;">' + sanitize(h0.from) + ' ← ' + sanitize(h0.to) + '</b><span style="font-size:0.75rem;color:#64748b;font-weight:700;">' + (h0.auto ? '🤖 تلقائي' : '✋ يدوي') + ' · ' + sanitize(h0.savedAt || '') + '</span>'
+                        + '<button data-k="' + sanitize(k) + '" onclick="window.scDeleteArchive(this.dataset.k)" style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:8px;padding:2px 10px;font-weight:800;font-size:0.72rem;cursor:pointer;font-family:Cairo,sans-serif;">🗑️ حذف</button></div>'
+                        + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;text-align:right;"><thead><tr style="background:#f8fafc;font-weight:900;">'
+                        + ['الموظف', 'الدرجة', 'الحضور', 'البريك', 'سرعة الطلبات', 'الطلبات', 'الساعات', 'أيام/غياب'].map(h => '<th style="' + th + '">' + h + '</th>').join('') + '</tr></thead><tbody>'
+                        + rs.map(r => '<tr style="border-top:1px solid #e2e8f0;"><td style="' + th + 'font-weight:800;">' + sanitize(r.name || r.k) + '</td><td style="' + th + 'font-weight:900;">' + (r.total === null || r.total === undefined ? '-' : r.total) + '</td>'
+                            + [r.att, r.brk, r.tkt, r.ord, r.hrs].map(v => '<td style="' + th + '">' + f(v) + '</td>').join('') + '<td style="' + th + 'direction:ltr;text-align:right;">' + (r.days || 0) + ' / ' + (r.absent || 0) + '</td></tr>').join('')
+                        + '</tbody></table></div></div>';
+                }).join('');
+            } catch (e) { const b = document.getElementById('sca-body'); if (b) b.innerHTML = '<span style="color:#dc2626;">❌ فشل التحميل</span>'; console.error(e); }
+        };
+        window.scDeleteArchive = async (akey) => {
+            if (loggedInId !== '__admin__') return;
+            if (!(await _askPin('حذف نسخة من الأرشيف'))) return;
+            if (!confirm('🗑️ حذف هذه النسخة (' + akey + ') لكل الموظفين؟ لا يمكن التراجع.')) return;
+            try { await _mhPatch(null, mh => { if (mh.cardArchive) { mh.cardArchive = Object.assign({}, mh.cardArchive); delete mh.cardArchive[akey]; } return mh; }); window.scShowArchive(); }
+            catch (e) { console.error(e); alert('❌ فشل الحذف: ' + ((e && e.message) || '')); }
+        };
+        // أرشفة الشهر الماضي تلقائياً (مرة واحدة) ثم تصفير البطاقة ليبدأ الشهر الجديد من الصفر — تعمل عند فتح جهاز المسؤول
+        let _cardAutoBusy = false, _cardAutoDone = '', _cardAutoAt = 0;
+        async function autoCardMonthEnd() {
+            if (loggedInId !== '__admin__' || !CARD_AUTO_ARCHIVE || _cardAutoBusy) return;
+            const now = new Date();
+            const first = _ymd(new Date(now.getFullYear(), now.getMonth() - 1, 1)), last = _ymd(new Date(now.getFullYear(), now.getMonth(), 0));
+            if (_cardAutoDone === first || Date.now() - _cardAutoAt < 600000) return;
+            if (!Object.keys(employeesData).length) return;
+            _cardAutoBusy = true; _cardAutoAt = Date.now();
+            try {
+                const pkey = first + '_' + last;
+                const { data, error } = await supabaseClient.from('alsaree3_employees').select('employee_key,monthly_history'); if (error) return;
+                const miss = new Set((data || []).filter(r => { const a = _parseMH(r.monthly_history).cardArchive; return !(a && a[pkey]); }).map(r => r.employee_key));
+                if (miss.size) {
+                    const rows = await window.loadScoreCard(first, last, true);
+                    if (!rows) return;
+                    await _scSaveSnapshot(rows.filter(r => miss.has(r.k)), first, last, true);
+                    await _mhPatch(Array.from(miss), mh => { if (!_isoDate(mh.cardReset) || mh.cardReset < last) mh.cardReset = last; return mh; });
+                    console.log('[CardAuto] أُرشف الشهر', pkey);
+                }
+                _cardAutoDone = first;
+            } catch (e) { console.warn('[CardAuto]', e); }
+            finally { _cardAutoBusy = false; }
+        }
+
+        window.loadScoreCard = async (from, to, silent) => {
+            if (loggedInId !== '__admin__') return;
+            const re = /^\d{4}-\d{2}-\d{2}$/;
+            if (!re.test(String(from)) || !re.test(String(to))) return;
+            if (from > to) { const t = from; from = to; to = t; const f1 = document.getElementById('sc-from'), t1 = document.getElementById('sc-to'); if (f1) f1.value = from; if (t1) t1.value = to; }
+            const box = silent ? document.createElement('div') : document.getElementById('score-content'); if (!box) return;
+            const pf = from.split('-').map(Number), pt = to.split('-').map(Number);
+            const nDays = Math.round((new Date(pt[0], pt[1] - 1, pt[2]) - new Date(pf[0], pf[1] - 1, pf[2])) / 86400000) + 1;
+            if (nDays > 62) { box.style.cssText = 'text-align:center;color:#b45309;font-weight:800;padding:20px;'; box.innerHTML = '⚠️ اختر مدة لا تتجاوز 62 يوماً.'; return; }
             box.style.cssText = 'text-align:center;color:#94a3b8;font-weight:700;padding:20px;';
             box.innerHTML = '⏳ جاري الحساب...';
-            const [y, m] = ym.split('-').map(Number);
-            const start = ym + '-01', lastDay = new Date(y, m, 0).getDate();
-            const end = ym + '-' + String(lastDay).padStart(2, '0');
             const today = getTodayDateString();
+            const dates = []; for (let i = 0; i < nDays; i++) dates.push(_ymd(new Date(pf[0], pf[1] - 1, pf[2] + i)));
             try {
-                const { data, error } = await supabaseClient.from('alsaree3_history').select('*').gte('history_date', start).lte('history_date', end).order('history_date').limit(5000);
+                const { data, error } = await supabaseClient.from('alsaree3_history').select('*').gte('history_date', from).lte('history_date', to).order('history_date').limit(5000);
                 if (error) throw error;
                 await _loadEmpMeta();
                 const { data: lvRows } = await supabaseClient.from('alsaree3_leave_requests').select('employee_key,kind,start_date,days,hours,from_time,to_time').eq('status', 'approved');
                 const leaveSet = {}, permByDay = {};
                 (lvRows || []).forEach(q => {
-                    if (q.kind === 'day') _expandDates(q.start_date, q.days).forEach(ds => { if (ds >= start && ds <= end) (leaveSet[q.employee_key] = leaveSet[q.employee_key] || new Set()).add(ds); });
-                    else if (q.start_date >= start && q.start_date <= end) {
+                    if (q.kind === 'day') _expandDates(q.start_date, q.days).forEach(ds => { if (ds >= from && ds <= to) (leaveSet[q.employee_key] = leaveSet[q.employee_key] || new Set()).add(ds); });
+                    else if (q.start_date >= from && q.start_date <= to) {
                         const f = _scParseMin(q.from_time), t = _scParseMin(q.to_time);
                         if (f !== null && t !== null && t > f) {
                             const km = (permByDay[q.employee_key] = permByDay[q.employee_key] || {});
@@ -1426,82 +1894,131 @@
                         }
                     }
                 });
-                const blank = name => ({ name, days: 0, absent: 0, punct: [], brkDay: [], hrDays: 0, hrSecs: 0, hrPermMin: 0 });
-                const agg = {};
-                Object.keys(employeesData).forEach(k => { agg[k] = blank(employeesData[k].name); });
-                (data || []).forEach(r => {
-                    const k = r.employee_key;
-                    const a = agg[k] = agg[k] || blank(r.name);
-                    if (r.name) a.name = r.name;
-                    const ls = leaveSet[k]; if (ls && ls.has(r.history_date)) return;
-                    if (isOffDay(k, r.history_date)) return;   // الأوف الأسبوعي: لا يزيد ولا ينقص (حتى لو داوم)
-                    const st = String(r.start_time_str || '');
-                    if (st === 'EXCLUDED' || st.toUpperCase().startsWith('OFF')) return;
-                    const isToday = r.history_date === today;
-                    if (!st || st === 'Absent' || st === 'لم يحضر') {
-                        if (isToday) return;   // اليوم الحالي لم ينتهِ: لا يُعدّ غياباً
-                        if (!isOffDay(k, r.history_date)) a.absent++;
-                        return;
-                    }
-                    const perms = (permByDay[k] || {})[r.history_date] || [];
-                    const permMin = perms.reduce((s, p) => s + p.mins, 0);
-                    a.days++;
-                    const p = _scDayPunctuality(k, st, perms); if (p !== null) a.punct.push(p);
-                    const secs = Number(r.total_work_seconds) || 0;
-                    const used = (Number(r.total_break_minutes) || 0) + (Number(r.total_rest_minutes) || 0);
-                    const allow = SC_BREAK_ALLOW_PER_HOUR_MIN * (secs / 3600) + SC_REST_ALLOW_MIN + permMin;
-                    a.brkDay.push(used <= allow ? 100 : Math.max(0, 100 - (used - allow) / allow * 100));
-                    if (!isToday) { a.hrDays++; a.hrSecs += secs; a.hrPermMin += permMin; }   // ساعات اليوم الحالي ناقصة: لا تُحتسب بعد
+                const blank = name => ({ name, days: 0, absent: 0, punct: [], brkDay: [], hrDays: 0, hrSecs: 0, hrPermMin: 0, hrReqSecs: 0 });
+                const byKey = {}, names = {};
+                (data || []).forEach(r => { (byKey[r.employee_key] = byKey[r.employee_key] || {})[r.history_date] = r; if (r.name) names[r.employee_key] = r.name; });
+                const keys = Array.from(new Set(Object.keys(employeesData).concat(Object.keys(byKey))));
+                const agg = {}, detail = {};
+                keys.forEach(k => { agg[k] = blank(employeesData[k] ? employeesData[k].name : (names[k] || k)); detail[k] = []; });
+                dates.forEach(ds => {
+                    if (ds > today) return;
+                    const isToday = ds === today;
+                    keys.forEach(k => {
+                        const _cr = _cardResetOf(k); if (_cr && ds <= _cr) return;   // تصفير البطاقة: أيام ما قبل التصفير لا تُحتسب
+                        const a = agg[k], r = (byKey[k] || {})[ds];
+                        const push = (status, extra) => detail[k].push(Object.assign({ date: ds, status }, extra || {}));
+                        const ls = leaveSet[k]; if (ls && ls.has(ds)) { push('إجازة'); return; }
+                        if (isOffDay(k, ds)) { push('OFF'); return; }   // الأوف الأسبوعي: لا يزيد ولا ينقص (حتى لو داوم)
+                        if (!r) { push(isToday ? 'لم يبدأ' : 'لا سجل'); return; }
+                        const st = String(r.start_time_str || '');
+                        if (st === 'EXCLUDED') { push('مستثنى'); return; }
+                        if (st.toUpperCase().startsWith('OFF')) { push('OFF'); return; }
+                        if (!st || st === 'Absent' || st === 'لم يحضر') {
+                            if (isToday) { push('لم يبدأ'); return; }   // اليوم الحالي لم ينتهِ: لا يُعدّ غياباً
+                            a.absent++; push('غياب'); return;
+                        }
+                        const perms = (permByDay[k] || {})[ds] || [];
+                        const permMin = perms.reduce((s, p) => s + p.mins, 0);
+                        a.days++;
+                        const p = _scDayPunctuality(k, st, perms); if (p !== null) a.punct.push(p);
+                        const late = _scDayLate(k, st, perms);
+                        const secs = Number(r.total_work_seconds) || 0;
+                        const brkM = Number(r.total_break_minutes) || 0, restM = Number(r.total_rest_minutes) || 0;
+                        const used = brkM + restM;
+                        const allow = SC_BREAK_ALLOW_PER_HOUR_MIN * (secs / 3600) + SC_REST_ALLOW_MIN + permMin;
+                        const _P = BREAK_SCORE_MAX_PENALTY;   // أقل بريك = درجة أعلى (متدرج داخل المسموح ثم يستمر بالنزول عند التجاوز)
+                        a.brkDay.push(used <= allow ? 100 - _P * (used / allow) : Math.max(0, (100 - _P) - (used - allow) / allow * (100 - _P)));
+                        if (!isToday) { a.hrDays++; a.hrSecs += secs; a.hrPermMin += permMin; a.hrReqSecs += Math.max(3600, SC_DAILY_HOURS * 3600 - (SC_BREAK_ALLOW_PER_HOUR_MIN * SC_DAILY_HOURS + SC_REST_ALLOW_MIN + permMin + Math.max(0, late || 0)) * 60); }   // ساعات اليوم الحالي ناقصة: لا تُحتسب بعد
+                        push('دوام', { start: st, late: (late !== null && late > LATE_GRACE_MIN) ? late : 0, brk: brkM, rest: restM, secs, rating: r.rating == null ? 100 : (Number(r.rating) || 0) });
+                    });
                 });
                 // الطلبات: استدعاء يوم بيوم (بالتوازي) حتى اليوم الحالي
-                const tk = {}; let tkOk = true;
-                const dates = []; for (let d = 1; d <= lastDay; d++) { const ds = ym + '-' + String(d).padStart(2, '0'); if (ds <= today) dates.push(ds); }
-                const ordCnt = {}; let ordOk = true;
-                const _addOrd = (k, ds) => { const m = ordCnt[k] = ordCnt[k] || {}; m[ds] = (m[ds] || 0) + 1; };
-                const ores = await Promise.all(dates.map(ds => supabaseClient.rpc('alsaree3_dispatch_admin', { p_date: ds }).then(r => ({ ds, r })).catch(() => ({ ds, r: { error: true } }))));
-                ores.forEach(({ ds, r }) => { if (r.error) { ordOk = false; return; } if (ds === today) return; (r.data || []).forEach(o => { if (String(o.kind || '').endsWith('_late')) return; _addOrd(o.employee_key, ds); }); });
-                const res = await Promise.all(dates.map(ds => supabaseClient.rpc('alsaree3_tickets_admin', { p_date: ds }).then(r => ({ ds, r })).catch(() => ({ ds, r: { error: true } }))));
+                const tk = {}; let tkOk = true, tkErr = '';
+                const qd = dates.filter(ds => ds <= today);
+                const ordCnt = {}; let ordOk = true, ordErr = '';
+                const _addOrd = (k, ds) => { const _c0 = _cardResetOf(k); if (_c0 && ds <= _c0) return; const m = ordCnt[k] = ordCnt[k] || {}; m[ds] = (m[ds] || 0) + 1; };
+                const ores = await Promise.all(qd.map(ds => _ordersAdminRpc(ds).then(r => ({ ds, r }))));
+                ores.forEach(({ ds, r }) => { if (r.error) { ordOk = false; ordErr = ordErr || String(r.error.message || r.error); return; } if (ds === today) return; (r.data || []).forEach(o => { if (String(o.kind || '').endsWith('_late')) return; _addOrd(o.employee_key, ds); }); });
+                const res = await Promise.all(qd.map(ds => supabaseClient.rpc('alsaree3_tickets_admin', { p_date: ds }).then(r => ({ ds, r })).catch(e => ({ ds, r: { error: { message: String((e && e.message) || e) } } }))));
                 res.forEach(({ ds, r }) => {
-                    if (r.error) { tkOk = false; return; }
+                    if (r.error) { tkOk = false; tkErr = tkErr || String(r.error.message || r.error); return; }
                     (r.data || []).forEach(t => {
                         if (t.kind === 'accept') { if (ds !== today) _addOrd(t.employee_key, ds); return; }   // سجل قبول قديم (بدون رقم) يُحسب كطلب
                         if (!t.solved_at && ds === today) return;   // طلب اليوم المفتوح لم ينتهِ وقته بعد
                         const sc = _scTicketScore(t); if (sc === null) return;
+                        const _c1 = _cardResetOf(t.employee_key); if (_c1 && ds <= _c1) return;
                         (tk[t.employee_key] = tk[t.employee_key] || []).push(sc);
                     });
                 });
                 const avg = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
-                const rows = Object.entries(agg).filter(([k, a]) => a.days > 0 || a.absent > 0).map(([k, a]) => {
+                const rows = Object.entries(agg).map(([k, a]) => {
+                    const hasData = a.days > 0 || a.absent > 0;
                     const punct = avg(a.punct) === null ? 100 : avg(a.punct);
                     const att = (a.days + a.absent) > 0 ? punct * (a.days / (a.days + a.absent)) : null;
                     const brk = avg(a.brkDay);
-                    const reqSecs = a.hrDays * SC_DAILY_HOURS * 3600 - a.hrPermMin * 60;
+                    const reqSecs = a.hrReqSecs;
                     const hrs = a.hrDays > 0 ? Math.min(100, a.hrSecs / Math.max(3600, reqSecs) * 100) : null;
                     const tkt = tkOk ? avg(tk[k] || []) : null;
                     const od = Object.values(ordCnt[k] || {}).filter(n => n > 0);
                     const ord = (ordOk && od.length) ? avg(od.map(n => Math.min(100, n / SC_ORDERS_DAILY_TARGET * 100))) : null;
                     const comps = { att, brk, tkt, ord, hrs };
                     let ws = 0, tot = 0;
-                    Object.keys(SC_WEIGHTS).forEach(c => { if (comps[c] !== null) { ws += SC_WEIGHTS[c]; tot += comps[c] * SC_WEIGHTS[c]; } });
-                    return { name: a.name || k, att, brk, tkt, ord, hrs, total: ws ? tot / ws : 0, days: a.days, absent: a.absent };
-                }).sort((p, q) => q.total - p.total);
-                if (rows.length === 0) { box.innerHTML = '<p>لا توجد بيانات لهذا الشهر.</p>'; return; }
+                    ['att', 'brk', 'tkt', 'hrs'].forEach(c => { if (comps[c] !== null) { ws += SC_WEIGHTS[c]; tot += comps[c] * SC_WEIGHTS[c]; } });
+                    const _bonus = (comps.ord !== null) ? comps.ord / 100 * SC_WEIGHTS.ord : 0;
+                    return { k, name: a.name || k, att, brk, tkt, ord, hrs, total: Math.min(100, (ws ? tot / ws : 0) + (ws ? _bonus : 0)), hasData, days: a.days, absent: a.absent };
+                }).sort((p, q) => (q.hasData - p.hasData) || (q.total - p.total));
+                if (silent) return rows;
+                if (rows.length === 0) { box.style.cssText = 'padding:20px;color:#64748b;font-weight:700;'; box.innerHTML = '<p>لا يوجد موظفون.</p>'; return; }
+                window._scLast = { from, to, rows };
+                { const ri = document.getElementById('sc-resetinfo'); if (ri) ri.innerHTML = _scResetInfoHtml(); }
                 const c = v => v === null ? '#64748b' : v >= 90 ? '#16a34a' : v >= 75 ? '#d97706' : '#dc2626';
                 const f = v => v === null ? '-' : Math.round(v) + '%';
                 const medals = ['🥇', '🥈', '🥉'];
-                let html = '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
+                const stCol = { 'دوام': '#16a34a', 'OFF': '#2563eb', 'إجازة': '#7c3aed', 'غياب': '#dc2626', 'مستثنى': '#64748b', 'لا سجل': '#94a3b8', 'لم يبدأ': '#94a3b8' };
+                const hm = s => Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+                const th = 'padding:7px;font-size:0.75rem;';
+                window._scDetail = detail;
+                let html = '<table style="width:100%;border-collapse:collapse;font-size:0.88rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
                     + ['#', 'الموظف', 'الدرجة النهائية', 'الحضور والتأخير', 'البريك والاستراحة', 'سرعة الطلبات', 'قبول وتوزيع الطلبات', 'ساعات الحضور', 'أيام/غياب'].map(h => '<th style="padding:10px;">' + h + '</th>').join('') + '</tr></thead><tbody>';
                 rows.forEach((r, i) => {
-                    html += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + (medals[i] || (i + 1)) + '</td>'
-                        + '<td style="padding:9px;font-weight:900;">' + sanitize(r.name) + '</td>'
-                        + '<td style="padding:9px;font-weight:900;font-size:1.1rem;color:' + c(r.total) + ';">' + Math.round(r.total) + '</td>'
+                    const offNow = getOffDay(r.k), shiftNow = getShiftStart(r.k);
+                    const sel = '<select class="es-off" data-key="' + sanitize(r.k) + '" style="border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;font-family:Cairo,sans-serif;font-weight:700;font-size:0.8rem;">'
+                        + [['', 'بدون'], [6, 'السبت'], [0, 'الأحد'], [1, 'الاثنين'], [2, 'الثلاثاء'], [3, 'الأربعاء'], [4, 'الخميس'], [5, 'الجمعة']].map(o => '<option value="' + o[0] + '"' + (String(o[0]) === (offNow === null || offNow === undefined ? '' : String(offNow)) ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
+                    const ctrl = '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:0.8rem;font-weight:800;color:#475569;">'
+                        + '<span>🕘 بداية الدوام</span><input class="es-shift" data-key="' + sanitize(r.k) + '" type="time" value="' + sanitize(shiftNow || '') + '" style="border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;font-family:Cairo,sans-serif;font-weight:700;">'
+                        + '<span>🛌 يوم الأوف</span>' + sel
+                        + '<button data-key="' + sanitize(r.k) + '" onclick="window.saveEmpSchedule(this.dataset.key)" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:3px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">💾 حفظ</button>'
+                        + '<button data-key="' + sanitize(r.k) + '" onclick="window.scResetCard(this.dataset.key)" style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:3px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">🔄 تصفير هذا الموظف</button>'
+                        + '<button data-key="' + sanitize(r.k) + '" onclick="window.scClearReset(this.dataset.key)" style="background:#fff;border:1px solid #cbd5e1;color:#475569;border-radius:10px;padding:3px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">↩️ إلغاء تصفيره</button></div>';
+                    let dt = '<table style="width:100%;border-collapse:collapse;font-size:0.8rem;text-align:right;background:#fff;border:1px solid #e2e8f0;"><thead><tr style="background:#f8fafc;font-weight:900;">'
+                        + ['اليوم', 'الحالة', 'الدخول', 'التأخير', 'البريك', 'الراحة', 'الساعات', 'تقييم اليوم', ''].map(h => '<th style="' + th + '">' + h + '</th>').join('') + '</tr></thead><tbody>';
+                    (detail[r.k] || []).forEach(d => {
+                        const work = d.status === 'دوام';
+                        dt += '<tr style="border-top:1px solid #e2e8f0;"><td style="' + th + 'font-weight:800;">' + sanitize(d.date.slice(5)) + ' · ' + _scDayName(d.date) + '</td>'
+                            + '<td style="' + th + 'font-weight:900;color:' + (stCol[d.status] || '#64748b') + ';">' + sanitize(d.status) + '</td>'
+                            + '<td style="' + th + '">' + (work ? sanitize(d.start) : '-') + '</td>'
+                            + '<td style="' + th + 'font-weight:800;color:' + (work && d.late > 0 ? '#dc2626' : '#64748b') + ';">' + (work ? (d.late > 0 ? d.late + ' د' : '✔') : '-') + '</td>'
+                            + '<td style="' + th + '">' + (work ? d.brk + ' د' : '-') + '</td><td style="' + th + '">' + (work ? d.rest + ' د' : '-') + '</td>'
+                            + '<td style="' + th + '">' + (work ? hm(d.secs) : '-') + '</td>'
+                            + '<td style="' + th + 'font-weight:900;color:' + (work ? c(d.rating) : '#64748b') + ';">' + (work ? d.rating + '%' : '-') + '</td>'
+                            + '<td style="' + th + 'white-space:nowrap;">' + ((d.date < today && d.status !== 'إجازة' && d.status !== 'OFF') ? '<button data-d="' + sanitize(d.date) + '" data-k="' + sanitize(r.k) + '" onclick="window.editDayRecord(this.dataset.d,this.dataset.k)" style="background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8;border-radius:8px;padding:1px 8px;font-weight:800;font-size:0.72rem;cursor:pointer;font-family:Cairo,sans-serif;margin-inline-end:4px;">✏️ تعديل</button>' : '')
+                            + ((work || d.status === 'غياب') ? '<button data-d="' + sanitize(d.date) + '" data-k="' + sanitize(r.k) + '" onclick="window.scExclude(this.dataset.d,this.dataset.k)" style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:8px;padding:1px 8px;font-weight:800;font-size:0.72rem;cursor:pointer;font-family:Cairo,sans-serif;">🚫 استثناء</button>' : '') + '</td></tr>';
+                    });
+                    dt += '</tbody></table>';
+                    html += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + (r.hasData ? (medals[i] || (i + 1)) : '-') + '</td>'
+                        + '<td style="padding:9px;font-weight:900;cursor:pointer;" onclick="window.scToggle(' + i + ')" title="تفصيل الأيام والتحكم">' + sanitize(r.name) + ' <span style="color:#94a3b8;font-size:0.75rem;">▾</span></td>'
+                        + '<td style="padding:9px;font-weight:900;font-size:1.1rem;color:' + (r.hasData ? c(r.total) : '#94a3b8') + ';">' + (r.hasData ? Math.round(r.total) : '-') + '</td>'
                         + [r.att, r.brk, r.tkt, r.ord, r.hrs].map(v => '<td style="padding:9px;font-weight:800;color:' + c(v) + ';">' + f(v) + '</td>').join('')
-                        + '<td style="padding:9px;direction:ltr;text-align:right;">' + r.days + ' / ' + r.absent + '</td></tr>';
+                        + '<td style="padding:9px;direction:ltr;text-align:right;">' + r.days + ' / ' + r.absent + '</td></tr>'
+                        + '<tr id="scd-' + i + '" style="display:none;background:#f8fafc;"><td colspan="9" style="padding:10px 12px;">' + ctrl + '<div style="overflow-x:auto;">' + dt + '</div></td></tr>';
                 });
                 box.style.cssText = 'padding:0;color:#000;';
-                box.innerHTML = html + '</tbody></table>' + (tkOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل الطلبات، فحُسبت الدرجة بدون معيار الطلبات.</p>') + (ordOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل القبول والتوزيع، فحُسبت الدرجة بدونه.</p>');
+                box.innerHTML = '<div style="overflow-x:auto;">' + html + '</tbody></table></div>'
+                    + (tkOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل الطلبات، فحُسبت الدرجة بدون معيار سرعة الطلبات. (السبب: ' + sanitize(tkErr) + ')</p>')
+                    + (ordOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل القبول والتوزيع، فحُسبت الدرجة بدونه. (السبب: ' + sanitize(ordErr) + ')</p>');
             } catch (e) {
                 console.error('[ScoreCard]', e);
+                box.style.cssText = 'padding:20px;';
                 box.innerHTML = '<p style="color:#dc2626;">❌ فشل تحميل بطاقة الأداء</p>';
             }
         };
@@ -1590,6 +2107,77 @@
                 window.fetchHistoryReport(date);
             } catch (e) { console.error('[Exclude]', e); alert('❌ فشل الاستثناء'); }
         };
+
+        // ===== تعديل يدوي لسجل يوم (للمسؤول): الحالة، الدخول، البريك، الراحة، الساعات، تقييم اليوم =====
+        // يغيّر الأرشيف مباشرة، فتتغير بطاقة الأداء والتقييم الشهري تلقائياً. اليوم الحالي مستثنى لأن النظام يحدّثه كل 10 ثوانٍ.
+        function _fmt12(hhmm) {
+            const m = String(hhmm || '').match(/^(\d{1,2}):(\d{2})$/); if (!m) return '';
+            let h = Number(m[1]); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
+            return String(h).padStart(2, '0') + ':' + m[2] + ' ' + ap;
+        }
+        function _to24(str) {
+            const mi = _scParseMin(str); if (mi === null) return '';
+            return String(Math.floor(mi / 60)).padStart(2, '0') + ':' + String(mi % 60).padStart(2, '0');
+        }
+        window.editDayRecord = async (date, id) => {
+            if (loggedInId !== '__admin__') { alert('🔒 هذه العملية متاحة للمسؤول فقط!'); return; }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) return;
+            if (date >= getTodayDateString()) { alert('⚠️ لا يمكن تعديل اليوم الحالي من هنا (يُحدَّث تلقائياً). عدّله بعد إنهاء اليوم، أو استخدم «تصفير التقييم» لليوم الحالي.'); return; }
+            let hist; try { hist = await fetchHistoryFor(date); } catch (e) { alert('❌ تعذّر قراءة السجل'); return; }
+            const cur = hist[id] || { name: (employeesData[id] && employeesData[id].name) || id, startTimeStr: 'Absent', totalBreakMinutes: 0, totalRestMinutes: 0, totalWorkSeconds: 0, rating: 100, currentTask: 'None', monthlyRating: 100 };
+            const st = String(cur.startTimeStr || '');
+            const kind = st === 'EXCLUDED' ? 'EXCLUDED' : (st.toUpperCase().startsWith('OFF') ? 'OFF' : ((!st || st === 'Absent' || st === 'لم يحضر') ? 'Absent' : 'WORK'));
+            const ws = Number(cur.totalWorkSeconds) || 0;
+            const old = document.getElementById('edr-overlay'); if (old) old.remove();
+            const o = document.createElement('div'); o.id = 'edr-overlay';
+            o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.65);z-index:10002;display:flex;align-items:center;justify-content:center;padding:16px;';
+            const inp = 'width:100%;border:1px solid #94a3b8;border-radius:10px;padding:6px 8px;font-family:Cairo,sans-serif;font-weight:700;';
+            const lb = 'font-size:0.78rem;font-weight:800;color:#475569;margin:8px 0 3px;display:block;';
+            o.innerHTML = '<div style="background:#fff;border-radius:24px;padding:22px;width:100%;max-width:380px;direction:rtl;font-family:Cairo,sans-serif;max-height:92vh;overflow:auto;">'
+                + '<h3 style="font-weight:900;font-size:1.05rem;color:#334155;">✏️ تعديل ' + sanitize(cur.name || id) + ' — ' + sanitize(date) + '</h3>'
+                + '<label style="' + lb + '">الحالة</label><select id="edr-kind" style="' + inp + '">'
+                + [['WORK', 'دوام'], ['Absent', 'غياب'], ['OFF', 'OFF (إجازة أسبوعية)'], ['EXCLUDED', 'مستثنى من التقييم']].map(x => '<option value="' + x[0] + '"' + (x[0] === kind ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>'
+                + '<div id="edr-work">'
+                + '<label style="' + lb + '">وقت الدخول</label><input id="edr-start" type="time" value="' + sanitize(kind === 'WORK' ? _to24(st) : '') + '" style="' + inp + '">'
+                + '<label style="' + lb + '">البريك (دقيقة)</label><input id="edr-brk" type="number" min="0" value="' + (Number(cur.totalBreakMinutes) || 0) + '" style="' + inp + '">'
+                + '<label style="' + lb + '">الراحة (دقيقة)</label><input id="edr-rest" type="number" min="0" value="' + (Number(cur.totalRestMinutes) || 0) + '" style="' + inp + '">'
+                + '<label style="' + lb + '">ساعات العمل (ساعة : دقيقة)</label><div style="display:flex;gap:6px;"><input id="edr-h" type="number" min="0" value="' + Math.floor(ws / 3600) + '" style="' + inp + '"><input id="edr-m" type="number" min="0" max="59" value="' + Math.floor((ws % 3600) / 60) + '" style="' + inp + '"></div>'
+                + '<label style="' + lb + '">تقييم اليوم (0 - 100)</label><input id="edr-rating" type="number" min="0" max="100" value="' + (cur.rating == null ? 100 : Math.round(Number(cur.rating) || 0)) + '" style="' + inp + '">'
+                + '</div>'
+                + '<div style="display:flex;gap:8px;margin-top:16px;"><button id="edr-save" style="flex:2;background:#16a34a;color:#fff;border:none;border-radius:14px;padding:10px;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;">💾 حفظ</button>'
+                + '<button id="edr-cancel" style="flex:1;background:#f1f5f9;border:none;border-radius:14px;padding:10px;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;color:#475569;">إلغاء</button></div>'
+                + '<p style="font-size:0.72rem;color:#94a3b8;font-weight:700;margin-top:10px;line-height:1.6;">تقييم اليوم يدخل في التقييم الشهري. أما بطاقة الأداء فتحسب من وقت الدخول والبريك والراحة والساعات، وبالتالي تعديلها يغيّر درجاتها.</p></div>';
+            document.body.appendChild(o);
+            const kindEl = document.getElementById('edr-kind'), workEl = document.getElementById('edr-work');
+            const sync = () => { workEl.style.display = kindEl.value === 'WORK' ? 'block' : 'none'; };
+            kindEl.onchange = sync; sync();
+            document.getElementById('edr-cancel').onclick = () => o.remove();
+            document.getElementById('edr-save').onclick = async () => {
+                const k = kindEl.value, num = (i, lo, hi) => Math.min(hi, Math.max(lo, Math.round(Number(document.getElementById(i).value) || 0)));
+                const base = { name: cur.name || id, currentTask: cur.currentTask || 'None', monthlyRating: cur.monthlyRating == null ? 100 : cur.monthlyRating, savedAt: new Date().toLocaleTimeString('en-US') };
+                let p;
+                if (k === 'WORK') {
+                    const stv = _fmt12(document.getElementById('edr-start').value);
+                    if (!stv) { alert('⚠️ أدخل وقت الدخول'); return; }
+                    const secs = num('edr-h', 0, 24) * 3600 + num('edr-m', 0, 59) * 60;
+                    p = Object.assign(base, { startTimeStr: stv, totalDurationStr: Math.floor(secs / 3600) + 'h : ' + Math.floor((secs % 3600) / 60) + 'm',
+                        totalBreakMinutes: num('edr-brk', 0, 1000), totalRestMinutes: num('edr-rest', 0, 1000), totalWorkSeconds: secs, rating: num('edr-rating', 0, 100) });
+                } else {
+                    const label = k === 'Absent' ? 'Absent' : k;
+                    p = Object.assign(base, { startTimeStr: label, totalDurationStr: k === 'OFF' ? 'OFF' : '-', totalBreakMinutes: 0, totalRestMinutes: 0, totalWorkSeconds: 0, rating: 100 });
+                }
+                if (!_checkWriteRate()) return;
+                try {
+                    const upd = {}; upd['history/' + date + '/' + id] = p;
+                    await applyHistoryPathUpdates(upd);
+                    o.remove();
+                    try { await refreshMonthlyRatings(true); } catch (e) {}
+                    if (document.getElementById('score-content')) window.scReload();
+                    if (document.getElementById('reportTableBody')) window.fetchHistoryReport(date);
+                    alert('✅ تم حفظ التعديل.');
+                } catch (e) { console.error('[EditDay]', e); alert('❌ فشل الحفظ: ' + ((e && e.message) || 'تحقق من الصلاحيات')); }
+            };
+        };
         // اليوم الحالي (Live): يصفّر البريك والراحة والخصومات والتقييم ويبدأ الحساب من جديد من لحظة الضغط (اليوم يبقى محسوباً)
         window.excludeLiveDay = async (id) => {
             if (loggedInId !== '__admin__') { alert('🔒 هذه العملية متاحة للمسؤول فقط!'); return; }
@@ -1659,6 +2247,10 @@
             window.open('https://wa.me/?text=' + encodeURIComponent('📨 ' + emp.name + '\n' + txt.trim() + '\n\n(اضغط "قرأت" ثم "تم الحل" في النظام)'), '_blank');
         };
 
+        window._ocFilter = (el) => {   // بحث داخل بطاقة الطلبات
+            const q = String(el.value || '').trim().toLowerCase();
+            el.parentElement.querySelectorAll('[data-q]').forEach(r => { r.style.display = (!q || r.getAttribute('data-q').includes(q)) ? 'flex' : 'none'; });
+        };
         window.openTickets = async (date) => {
             if (loggedInId !== '__admin__') return;
             date = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date : getTodayDateString();
@@ -1691,12 +2283,12 @@
                 let h = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;"><span style="font-weight:800;">📅 التاريخ</span>'
                       + '<input type="date" value="' + sanitize(date) + '" onchange="window.openTickets(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
                       + '<button onclick="window.openTickets(window._tkDate)" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:4px 10px;font-weight:800;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تحديث</button></div>'
-                      + '<div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:10px;">الخصم من تقييم اليوم عند إغلاقه الساعة 7: تأخر القراءة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د = 1، وتأخر الحل أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د أو عدم الحل = 2 (على مهامك 📨 فقط). ومكافأة +1 لكل رسالة واتساب يحلّها الموظف (حتى +10) والتقييم لا يتجاوز 100. حذف أي سجل يُلغي أثره عند إغلاق اليوم.</div>';
+                      + '<details style="margin-bottom:8px;font-size:0.75rem;color:#64748b;font-weight:700;line-height:1.7;"><summary style="cursor:pointer;font-weight:800;">ℹ️ كيف تُحسب المهام</summary>الخصم من تقييم اليوم عند إغلاقه الساعة 7: تأخر القراءة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د = 1، وتأخر الحل أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د أو عدم الحل = 2 (على مهامك 📨 فقط). ومكافأة +1 لكل رسالة واتساب يحلّها الموظف (حتى +10) والتقييم لا يتجاوز 100. حذف أي سجل يُلغي أثره عند إغلاق اليوم.</details>';
                 if (!canEditOrders) {
                     h += '<div style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:12px;padding:8px 12px;margin-bottom:10px;font-weight:800;font-size:0.85rem;">⚠️ أزرار التعديل والحذف للطلبات اليدوية غير مفعّلة — شغّل ملف admin_tools.sql في Supabase ثم اضغط تحديث.</div>';
                 }
 
-                // ملخص لكل موظف
+                // ملخص لكل موظف (مضغوط)
                 const S = {};
                 const _s = (k) => (S[k] = S[k] || { recv: 0, solved: 0, sent: 0, acc: 0, dis: 0, oldAcc: 0, accLate: 0, disLate: 0 });
                 data.forEach(t => {
@@ -1708,31 +2300,53 @@
                 orders.forEach(o => { const a = _s(o.employee_key); const _kk = o.kind || 'dispatch'; if (_kk === 'accept') a.acc++; else if (_kk === 'accept_late') a.accLate++; else if (_kk === 'dispatch_late') a.disLate++; else a.dis++; });
                 const T = { recv: 0, solved: 0, sent: 0, acc: 0, dis: 0, oldAcc: 0, accLate: 0, disLate: 0 };
                 Object.keys(S).forEach(k => Object.keys(T).forEach(f => { T[f] += S[k][f]; }));
-                const td = 'padding:8px;border-bottom:1px solid #e2e8f0;';
-                const rowS = (name, a, bold) => '<tr' + (bold ? ' style="background:#f8fafc;font-weight:900;"' : '') + '><td style="' + td + 'font-weight:900;">' + name + '</td><td style="' + td + '">' + a.recv + '</td><td style="' + td + '">' + a.solved + '</td><td style="' + td + '">' + a.sent + '</td><td style="' + td + '">' + a.acc + (a.oldAcc ? ' <span style="color:#64748b;font-size:.75rem;">(+' + a.oldAcc + ' قديم)</span>' : '') + '</td><td style="' + td + '">' + a.dis + '</td><td style="' + td + 'color:#b91c1c;">' + a.accLate + '</td><td style="' + td + 'color:#b91c1c;">' + a.disLate + '</td></tr>';
-                h += '<div style="font-weight:900;color:#334155;margin:6px 0;">📊 ملخص اليوم لكل موظف</div>'
-                   + '<div style="overflow-x:auto;margin-bottom:14px;"><table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
-                   + '<th style="padding:8px;">الموظف</th><th style="padding:8px;">📩 رسائل واصلة</th><th style="padding:8px;">✅ محلولة</th><th style="padding:8px;">📨 مهام مرسلة</th><th style="padding:8px;">✅ طلبات مقبولة</th><th style="padding:8px;">🚴 طلبات موزّعة</th><th style="padding:8px;">⏱️ متأخر تجهيز</th><th style="padding:8px;">⏱️ متأخر وصول</th></tr></thead><tbody>'
+                const td = 'padding:4px 8px;border-bottom:1px solid #e2e8f0;white-space:nowrap;text-align:center;';
+                const z = (v, c) => v ? '<b style="color:' + (c || '#0f172a') + ';">' + v + '</b>' : '<span style="color:#cbd5e1;">0</span>';
+                const rowS = (name, a, bold) => '<tr' + (bold ? ' style="background:#f8fafc;font-weight:900;"' : '') + '><td style="' + td + 'text-align:right;font-weight:900;">' + name + '</td>'
+                    + '<td style="' + td + '">' + z(a.recv) + '</td><td style="' + td + '">' + z(a.solved, '#15803d') + '</td><td style="' + td + '">' + z(a.sent) + '</td>'
+                    + '<td style="' + td + '">' + z(a.acc, '#1e40af') + (a.oldAcc ? ' <span style="color:#64748b;font-size:.7rem;">(+' + a.oldAcc + ')</span>' : '') + '</td><td style="' + td + '">' + z(a.dis, '#92400e') + '</td>'
+                    + '<td style="' + td + '">' + z(a.accLate, '#b91c1c') + '</td><td style="' + td + '">' + z(a.disLate, '#b91c1c') + '</td></tr>';
+                const thS = 'padding:5px 8px;text-align:center;white-space:nowrap;';
+                h += '<div style="font-weight:900;color:#334155;margin:4px 0;font-size:0.9rem;">📊 ملخص اليوم</div>'
+                   + '<div style="overflow-x:auto;margin-bottom:10px;"><table style="width:100%;border-collapse:collapse;font-size:0.8rem;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
+                   + '<th style="' + thS + 'text-align:right;">الموظف</th><th style="' + thS + '" title="رسائل واصلة">📩 واصلة</th><th style="' + thS + '" title="رسائل محلولة">✅ محلولة</th><th style="' + thS + '" title="مهام مرسلة">📨 مرسلة</th>'
+                   + '<th style="' + thS + '" title="طلبات مقبولة يدوياً">✅ مقبولة</th><th style="' + thS + '" title="طلبات موزّعة يدوياً">🚴 موزّعة</th><th style="' + thS + '" title="متأخر في التجهيز">⏱️ تجهيز</th><th style="' + thS + '" title="متأخر في الوصول">⏱️ وصول</th></tr></thead><tbody>'
                    + Object.keys(S).map(k => rowS(_nm(k), S[k], false)).join('')
-                   + (Object.keys(S).length ? rowS('الإجمالي', T, true) : '<tr><td colspan="8" style="padding:14px;text-align:center;color:#94a3b8;font-weight:700;">لا توجد بيانات في هذا اليوم.</td></tr>')
+                   + (Object.keys(S).length ? rowS('الإجمالي', T, true) : '<tr><td colspan="8" style="padding:10px;text-align:center;color:#94a3b8;font-weight:700;">لا توجد بيانات في هذا اليوم.</td></tr>')
                    + '</tbody></table></div>';
 
-                // الطلبات اليدوية: مقبول / موزّع (تعديل وحذف)
-                [['accept', '✅ الطلبات المقبولة يدوياً', '#eff6ff', '#bfdbfe', '#1e40af'], ['accept_late', '⏱️ طلبات متأخرة في التجهيز', '#fef2f2', '#fecaca', '#b91c1c'], ['dispatch', '🚴 الطلبات الموزّعة يدوياً', '#fffbeb', '#fde68a', '#92400e'], ['dispatch_late', '⏱️ طلبات متأخرة في الوصول للزبون', '#fef2f2', '#fecaca', '#b91c1c']].forEach(([kd, title, bg, bd, col]) => {
-                    const rows = orders.filter(x => (x.kind || 'dispatch') === kd);
+                // الطلبات اليدوية: بطاقات صغيرة، كل سطر = موظف · رقم الطلب · الوقت · السبب · تعديل/حذف
+                const ib = (label, fn, bd, col, tip) => '<button title="' + tip + '" onclick="' + fn + '" style="background:#fff;border:1px solid ' + bd + ';color:' + col + ';border-radius:6px;padding:0 5px;font-size:0.7rem;cursor:pointer;line-height:1.6;font-family:Cairo,sans-serif;">' + label + '</button>';
+                const OC = [['accept', '✅ مقبولة', '#eff6ff', '#bfdbfe', '#1e40af'], ['dispatch', '🚴 موزّعة', '#fffbeb', '#fde68a', '#92400e'], ['accept_late', '⏱️ متأخرة في التجهيز', '#fef2f2', '#fecaca', '#b91c1c'], ['dispatch_late', '⏱️ متأخرة في الوصول', '#fef2f2', '#fecaca', '#b91c1c']];
+                let og = '';
+                OC.forEach(([kd, title, bg, bd, col]) => {
+                    const rows = orders.filter(x => (x.kind || 'dispatch') === kd).sort((p, q) => String(p.created_at || '').localeCompare(String(q.created_at || '')));
                     if (!rows.length) return;
-                    h += '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:14px;padding:10px 14px;margin-bottom:12px;color:' + col + ';"><div style="font-weight:900;margin-bottom:6px;">' + title + ' (الإجمالي ' + rows.length + ')</div>'
-                       + '<table style="width:100%;border-collapse:collapse;font-size:0.88rem;text-align:right;"><tbody>'
-                       + rows.map(x => '<tr style="border-top:1px solid ' + bd + ';"><td style="padding:6px;font-weight:900;">' + _nm(x.employee_key) + '</td><td style="padding:6px;font-weight:800;">#' + sanitize(String(x.order_no)) + '</td><td style="padding:6px;">' + (x.created_at ? _tm(x.created_at) : '') + '</td>'
-                           + (kd.endsWith('_late') ? '<td style="padding:6px;font-weight:700;">📝 ' + (x.reason ? sanitize(String(x.reason)) : '<span style="opacity:.6;">بدون سبب</span>') + '</td>' : '')
-                           + '<td style="padding:6px;white-space:nowrap;">' + (canEditOrders && x.id != null ? _edtB('window.adminEditOrder(' + Number(x.id) + ')') + _delB('window.adminDelOrder(' + Number(x.id) + ')') : '') + '</td></tr>').join('')
-                       + '</tbody></table></div>';
+                    const per = {}; rows.forEach(x => { per[x.employee_key] = (per[x.employee_key] || 0) + 1; });
+                    const perLine = '<div style="font-weight:700;font-size:0.72rem;opacity:.8;margin-top:1px;">' + Object.keys(per).map(k => _nm(k) + ' ' + per[k]).join(' · ') + '</div>';
+                    const srch = rows.length > 8 ? '<input type="search" placeholder="🔍 رقم الطلب أو الموظف" oninput="window._ocFilter(this)" style="width:100%;margin-top:6px;border:1px solid ' + bd + ';border-radius:8px;padding:3px 8px;font-size:0.78rem;font-family:Cairo,sans-serif;font-weight:700;direction:rtl;">' : '';
+                    og += '<details class="oc" style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:12px;padding:6px 10px;color:' + col + ';align-self:start;">'
+                        + '<summary style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:900;font-size:0.85rem;"><span>' + title + ' <span style="background:#fff;border:1px solid ' + bd + ';border-radius:999px;padding:0 8px;font-size:0.78rem;">' + rows.length + '</span>' + perLine + '</span><span class="chev">▾</span></summary>' + srch + '<div style="max-height:280px;overflow-y:auto;margin-top:4px;">'
+                        + rows.map(x => {
+                            const why = x.reason ? String(x.reason) : '';
+                            const q = sanitize((String(x.employee_key) + ' ' + ((employeesData[x.employee_key] || {}).name || '') + ' ' + x.order_no + ' ' + why).toLowerCase());
+                            return '<div data-q="' + q + '" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;border-top:1px solid ' + bd + ';padding:4px 0;font-size:0.8rem;">'
+                                + '<b style="min-width:54px;">' + _nm(x.employee_key) + '</b>'
+                                + '<span style="font-weight:800;direction:ltr;">#' + sanitize(String(x.order_no)) + '</span>'
+                                + '<span style="opacity:.7;direction:ltr;">' + (x.created_at ? _tm(x.created_at) : '') + '</span>'
+                                + '<span style="flex:1;"></span>'
+                                + (canEditOrders && x.id != null ? ib('✏️', 'window.adminEditOrder(' + Number(x.id) + ')', '#93c5fd', '#1d4ed8', 'تعديل') + ib('🗑️', 'window.adminDelOrder(' + Number(x.id) + ')', '#fca5a5', '#b91c1c', 'حذف') : '')
+                                + (why ? '<div style="flex-basis:100%;font-weight:700;opacity:.9;">📝 ' + sanitize(why) + '</div>'
+                                       : (kd.endsWith('_late') ? '<div style="flex-basis:100%;opacity:.55;">📝 بدون سبب</div>' : ''))
+                                + '</div>';
+                        }).join('') + '</div></details>';
                 });
+                if (og) h += '<div style="font-weight:900;color:#334155;margin:4px 0;font-size:0.9rem;">📦 الطلبات اليدوية</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin-bottom:10px;">' + og + '</div>';
 
                 // سجل قديم للقبول (بدون أرقام)
                 const oldAcc = data.filter(t => t.kind === 'accept');
                 if (oldAcc.length) {
-                    h += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:10px 14px;margin-bottom:12px;color:#1e40af;"><div style="font-weight:900;margin-bottom:6px;">✅ الطلبات المقبولة — سجل سابق بدون أرقام (' + oldAcc.length + ')</div>'
+                    h += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:6px 10px;margin-bottom:8px;color:#1e40af;"><div style="font-weight:900;margin-bottom:6px;">✅ الطلبات المقبولة — سجل سابق بدون أرقام (' + oldAcc.length + ')</div>'
                        + '<table style="width:100%;border-collapse:collapse;font-size:0.88rem;text-align:right;"><tbody>'
                        + oldAcc.map(t => '<tr style="border-top:1px solid #bfdbfe;"><td style="padding:6px;font-weight:900;">' + _nm(t.employee_key) + '</td><td style="padding:6px;">' + _tm(t.created_at) + '</td><td style="padding:6px;">' + _delB('window.adminDelTicket(' + Number(t.id) + ')') + '</td></tr>').join('')
                        + '</tbody></table></div>';
@@ -1740,22 +2354,22 @@
 
                 // المهام والرسائل (تعديل وحذف)
                 const list = data.filter(t => t.kind !== 'accept');
-                h += '<div style="font-weight:900;color:#334155;margin:6px 0;">📋 المهام والرسائل</div>';
+                h += '<div style="font-weight:900;color:#334155;margin:4px 0;">📋 المهام والرسائل</div>';
                 if (!list.length) {
                     h += '<p style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">لا توجد مهام في هذا اليوم.</p>';
                 } else {
-                    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
-                       + '<th style="padding:9px;">الموظف</th><th style="padding:9px;">المهمة</th><th style="padding:9px;">أُرسلت</th><th style="padding:9px;">القراءة</th><th style="padding:9px;">الحل</th><th style="padding:9px;">الخصم</th><th style="padding:9px;">إجراء</th></tr></thead><tbody>';
+                    h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.82rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
+                       + '<th style="padding:5px 8px;">الموظف</th><th style="padding:5px 8px;">المهمة</th><th style="padding:5px 8px;">أُرسلت</th><th style="padding:5px 8px;">القراءة</th><th style="padding:5px 8px;">الحل</th><th style="padding:5px 8px;">الخصم</th><th style="padding:5px 8px;">إجراء</th></tr></thead><tbody>';
                     list.forEach(t => {
                         const pen = _ticketPenalty(t);
                         const isSelf = t.kind === 'self';
                         const rd = isSelf ? '<span style="color:#64748b;">وصلت ' + _tm(t.created_at) + '</span>' : (t.read_at ? ('✅ ' + _tm(t.read_at) + ' (بعد ' + _minsBetween(t.created_at, t.read_at) + ' د)') : '<span style="color:#dc2626;">لم يقرأ</span>');
                         const sv = t.solved_at ? ('✅ ' + _tm(t.solved_at) + ' (بعد ' + _minsBetween(t.created_at, t.solved_at) + ' د)') : '<span style="color:#dc2626;">لم يُحل</span>';
-                        h += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + _nm(t.employee_key) + '</td>'
-                           + '<td style="padding:9px;">' + (isSelf ? '📩 رسالة وصلت للموظف' : '📨 ' + sanitize(t.body)) + '</td><td style="padding:9px;">' + _tm(t.created_at) + '</td>'
-                           + '<td style="padding:9px;">' + rd + '</td><td style="padding:9px;">' + sv + '</td>'
-                           + '<td style="padding:9px;font-weight:900;color:' + (pen ? '#dc2626' : '#16a34a') + ';">' + (pen ? '−' + pen : '0') + '</td>'
-                           + '<td style="padding:9px;white-space:nowrap;">' + (isSelf ? '' : _edtB('window.adminEditTicket(' + Number(t.id) + ')')) + _delB('window.adminDelTicket(' + Number(t.id) + ')') + '</td></tr>';
+                        h += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:5px 8px;font-weight:900;">' + _nm(t.employee_key) + '</td>'
+                           + '<td style="padding:5px 8px;">' + (isSelf ? '📩 رسالة وصلت للموظف' : '📨 ' + sanitize(t.body)) + '</td><td style="padding:5px 8px;">' + _tm(t.created_at) + '</td>'
+                           + '<td style="padding:5px 8px;">' + rd + '</td><td style="padding:5px 8px;">' + sv + '</td>'
+                           + '<td style="padding:5px 8px;font-weight:900;color:' + (pen ? '#dc2626' : '#16a34a') + ';">' + (pen ? '−' + pen : '0') + '</td>'
+                           + '<td style="padding:5px 8px;white-space:nowrap;">' + (isSelf ? '' : _edtB('window.adminEditTicket(' + Number(t.id) + ')')) + _delB('window.adminDelTicket(' + Number(t.id) + ')') + '</td></tr>';
                     });
                     h += '</tbody></table></div>';
                 }
@@ -2010,13 +2624,14 @@
             if (navigator.vibrate) navigator.vibrate(30);
             _ordLoadedAt[kind] = Date.now();
             await _fetchMyOrders(kind);
+            refreshOrderCounts(true);
             try { render(); } catch (e) {}
             const ni = document.getElementById(late ? 'late-input' : 'disp-input'); if (ni) ni.focus();
             const _msg = { accept: '✅ سُجّل قبول الطلب ', dispatch: '🚴 سُجّل توزيع الطلب ', accept_late: '⏱️ سُجّل تأخّر تجهيز الطلب ', dispatch_late: '⏱️ سُجّل تأخّر وصول الطلب للزبون ' }[kind];
             _tkToast(_msg + v, async () => {
                 const { error: e2 } = await supabaseClient.rpc('alsaree3_dispatch_undo', { p_kind: kind });
                 if (e2) { console.error('[OrderUndo]', e2); return false; }
-                await _fetchMyOrders(kind); try { render(); } catch (e) {} return true;
+                await _fetchMyOrders(kind); refreshOrderCounts(true); try { render(); } catch (e) {} return true;
             });
         };
         window.markTicket = async (id, what) => {
@@ -2087,9 +2702,9 @@
                                     <td class="p-3">${sanitize(taskEn)}</td>
                                     <td class="p-3 font-bold text-amber-700">${Number(d.totalBreakMinutes) || 0} min</td>
                                     <td class="p-3 font-bold">${Number(d.totalRestMinutes) || 0} / 15 min</td>
-                                    <td class="p-3 font-black text-green-600 bg-green-50/20">${_isExcl ? '-' : (d.rating == null ? 100 : (Number(d.rating) || 0)) + '%'}</td>
+                                    <td class="p-3 font-black text-green-600 bg-green-50/20">${(_isExcl || isOffDay(id, selectedDate)) ? '-' : (d.rating == null ? 100 : (Number(d.rating) || 0)) + '%'}</td>
                                     <td class="p-3 font-black text-blue-600 bg-blue-50/20">${d.monthlyRating == null ? 100 : (Number(d.monthlyRating) || 0)}%</td>
-                                    <td class="p-3 font-black">${_exclBtn}</td>
+                                    <td class="p-3 font-black">${_exclBtn} <button data-emp="${sanitize(id)}" data-date="${sanitize(selectedDate)}" onclick="window.editDayRecord(this.dataset.date, this.dataset.emp)" style="background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">✏️ تعديل</button></td>
                                  </tr>`;
                     }
                     tableBody.innerHTML = html;
@@ -2111,7 +2726,7 @@
             if (hb.lateDate !== getTodayDateString() || !(Number(hb.lateMinutes) > 0)) return '<span class="text-slate-400">-</span>';
             const mins = Number(hb.lateMinutes);
             if (hb.lateWaived) return '<span class="text-green-700">' + mins + ' min (✅ مُسامَح)</span>';
-            return '<span class="text-red-600">' + mins + ' min (−' + (Number(hb.latePenalty) || 0) + '%)</span> '
+            return '<span class="text-red-600">' + mins + ' min (−' + ((Number(hb.latePenalty) || 0) + lateFallbackPenalty(i, d)) + '%)</span> '
                  + '<button data-emp="' + sanitize(i) + '" onclick="window.waiveLate(this.dataset.emp)" '
                  + 'style="margin-inline-start:6px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;">✋ مسامحة</button>';
         }
@@ -2342,15 +2957,100 @@
             saveHistoryRow(todayStr, id, historyPayload);
         }
 
+
+        // ===== فحص: هل السيرفر يحسب التقييم ويسجّل خصم التأخير؟ (للمسؤول) =====
+        window.runRatingDiagnostic = async () => {
+            if (loggedInId !== '__admin__') return;
+            const old = document.getElementById('diag-overlay'); if (old) old.remove();
+            const o = document.createElement('div'); o.id = 'diag-overlay';
+            o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+            o.innerHTML = '<div style="background:#fff;border-radius:24px;padding:24px;width:100%;max-width:1000px;max-height:88vh;overflow:auto;direction:rtl;font-family:Cairo,sans-serif;">'
+                + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h2 style="font-size:1.25rem;font-weight:900;color:#334155;">🔍 فحص التقييم وخصم التأخير</h2>'
+                + '<button onclick="document.getElementById(\'diag-overlay\').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:8px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button></div>'
+                + '<div id="diag-content" style="color:#64748b;font-weight:700;padding:10px;">⏳ جاري الفحص...</div></div>';
+            document.body.appendChild(o);
+            const box = document.getElementById('diag-content');
+            try {
+                try { await _loadEmpMeta(true); } catch (e) {}
+                const fresh = await fetchEmployeesMap();            // القيم الخام المحفوظة في السيرفر
+                let hist = {}; try { hist = await fetchHistoryFor(getTodayDateString()); } catch (e) {}
+                const now = Date.now();
+                let withDed = 0, reflect = 0, notReflect = 0, lateChecked = 0, lateMissing = 0, lateDiff = 0, rows = '';
+                for (const id in fresh) {
+                    const d = fresh[id];
+                    if (!d || !d.startTime || d.status === 'أوف') continue;
+                    const hb = d.hourlyBreaks || {};
+                    // الخصم القديم المتوقع (قبل إضافاتي): مخالفات البريك/الراحة + جماعي + تأخير السيرفر
+                    const idx = Math.floor((now - d.startTime) / 3600000);
+                    let viol = 0;
+                    for (let h = 0; h < idx; h++) { const pb = hb[h] || 0; if (pb > 5) viol += Math.floor((pb - 5) / 60) + 1; }
+                    const liveB = (d.status === 'بريك' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
+                    const liveR = (d.status === 'راحة' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
+                    const cb = (hb[idx] || 0) + liveB; if (cb > 5) viol += Math.floor((cb - 5) / 60) + 1;
+                    const tr = (d.totalRestMinutes || 0) + liveR; if (tr > 15) viol += Math.floor((tr - 15) / 60) + 1;
+                    const srvLate = Number(hb.latePenalty) || 0;
+                    const legacy = Math.max(0, 100 - viol * 5 - (hb.groupPenalty || 0) - srvLate);
+                    const srvRating = d.rating == null ? null : Number(d.rating);
+                    // خصم التأخير
+                    const lp = calcLatePenalty(id, d.startTime);
+                    let lateTxt = '-', lateColor = '#64748b';
+                    if (lp && !hb.lateWaived && _ymd(new Date(d.startTime)) === getTodayDateString()) {
+                        lateChecked++;
+                        if (srvLate === 0) { lateMissing++; lateTxt = 'تأخر ' + lp.late + ' د — السيرفر لم يسجّل خصماً (المتوقع −' + lp.points + ')'; lateColor = '#dc2626'; }
+                        else if (srvLate !== lp.points) { lateDiff++; lateTxt = 'تأخر ' + lp.late + ' د — السيرفر −' + srvLate + ' والمتوقع −' + lp.points; lateColor = '#d97706'; }
+                        else { lateTxt = 'تأخر ' + lp.late + ' د — −' + srvLate + ' ✔'; lateColor = '#16a34a'; }
+                    } else if (hb.lateWaived) { lateTxt = 'مُسامَح'; }
+                    else if (lp === null && srvLate > 0) { lateTxt = 'السيرفر سجّل −' + srvLate + ' (لا تأخير حسب وقت الدوام المحدد)'; lateColor = '#d97706'; }
+                    // هل عمود التقييم في السيرفر يعكس الخصومات؟
+                    let refl = 'لا توجد مخالفات للحكم';
+                    if (legacy < 100) {
+                        withDed++;
+                        if (srvRating !== null && Math.abs(srvRating - legacy) <= 5) { reflect++; refl = '✔ يعكسها'; }
+                        else { notReflect++; refl = '✘ لا يعكسها'; }
+                    }
+                    const hRow = hist[id]; const hr = hRow && hRow.rating != null ? hRow.rating + '%' : '-';
+                    const local = employeesData[id] && employeesData[id].rating != null ? employeesData[id].rating + '%' : '-';
+                    rows += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:8px;font-weight:900;">' + sanitize(d.name || id) + '</td>'
+                        + '<td style="padding:8px;color:' + lateColor + ';font-weight:800;">' + sanitize(lateTxt) + '</td>'
+                        + '<td style="padding:8px;">' + legacy + '%</td>'
+                        + '<td style="padding:8px;">' + (srvRating === null ? '-' : srvRating + '%') + '</td>'
+                        + '<td style="padding:8px;font-weight:800;">' + refl + '</td>'
+                        + '<td style="padding:8px;">' + hr + '</td><td style="padding:8px;font-weight:900;color:#16a34a;">' + local + '</td></tr>';
+                }
+                if (!rows) { box.innerHTML = '<p style="color:#334155;">لا يوجد موظفون سجّلوا دخولهم اليوم حالياً. أعد الفحص بعد أن يسجّل أحدهم دخوله.</p>'; return; }
+                let v = [];
+                if (lateChecked === 0 && lateDiff === 0) v.push('⏱️ التأخير: لا يوجد موظف متأخر اليوم للحكم. أعد الفحص عند وجود متأخر.');
+                else if (lateMissing > 0) v.push('⚠️ التأخير: السيرفر <b>لا يسجّل</b> خصم التأخير لـ ' + lateMissing + ' موظف — الملف يعوّضه ويخصمه في جهاز المسؤول.');
+                else if (lateDiff > 0) v.push('⚠️ التأخير: السيرفر يسجّل خصماً <b>بصيغة مختلفة</b> عن الملف — الملف يطبّق الأكبر.');
+                else v.push('✅ التأخير: السيرفر يسجّل الخصم بنفس صيغة الملف.');
+                if (withDed === 0) v.push('📊 التقييم: لا توجد مخالفات الآن للحكم على حساب السيرفر. أعد الفحص عند وجود بريك زائد أو تأخير.');
+                else if (notReflect === 0) v.push('✅ التقييم: السيرفر <b>يحسب</b> الخصومات القديمة في عمود التقييم، فتبقى أرقامه صحيحة حتى لو أغلقت الصفحة. أما الخصم المتدرج للبريك والاستراحة ومكافأة الطلبات فمصدرها جهاز المسؤول وعند «إنهاء اليوم».');
+                else if (reflect === 0) v.push('⚠️ التقييم: السيرفر <b>لا يحسب</b> الخصومات في عمود التقييم — الحساب كله في المتصفح، فتكون أرقام الأرشيف صحيحة ما دام جهاز المسؤول مفتوحاً أو عند «إنهاء اليوم».');
+                else v.push('⚠️ التقييم: نتائج مختلطة (' + reflect + ' يعكسها، ' + notReflect + ' لا يعكسها). راجع الجدول.');
+                box.style.cssText = 'color:#000;padding:0;';
+                box.innerHTML = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;margin-bottom:12px;line-height:2;font-weight:700;color:#334155;">' + v.join('<br>') + '</div>'
+                    + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
+                    + '<th style="padding:8px;">الموظف</th><th style="padding:8px;">التأخير</th><th style="padding:8px;">المتوقع (صيغة قديمة)</th><th style="padding:8px;">تقييم السيرفر</th><th style="padding:8px;">هل السيرفر يحسب؟</th><th style="padding:8px;">أرشيف اليوم</th><th style="padding:8px;">تقييم الملف الآن</th></tr></thead><tbody>'
+                    + rows + '</tbody></table></div>';
+            } catch (e) {
+                console.error('[Diag]', e);
+                box.innerHTML = '<p style="color:#dc2626;">❌ فشل الفحص: ' + sanitize(String((e && e.message) || e)) + '</p>';
+            }
+        };
+
         window.resetMonthlySystem = async () => {
             // ===== SECURITY: متاحة للمسؤول فقط =====
             if (loggedInId !== '__admin__') { alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
             if (!(await _askPin('تصفير الشهر الجديد'))) return;
             if (confirm("⚠️ هل أنت متأكد من مسح التقييم الشهري؟")) {
-                const { error: mErr } = await supabaseClient.from('alsaree3_employees')
-                    .update({ monthly_rating: 100, monthly_history: {} }).not('employee_key', 'is', null);
+                let mErr = null;
+                try {
+                    const _r = await supabaseClient.from('alsaree3_employees').update({ monthly_rating: 100 }).not('employee_key', 'is', null);
+                    mErr = _r.error;
+                    if (!mErr) { const _rd = _ymd(new Date(Date.now() - 86400000)); await _mhPatch(null, mh => { mh.resetDate = _rd; if (!_isoDate(mh.cardReset) || mh.cardReset < _rd) mh.cardReset = _rd; return mh; }); }   // يحافظ على أرشيف البطاقة وتصفيرها
+                } catch (e) { mErr = e; }
                 if (mErr) { alert("❌ فشل تصفير الشهر"); return; }
-                await resyncEmployees().catch(() => {}); alert("✅ تم تصفير الشهر الجديد!");
+                await resyncEmployees().catch(() => {}); try { await refreshMonthlyRatings(true); } catch (e) {} alert("✅ تم تصفير الشهر الجديد!");
             }
         };
 
@@ -2403,6 +3103,7 @@
 
             let _existingToday = {};
             try { _existingToday = await fetchHistoryFor(todayStr); } catch (e) { console.warn('[EndOfDay] تعذر قراءة الأرشيف الحالي', e); }
+            try { await refreshOrderCounts(true); await refreshMonthlyRatings(true); } catch (e) {}   // أحدث عدد طلبات وأيام الشهر قبل حفظ التقييم النهائي
             let historyUpdates = {};
             for (let id in freshData) {
                 let d = freshData[id];
@@ -2440,6 +3141,12 @@
                 else if (taskEn === 'OFF') taskEn = 'OFF';
 
                 const _exclLive = !!(d.hourlyBreaks && d.hourlyBreaks.excluded === todayStr);
+                const _worked = !!(d.startTime && !_offToday);
+                const _finalR = _exclLive ? 100 : (_worked
+                    ? Math.max(0, Math.min(100, (d.rating !== undefined ? d.rating : 100) - breakUsagePenalty(d, now, id) - restUsagePenalty(d, now, id) - lateFallbackPenalty(id, d) + ordersBonus(id) + (lateWithPerm(id, d) !== null ? Math.max(0, (Number((d.hourlyBreaks || {}).latePenalty) || 0) - lateWithPerm(id, d)) : 0)))
+                    : (d.rating !== undefined ? d.rating : 100));
+                const _mCalc = monthlyWith(id, (_worked && !_exclLive && !isOffDay(id, todayStr) && !onLeaveDay(id, todayStr) && !(_resetUpTo(id) && _resetUpTo(id) >= todayStr)) ? _finalR : null);
+                const _finalM = _mCalc !== null ? _mCalc : (d.monthlyRating !== undefined ? d.monthlyRating : 100);
                 historyUpdates[`history/${todayStr}/${id}`] = {
                     name: d.name,
                     startTimeStr: _exclLive ? 'EXCLUDED' : startStr,
@@ -2448,8 +3155,8 @@
                     totalBreakMinutes: _exclLive ? 0 : (d.totalBreakMinutes || 0),
                     totalRestMinutes: _exclLive ? 0 : (d.totalRestMinutes || 0),
                     totalWorkSeconds: _exclLive ? 0 : finalWorkSeconds,
-                    rating: _exclLive ? 100 : (d.rating !== undefined ? d.rating : 100),
-                    monthlyRating: d.monthlyRating !== undefined ? d.monthlyRating : 100,
+                    rating: _finalR,
+                    monthlyRating: _finalM,
                     savedAt: new Date().toLocaleTimeString('en-US')
                 };
             }
@@ -2973,6 +3680,9 @@
             }
         }, 10000);
 
+        // تحديث عدد طلبات اليوم (للمكافأة) — محدود بمرة كل 45 ثانية
+        setInterval(() => { if (loggedInId) { refreshOrderCounts(false); refreshMonthlyRatings(false); try { autoCardMonthEnd(); } catch (e) {} } }, 15000);
+
         // حساب الـ rating محلياً كل دقيقة بدون كتابة للسيرفر
         setInterval(() => {
             if (!loggedInId) return;
@@ -2981,6 +3691,6 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed;bottom:4px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.10-orders2</div>
+<div id="ver-tag" style="position:fixed;bottom:4px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.11-rating3</div>
 </body>
 </html>
