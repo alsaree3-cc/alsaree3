@@ -2537,6 +2537,68 @@
             const q = String(el.value || '').trim().toLowerCase();
             el.parentElement.querySelectorAll('[data-q]').forEach(r => { r.style.display = (!q || r.getAttribute('data-q').includes(q)) ? 'flex' : 'none'; });
         };
+
+        // ----- بحث برقم الطلب: يعرض هل الطلب موجود + السبب المكتوب (يبحث في آخر N يوم) -----
+        window._ordSearchCache = window._ordSearchCache || {};
+        window.searchOrderNo = async () => {
+            const inp = document.getElementById('osr-input'), box = document.getElementById('osr-result'), sel = document.getElementById('osr-days');
+            if (!inp || !box) return;
+            const norm = (s) => String(s == null ? '' : s).replace(/[\u0660-\u0669]/g, c => String(c.charCodeAt(0) - 0x660)).replace(/[\u06F0-\u06F9]/g, c => String(c.charCodeAt(0) - 0x6F0)).replace(/^#/, '').trim().toLowerCase();
+            const no = norm(inp.value);
+            if (!no) { box.innerHTML = ''; return; }
+            const days = Math.max(1, Math.min(120, Number(sel && sel.value) || 30));
+            const today = getTodayDateString();
+            const dates = [];
+            for (let i = 0; i < days; i++) { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - i); dates.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')); }
+            const mySeq = window._osrSeq = (window._osrSeq || 0) + 1;
+            box.innerHTML = '<div style="text-align:center;color:#64748b;font-weight:700;padding:10px;">⏳ جاري البحث في آخر ' + days + ' يوم...</div>';
+            const getOrders = async (ds) => {
+                if (ds !== today && window._ordSearchCache[ds]) return window._ordSearchCache[ds];
+                let rows = [];
+                try {
+                    let r = await supabaseClient.rpc('alsaree3_orders_admin', { p_date: ds });
+                    if (r.error) r = await supabaseClient.rpc('alsaree3_dispatch_admin', { p_date: ds });
+                    rows = (r && r.data) || [];
+                } catch (e) { rows = []; }
+                if (ds !== today) window._ordSearchCache[ds] = rows;
+                return rows;
+            };
+            const getTickets = async (ds) => {
+                try { const r = await supabaseClient.rpc('alsaree3_tickets_admin', { p_date: ds }); return (r && r.data) || []; } catch (e) { return []; }
+            };
+            const all = await Promise.all(dates.map(async ds => ({ ds, o: await getOrders(ds), t: await getTickets(ds) })));
+            if (mySeq !== window._osrSeq) return;   // بحث أحدث بدأ
+            const KL = { accept: '✅ مقبول', dispatch: '🚴 موزّع', accept_late: '⏱️ متأخر في التجهيز', dispatch_late: '⏱️ متأخر في الوصول' };
+            const nm = (k) => sanitize(employeesData[k] ? employeesData[k].name : k);
+            const fmtD = (ds, ts) => sanitize(ds) + (ts ? ' · ' + _tm(ts) : '');
+            let exact = [], partial = [], tks = [];
+            all.forEach(({ ds, o, t }) => {
+                o.forEach(x => { const n = norm(x.order_no); if (n === no) exact.push({ ds, x }); else if (no.length >= 3 && n.includes(no)) partial.push({ ds, x }); });
+                t.forEach(x => { if (x.kind !== 'accept' && x.kind !== 'self' && norm(x.body).includes(no)) tks.push({ ds, x }); });
+            });
+            const card = ({ ds, x }, loose) => {
+                const kd = x.kind || 'dispatch', late = kd.endsWith('_late'), why = x.reason ? String(x.reason).trim() : '';
+                return '<div style="background:' + (late ? '#fef2f2' : '#f0fdf4') + ';border:1px solid ' + (late ? '#fecaca' : '#bbf7d0') + ';border-radius:12px;padding:8px 12px;margin-top:6px;">'
+                    + '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;font-weight:800;font-size:0.88rem;">'
+                    + '<span style="direction:ltr;font-weight:900;">#' + sanitize(String(x.order_no)) + '</span><span>' + (KL[kd] || sanitize(kd)) + '</span>'
+                    + '<span>👤 ' + nm(x.employee_key) + '</span><span style="opacity:.7;direction:ltr;">📅 ' + fmtD(ds, x.created_at) + '</span></div>'
+                    + '<div style="margin-top:4px;font-weight:800;font-size:0.85rem;color:' + (why ? '#0f172a' : '#94a3b8') + ';">📝 السبب: ' + (why ? sanitize(why) : 'لا يوجد سبب مكتوب') + '</div></div>';
+            };
+            let h = '';
+            if (exact.length) {
+                h += '<div style="font-weight:900;color:#15803d;font-size:0.9rem;">✅ الطلب موجود' + (exact.length > 1 ? ' (' + exact.length + ' سجلات)' : '') + '</div>' + exact.map(e => card(e)).join('');
+            } else {
+                h += '<div style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:12px;padding:8px 12px;font-weight:900;font-size:0.9rem;">❌ الطلب رقم #' + sanitize(no) + ' غير موجود في آخر ' + days + ' يوم</div>';
+            }
+            if (!exact.length && partial.length) {
+                h += '<div style="font-weight:900;color:#92400e;font-size:0.82rem;margin-top:8px;">أرقام مشابهة:</div>' + partial.slice(0, 10).map(e => card(e, true)).join('');
+            }
+            if (tks.length) {
+                h += '<div style="font-weight:900;color:#1d4ed8;font-size:0.82rem;margin-top:8px;">📨 مهام واتساب تذكر هذا الرقم:</div>'
+                   + tks.slice(0, 10).map(({ ds, x }) => '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:6px 12px;margin-top:6px;font-size:0.84rem;font-weight:700;"><b>' + nm(x.employee_key) + '</b> · <span style="direction:ltr;display:inline-block;opacity:.7;">' + fmtD(ds, x.created_at) + '</span><div>' + sanitize(x.body) + '</div></div>').join('');
+            }
+            box.innerHTML = h;
+        };
         window.openTickets = async (date) => {
             if (loggedInId !== '__admin__') return;
             date = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date : getTodayDateString();
@@ -2569,6 +2631,13 @@
                 let h = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;"><span style="font-weight:800;">📅 التاريخ</span>'
                       + '<input type="date" value="' + sanitize(date) + '" onchange="window.openTickets(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
                       + '<button onclick="window.openTickets(window._tkDate)" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:4px 10px;font-weight:800;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تحديث</button></div>'
+                      + '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:16px;padding:10px 12px;margin-bottom:12px;">'
+                      + '<div style="font-weight:900;color:#92400e;margin-bottom:6px;font-size:0.9rem;">🔎 بحث برقم الطلب</div>'
+                      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
+                      + '<input id="osr-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="اكتب رقم الطلب..." onkeydown="if(event.key===\'Enter\')window.searchOrderNo()" style="flex:1;min-width:140px;border:1px solid #cbd5e1;border-radius:10px;padding:7px 10px;font-weight:800;font-family:Cairo,sans-serif;direction:ltr;text-align:center;">'
+                      + '<select id="osr-days" style="border:1px solid #cbd5e1;border-radius:10px;padding:7px 8px;font-weight:700;font-family:Cairo,sans-serif;"><option value="7">آخر 7 أيام</option><option value="30" selected>آخر 30 يوم</option><option value="90">آخر 90 يوم</option></select>'
+                      + '<button onclick="window.searchOrderNo()" style="background:#f59e0b;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">بحث</button></div>'
+                      + '<div id="osr-result" style="margin-top:6px;"></div></div>'
                       + '<details style="margin-bottom:8px;font-size:0.75rem;color:#64748b;font-weight:700;line-height:1.7;"><summary style="cursor:pointer;font-weight:800;">ℹ️ كيف تُحسب المهام</summary>الخصم من تقييم اليوم عند إغلاقه الساعة 7: تأخر القراءة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د = 1، وتأخر الحل أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د أو عدم الحل = 2 (على مهامك 📨 فقط). ومكافأة +1 لكل رسالة واتساب يحلّها الموظف (حتى +10) والتقييم لا يتجاوز 100. حذف أي سجل يُلغي أثره عند إغلاق اليوم.</details>';
                 if (!canEditOrders) {
                     h += '<div style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:12px;padding:8px 12px;margin-bottom:10px;font-weight:800;font-size:0.85rem;">⚠️ أزرار التعديل والحذف للطلبات اليدوية غير مفعّلة — شغّل ملف admin_tools.sql في Supabase ثم اضغط تحديث.</div>';
