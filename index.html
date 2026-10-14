@@ -42,6 +42,16 @@
         .tk-small { flex:none; display:inline-flex; padding:4px 12px; font-size:0.74rem; border-radius:10px; }
         .tk-wa { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
         .tk-wa:hover { background:#d1fae5; }
+        .tk-dd { position:relative; margin:0 0 8px; direction:rtl; }
+        .tk-dd-btn { width:100%; display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 12px; border-radius:12px; border:1px solid #cbd5e1; background:#fff; font-family:inherit; font-size:0.85rem; font-weight:700; color:#0f172a; cursor:pointer; text-align:right; }
+        .tk-dd-btn.empty { color:#94a3b8; }
+        .tk-dd-btn.open { border-color:#f59e0b; box-shadow:0 0 0 2px #fde68a; }
+        .tk-dd-list { display:none; flex-direction:column; margin-top:4px; border:1px solid #cbd5e1; border-radius:12px; background:#fff; overflow:hidden; box-shadow:0 8px 20px rgba(0,0,0,.12); max-height:240px; overflow-y:auto; }
+        .tk-dd-item { padding:9px 12px; border:none; border-bottom:1px solid #f1f5f9; background:#fff; font-family:inherit; font-size:0.84rem; font-weight:700; color:#334155; text-align:right; cursor:pointer; }
+        .tk-dd-item:last-child { border-bottom:none; }
+        .tk-dd-item:hover { background:#fffbeb; }
+        .tk-dd-item.sel { background:#fef2f2; color:#b91c1c; font-weight:900; }
+        .tk-dd-item.other { color:#2563eb; }
         .tk-stat { text-align:center; font-size:0.72rem; font-weight:800; color:#64748b; margin:-4px 0 12px; }
         .task-btn { background: #ffffff; border: 1px solid #cbd5e1; color: #000000; padding: 12px 8px; border-radius: 14px; font-size: 0.9rem; font-weight: 700; width: 100%; cursor: pointer; transition: all 0.2s; }
         .task-btn:hover { border-color: #22c55e; }
@@ -193,6 +203,38 @@
                 return Math.min(LATE_MAX_POINTS, LATE_BASE_POINTS + LATE_EXTRA_POINTS * Math.floor((late - LATE_GRACE_MIN) / LATE_EXTRA_STEP_MIN));
             } catch (e) { return null; }
         }
+
+        // ===== البريك بالثواني: الخصم يبدأ عند تجاوز 5:00 (أي من 5:01) =====
+        const BREAK_HOUR_LIMIT_SEC = 300;
+        const _BRK_REM_KEY = 'a3_brk_rem_v1';   // بقايا ثواني البريك (السيرفر يحفظ دقائق كاملة فقط)
+        function _brkRemAll() { try { return JSON.parse(localStorage.getItem(_BRK_REM_KEY) || '{}') || {}; } catch (e) { return {}; } }
+        function _brkRemGet(id, hIdx) {
+            const all = _brkRemAll(), day = all[getTodayDateString()] || {};
+            return Number((day[id] || {})[hIdx]) || 0;
+        }
+        function _brkRemAdd(id, hIdx, sec) {
+            try {
+                const all = _brkRemAll(), t = getTodayDateString();
+                const out = {}; out[t] = all[t] || {};            // نحتفظ باليوم الحالي فقط
+                out[t][id] = out[t][id] || {};
+                out[t][id][hIdx] = Math.min(59, Math.max(0, Math.floor(sec)));
+                localStorage.setItem(_BRK_REM_KEY, JSON.stringify(out));
+            } catch (e) {}
+        }
+        // ثواني البريك داخل ساعة الدوام رقم hIdx (المحفوظ + بقايا الثواني + الجاري الآن)
+        function breakSecInHour(d, id, hIdx, now) {
+            const hb = (d && d.hourlyBreaks) || {};
+            let sec = (Number(hb[hIdx]) || 0) * 60 + _brkRemGet(id, hIdx);
+            if (d && d.status === 'بريك' && d.lastActionTime && d.startTime) {
+                const hs = d.startTime + hIdx * 3600000, he = hs + 3600000;
+                const a = Math.max(d.lastActionTime, hs), b = Math.min(now, he);
+                if (b > a) sec += Math.floor((b - a) / 1000);
+            }
+            return sec;
+        }
+        function breakViolations(sec) { return sec > BREAK_HOUR_LIMIT_SEC ? Math.floor((sec - BREAK_HOUR_LIMIT_SEC - 1) / 3600) + 1 : 0; }
+        function mmss(sec) { sec = Math.max(0, Math.floor(sec)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); }
+
         function breakUsagePenalty(d, now, id) {
             if (!BREAK_SCORE_MAX_PENALTY || !d || !d.startTime) return 0;
             const live = (d.status === 'بريك' && d.lastActionTime) ? Math.max(0, Math.floor((now - d.lastActionTime) / 60000)) : 0;
@@ -359,19 +401,34 @@
             const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
             return 2 * R * Math.asin(Math.sqrt(a));
         }
-        // يرجع { ok, msg } — الحضور مسموح فقط ضمن نصف قطر 1 كم من موقع العمل
-        function verifyWorkLocation() {
+        // يرجع { ok, msg } — الدخول والحضور مسموحان فقط ضمن نصف قطر WORK_RADIUS_METERS من موقع العمل
+        // موقع العمل الخاص بالموظف (يحدده المسؤول) — إن لم يُحدَّد أو لم تُضف الأعمدة نستخدم الموقع العام
+        async function getEmployeeGeo(empKey) {
+            const def = { lat: WORK_LOCATION.lat, lng: WORK_LOCATION.lng, radius: WORK_RADIUS_METERS };
+            if (!empKey) return def;
+            try {
+                const { data, error } = await supabaseClient.from('alsaree3_employees')
+                    .select('work_lat, work_lng, work_radius').eq('employee_key', empKey).maybeSingle();
+                if (error || !data) return def;
+                const la = Number(data.work_lat), ln = Number(data.work_lng), rd = Number(data.work_radius);
+                const radius = (isFinite(rd) && rd > 0) ? rd : WORK_RADIUS_METERS;
+                if (data.work_lat === null || data.work_lng === null || !isFinite(la) || !isFinite(ln)) return { lat: def.lat, lng: def.lng, radius };   // نطاق خاص بالموقع العام
+                return { lat: la, lng: ln, radius };
+            } catch (e) { return def; }
+        }
+        async function verifyWorkLocation(empKey) {
+            const geo = await getEmployeeGeo(empKey);
             return new Promise(resolve => {
-                if (WORK_LOCATION.lat === null || WORK_LOCATION.lng === null) {
+                if (geo.lat === null || geo.lng === null) {
                     console.warn('[Geofence] لم يتم ضبط WORK_LOCATION — التحقق من الموقع معطّل');
                     return resolve({ ok: true });
                 }
                 if (!navigator.geolocation) return resolve({ ok: false, msg: 'المتصفح لا يدعم تحديد الموقع' });
                 navigator.geolocation.getCurrentPosition(
                     pos => {
-                        const dist = distanceMeters(pos.coords.latitude, pos.coords.longitude, WORK_LOCATION.lat, WORK_LOCATION.lng);
-                        if (dist <= WORK_RADIUS_METERS) resolve({ ok: true, lat: pos.coords.latitude, lng: pos.coords.longitude });
-                        else resolve({ ok: false, msg: 'أنت بعيد عن موقع العمل (' + Math.round(dist) + ' متر). يجب أن تكون ضمن ' + WORK_RADIUS_METERS + ' متر لتسجيل الحضور.' });
+                        const dist = distanceMeters(pos.coords.latitude, pos.coords.longitude, geo.lat, geo.lng);
+                        if (dist <= geo.radius) resolve({ ok: true, lat: pos.coords.latitude, lng: pos.coords.longitude });
+                        else resolve({ ok: false, msg: 'أنت بعيد عن موقع العمل المحدد لك (' + Math.round(dist) + ' متر). يجب أن تكون ضمن ' + geo.radius + ' متر.' });
                     },
                     err => resolve({ ok: false, msg: err.code === 1 ? 'يجب السماح للموقع (Location) في المتصفح لتسجيل الحضور' : 'تعذّر تحديد موقعك، حاول مرة أخرى' }),
                     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -752,6 +809,18 @@
                 resetBtn(); return;
             }
 
+            // الموظف (غير المسؤول) لا يدخل إلا إذا كان داخل نطاق موقع العمل
+            if (profile.role !== 'admin') {
+                btn.textContent = 'جاري التحقق من الموقع...';
+                const loc = await verifyWorkLocation(profile.employee_key);
+                _mark('geo');
+                if (!loc.ok) {
+                    errorEl.textContent = '📍 ' + loc.msg;
+                    await supabaseClient.auth.signOut();
+                    resetBtn(); passEl.value = ''; return;
+                }
+            }
+
             // الآن فقط (بعد المصادقة) نجلب بيانات الموظفين ونفتح الاتصال اللحظي
             try {
                 loggedInId = (profile.role === 'admin') ? '__admin__' : profile.employee_key;
@@ -800,7 +869,7 @@
 
             render();
             _mark('render');
-            if (loggedInId === '__admin__') setTimeout(() => window.openAdmin(), 300);
+            if (loggedInId === '__admin__') setTimeout(() => window.lockAdmin(), 300);   // اللوحة تبدأ مقفلة
         };
 
         // غلاف يعرض أي خطأ على الشاشة ويمنع التعليق الصامت
@@ -922,31 +991,15 @@
                 if (isOffDay(i, getTodayDateString()) || onLeaveDay(i, getTodayDateString())) { employeesData[i].rating = 100; continue; }   // أوف أو إجازة معتمدة: لا تقييم ولا خصم   // يوم الأوف: لا خصم ولا تقييم أبداً
                 
                 let currentHourIndex = Math.floor((now - d.startTime) / 3600000);
-                // احسب فقط دقائق البريك الحالي التي تقع ضمن الساعة الحالية
-                let curB = 0;
-                if (d.status === 'بريك' && d.lastActionTime) {
-                    let breakStartHourIndex = Math.floor((d.lastActionTime - d.startTime) / 3600000);
-                    if (breakStartHourIndex === currentHourIndex) {
-                        curB = Math.floor((now - d.lastActionTime) / 60000);
-                    } else {
-                        let currentHourStart = d.startTime + (currentHourIndex * 3600000);
-                        curB = Math.floor((now - currentHourStart) / 60000);
-                        if (curB < 0) curB = 0;
-                    }
-                }
                 let curR = (d.status === 'راحة' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
                 let totalR = (d.totalRestMinutes || 0) + curR;
                 
                 let totalViolations = 0;
                 let hourlyBreaks = d.hourlyBreaks || {};
                 
-                for (let h = 0; h < currentHourIndex; h++) {
-                    let pastBreak = hourlyBreaks[h] || 0;
-                    if (pastBreak > 5) totalViolations += Math.floor((pastBreak - 5) / 60) + 1;
+                for (let h = 0; h <= currentHourIndex; h++) {
+                    totalViolations += breakViolations(breakSecInHour(d, i, h, now));   // بالثواني: يبدأ الخصم من 5:01
                 }
-                
-                let currentHourBreak = (hourlyBreaks[currentHourIndex] || 0) + curB;
-                if (currentHourBreak > 5) totalViolations += Math.floor((currentHourBreak - 5) / 60) + 1;
                 const _permM = permMinutesToday(i);
                 if (totalR > 15 + _permM) totalViolations += Math.floor((totalR - 15 - _permM) / 60) + 1;
                 
@@ -960,7 +1013,28 @@
             try { applyMonthlyRatings(); } catch (e) {}
         }
 
-        window.openAdmin = () => {
+        // ===== قفل لوحة المسؤول: تحتاج كلمة مرور المسؤول لفتحها، وتُقفل تلقائياً بعد 5 دقائق خمول =====
+        let _adminLastAct = Date.now(), _adminIdleTimer = null;
+        window.lockAdmin = () => {
+            const section = document.getElementById('admin-section'); if (!section) return;
+            isViewingHistory = false;
+            ['add-emp-overlay', 'loc-admin-overlay', 'leave-admin-overlay', 'month-overlay', 'device-log-overlay'].forEach(oid => { const oe = document.getElementById(oid); if (oe) oe.remove(); });
+            section.classList.remove('hidden');
+            section.innerHTML = '<div class="text-center"><button onclick="window.openAdmin()" class="px-6 py-3 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-black shadow transition">🔒 فتح لوحة المسؤول</button></div>';
+        };
+        window.openAdmin = async () => {
+            if (loggedInId !== '__admin__') { alert("🔒 هذه اللوحة متاحة للمسؤول فقط!"); return; }
+            if (!(await _askPin('فتح لوحة المسؤول'))) return;
+            _adminLastAct = Date.now();
+            if (!_adminIdleTimer) {
+                ['click', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { _adminLastAct = Date.now(); }, true));
+                _adminIdleTimer = setInterval(() => {
+                    if (loggedInId === '__admin__' && Date.now() - _adminLastAct > 5 * 60000 && document.getElementById('admin-section') && document.getElementById('historyDateSelector')) window.lockAdmin();
+                }, 15000);
+            }
+            _openAdminUnlocked();
+        };
+        const _openAdminUnlocked = () => {
             if (loggedInId !== '__admin__') { alert("🔒 هذه اللوحة متاحة للمسؤول فقط!"); return; }
             const section = document.getElementById('admin-section'); 
             section.classList.remove('hidden');
@@ -991,8 +1065,12 @@
                     <button onclick="window.openTickets()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"><span class="text-sm">📋</span><span>مهام واتساب</span><span id="tickets-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
                     <button onclick="window.openAddEmployee()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"><span class="text-sm">➕</span><span>إضافة موظف</span></button>
+
+                    <button onclick="window.openEmpLocations()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100"><span class="text-sm">📍</span><span>مواقع الموظفين</span></button>
                     <button onclick="window.openDeviceLog()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">📱</span><span>سجل الأجهزة</span></button>
                 </div>
+
+                <div id="eom-banner" class="mb-5"></div>
 
                 <div class="overflow-x-auto rounded-2xl border border-slate-200 mb-5">
                     <table id="reportTable" class="w-full text-md text-right border-collapse">
@@ -1021,6 +1099,7 @@
                 </div>`;
             
             section.innerHTML = html; 
+            try { window.refreshTopPerformer(true); } catch (e) {}
             window.fetchHistoryReport(todayStr); 
             window.refreshLeaveBadge();
             section.scrollIntoView({ behavior: 'smooth' });
@@ -1250,6 +1329,59 @@
         };
         setInterval(() => { if (loggedInId === '__admin__') window.refreshLeaveBadge(); }, 60000);
 
+        // ===== المسؤول يسجّل إجازة أو إذن زمني نيابةً عن موظف نسي (تُعتمد مباشرة) =====
+        function _lvAdminFormHtml() {
+            const today = getTodayDateString();
+            const opts = Object.keys(employeesData).map(k => '<option value="' + sanitize(k) + '">' + sanitize(employeesData[k].name || k) + '</option>').join('');
+            const f = 'border:1px solid #94a3b8;border-radius:8px;padding:5px 8px;font-family:Cairo,sans-serif;font-weight:700;font-size:0.85rem;width:100%;';
+            const lb = 'display:flex;flex-direction:column;gap:3px;font-size:0.75rem;font-weight:800;color:#475569;';
+            return '<div style="border:1px solid #a7f3d0;background:#f0fdf4;border-radius:16px;padding:12px;margin-bottom:16px;">'
+                + '<div style="font-weight:900;color:#047857;margin-bottom:8px;">➕ تسجيل إجازة / إذن زمني لموظف (تُعتمد مباشرة)</div>'
+                + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;">'
+                + '<label style="' + lb + '">الموظف<select id="lva-emp" style="' + f + '">' + opts + '</select></label>'
+                + '<label style="' + lb + '">النوع<select id="lva-kind" onchange="window._lvaKind()" style="' + f + '"><option value="day">🏖️ يوم إجازة</option><option value="hourly">⏱️ إذن زمني</option></select></label>'
+                + '<label style="' + lb + '">التاريخ<input id="lva-date" type="date" value="' + today + '" style="' + f + '"></label>'
+                + '<label id="lva-days-box" style="' + lb + '">عدد الأيام<input id="lva-days" type="number" min="1" max="90" value="1" style="' + f + '"></label>'
+                + '<label class="lva-t" style="' + lb + 'display:none;">من الساعة<input id="lva-from" type="time" style="' + f + '"></label>'
+                + '<label class="lva-t" style="' + lb + 'display:none;">إلى الساعة<input id="lva-to" type="time" style="' + f + '"></label>'
+                + '<label style="' + lb + '">ملاحظة<input id="lva-note" maxlength="200" style="' + f + '"></label></div>'
+                + '<div style="display:flex;gap:10px;align-items:center;margin-top:10px;"><button onclick="window.lvAdminAdd()" style="background:#16a34a;color:#fff;border:none;border-radius:10px;padding:7px 16px;font-family:Cairo,sans-serif;font-weight:800;cursor:pointer;">✅ إضافة واعتماد</button>'
+                + '<span id="lva-msg" style="font-size:0.8rem;font-weight:800;"></span></div></div>';
+        }
+        window._lvaKind = () => {
+            const hourly = document.getElementById('lva-kind').value === 'hourly';
+            document.getElementById('lva-days-box').style.display = hourly ? 'none' : 'flex';
+            document.querySelectorAll('.lva-t').forEach(el => { el.style.display = hourly ? 'flex' : 'none'; });
+        };
+        window.lvAdminAdd = async () => {
+            if (loggedInId !== '__admin__') return;
+            const msg = document.getElementById('lva-msg'); msg.style.color = '#dc2626';
+            const key = document.getElementById('lva-emp').value, kind = document.getElementById('lva-kind').value;
+            const date = document.getElementById('lva-date').value, note = document.getElementById('lva-note').value.trim().slice(0, 200);
+            if (!employeesData[key]) { msg.textContent = '⚠️ اختر الموظف'; return; }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { msg.textContent = '⚠️ اختر التاريخ'; return; }
+            const row = { employee_key: key, emp_name: employeesData[key].name, kind, start_date: date, days: 1, note: note || null, status: 'approved', decided_at: new Date().toISOString() };
+            if (kind === 'day') {
+                const days = parseInt(document.getElementById('lva-days').value, 10);
+                if (!(days >= 1 && days <= 90)) { msg.textContent = '⚠️ عدد الأيام غير صحيح'; return; }
+                row.days = days;
+            } else {
+                const from = document.getElementById('lva-from').value, to = document.getElementById('lva-to').value;
+                if (!from || !to) { msg.textContent = '⚠️ حدد وقت البداية والنهاية'; return; }
+                const mins = (parseInt(to.slice(0, 2), 10) * 60 + parseInt(to.slice(3, 5), 10)) - (parseInt(from.slice(0, 2), 10) * 60 + parseInt(from.slice(3, 5), 10));
+                if (mins <= 0) { msg.textContent = '⚠️ وقت النهاية يجب أن يكون بعد البداية'; return; }
+                row.from_time = from; row.to_time = to; row.hours = Math.round(mins / 60 * 100) / 100;
+            }
+            if (!_checkWriteRate()) return;
+            msg.style.color = '#64748b'; msg.textContent = '⏳ ...';
+            const { error } = await supabaseClient.from('alsaree3_leave_requests').insert(row);
+            if (error) { console.error('[LeaveAdminAdd]', error); msg.style.color = '#dc2626'; msg.textContent = '❌ رفض السيرفر الإضافة (غالباً صلاحيات Supabase): ' + (error.message || ''); return; }
+            window.refreshLeaveBadge();
+            await window._lvAdminLoad();
+            const m2 = document.getElementById('lva-msg'); if (m2) { m2.style.color = '#16a34a'; m2.textContent = '✅ تمت الإضافة والاعتماد'; }
+            autoWaiveLeaveLate().catch(() => {});
+        };
+
         window.openLeaveAdmin = () => {
             if (loggedInId !== '__admin__') return;
             _modal('leave-admin-overlay', '📥 طلبات الإجازة والإذن الزمني', '<div style="color:#94a3b8;font-weight:700;text-align:center;padding:20px;">⏳ جاري التحميل...</div>', 1000);
@@ -1316,15 +1448,35 @@
                         html += `<tr style="border-bottom:1px solid #e2e8f0;"><td style="${th}font-weight:900;">${sanitize(r.emp_name || r.employee_key)}</td>
                             <td style="${th}">${r.kind === 'day' ? '🏖️' : '⏱️'} ${sanitize(_leaveDurationLabel(r))}</td>
                             <td style="${th}">${_leaveStatusLabel(r.status)}</td>
-                            <td style="${th}color:#64748b;">${sanitize(String(r.decided_at || r.created_at || '').slice(0, 10))}</td></tr>`;
+                            <td style="${th}color:#64748b;">${sanitize(String(r.decided_at || r.created_at || '').slice(0, 10))}</td>
+                            <td style="${th}white-space:nowrap;"><button onclick="window.cancelLeave(${Number(r.id)})" style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:8px;padding:2px 10px;font-weight:800;font-size:0.78rem;cursor:pointer;font-family:Cairo,sans-serif;">🗑️ إلغاء</button></td></tr>`;
                     });
                     html += '</tbody></table></div>';
                 }
-                body.innerHTML = html;
+                body.innerHTML = _lvAdminFormHtml() + html;
             } catch (e) {
                 console.error('[LeaveAdmin]', e);
                 body.innerHTML = '<p style="color:#dc2626;font-weight:700;">❌ تعذر تحميل الطلبات — تأكد من تنفيذ ملف leave_requests.sql في Supabase.</p>';
             }
+        };
+
+        // المسؤول يلغي إجازة/إذن (حذف الطلب نهائياً؛ وإن مُنع الحذف يُحوَّل إلى «مرفوض» فلا يُحتسب)
+        window.cancelLeave = async (id) => {
+            if (loggedInId !== '__admin__') return;
+            id = Number(id); if (!Number.isFinite(id)) return;
+            if (!confirm('إلغاء هذه الإجازة/الإذن؟\nلن تُحتسب للموظف بعد الآن.')) return;
+            if (!_checkWriteRate()) return;
+            let done = false;
+            const del = await supabaseClient.from('alsaree3_leave_requests').delete().eq('id', id).select('id');
+            if (!del.error && del.data && del.data.length) done = true;
+            if (!done) {
+                const up = await supabaseClient.from('alsaree3_leave_requests').update({ status: 'rejected', decided_at: new Date().toISOString() }).eq('id', id).select('id');
+                if (!up.error && up.data && up.data.length) done = true;
+                else console.error('[CancelLeave]', del.error, up.error);
+            }
+            if (!done) { alert('❌ رفض السيرفر الإلغاء (صلاحيات Supabase). راجع الرسالة المرسلة في المحادثة لإضافة سياسة الحذف.'); return; }
+            window._lvAdminLoad();
+            window.refreshLeaveBadge();
         };
         window.saveLeaveBalance = async (k) => {
             if (loggedInId !== '__admin__' || !employeesData[k]) return;
@@ -1355,6 +1507,110 @@
                     <button id="ae-go" class="login-btn" onclick="window.submitAddEmployee()">إضافة</button>
                 </div>`, 480);
         };
+
+        // ===== مواقع الموظفين: المسؤول يحدد موقع ونطاق كل موظف =====
+        window.openEmpLocations = async () => {
+            if (loggedInId !== '__admin__') return;
+            _modal('loc-admin-overlay', '📍 مواقع الموظفين', '<div style="text-align:center;padding:20px;font-weight:700;color:#94a3b8;">⏳ جاري التحميل...</div>', 760);
+            const body = document.getElementById('loc-admin-overlay-body');
+            const { data, error } = await supabaseClient.from('alsaree3_employees').select('employee_key, name, work_lat, work_lng, work_radius').order('employee_key');
+            if (error) {
+                console.error('[EmpLoc]', error);
+                body.innerHTML = `<div style="direction:rtl;font-weight:700;color:#b91c1c;margin-bottom:8px;">⚠️ أعمدة الموقع غير موجودة في Supabase. نفّذ هذا الأمر مرة واحدة في SQL Editor ثم أعد فتح النافذة:</div>
+                    <pre style="direction:ltr;text-align:left;background:#0f172a;color:#e2e8f0;padding:12px;border-radius:12px;font-size:0.78rem;white-space:pre-wrap;">alter table alsaree3_employees
+  add column if not exists work_lat double precision,
+  add column if not exists work_lng double precision,
+  add column if not exists work_radius integer;</pre>`;
+                return;
+            }
+            const rows = (data || []).map(r => {
+                const k = sanitize(r.employee_key), nm = sanitize(r.name || r.employee_key);
+                const v = x => (x === null || x === undefined) ? '' : sanitize(String(x));
+                return `<div style="border:1px solid #e2e8f0;border-radius:16px;padding:12px;margin-bottom:10px;">
+                    <div style="font-weight:900;color:#334155;margin-bottom:8px;">${nm} <span style="font-size:0.75rem;color:#94a3b8;direction:ltr;display:inline-block;">(${k})</span></div>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;direction:ltr;">
+                        <input id="loc-lat-${k}" placeholder="Latitude" value="${v(r.work_lat)}" class="login-select" style="direction:ltr;text-align:center;padding:8px;font-size:0.85rem;" onpaste="setTimeout(()=>window.splitLatLng('${k}'),0)">
+                        <input id="loc-lng-${k}" placeholder="Longitude" value="${v(r.work_lng)}" class="login-select" style="direction:ltr;text-align:center;padding:8px;font-size:0.85rem;">
+                        <div style="display:flex;gap:4px;align-items:center;">
+                            <button onclick="window.stepRadius('${k}',-50)" style="padding:6px 10px;border-radius:10px;background:#fee2e2;border:1px solid #fecaca;color:#b91c1c;font-weight:900;cursor:pointer;">−</button>
+                            <input id="loc-rad-${k}" type="number" min="20" max="100000" placeholder="النطاق (متر)" value="${v(r.work_radius)}" class="login-select" style="direction:ltr;text-align:center;padding:8px;font-size:0.85rem;min-width:0;">
+                            <button onclick="window.stepRadius('${k}',50)" style="padding:6px 10px;border-radius:10px;background:#dcfce7;border:1px solid #bbf7d0;color:#15803d;font-weight:900;cursor:pointer;">+</button>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+                        <button onclick="window.fillMyLocation('${k}')" style="padding:8px 12px;border-radius:12px;background:#e0f2fe;border:1px solid #bae6fd;color:#075985;font-family:Cairo,sans-serif;font-weight:800;font-size:0.8rem;cursor:pointer;">📍 استخدم موقعي الحالي</button>
+                        <button onclick="window.saveEmpLocation('${k}')" style="padding:8px 16px;border-radius:12px;background:#22c55e;border:none;color:#fff;font-family:Cairo,sans-serif;font-weight:900;font-size:0.8rem;cursor:pointer;">💾 حفظ</button>
+                        <span id="loc-msg-${k}" style="font-size:0.78rem;font-weight:700;"></span>
+                    </div>
+                </div>`;
+            }).join('');
+            body.innerHTML = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#f0f9ff;border:1px solid #bae6fd;border-radius:14px;padding:10px;margin-bottom:12px;direction:rtl;">
+                <span style="font-weight:900;color:#075985;font-size:0.85rem;">نطاق لجميع الموظفين:</span>
+                <input id="loc-rad-all" type="number" min="20" max="100000" placeholder="متر" style="width:90px;padding:6px;border-radius:10px;border:1px solid #cbd5e1;text-align:center;direction:ltr;font-weight:800;">
+                <button onclick="window.applyRadiusAll()" style="padding:7px 14px;border-radius:12px;background:#0284c7;border:none;color:#fff;font-family:Cairo,sans-serif;font-weight:900;font-size:0.8rem;cursor:pointer;">تطبيق على الجميع</button>
+                <span id="loc-msg-all" style="font-size:0.78rem;font-weight:700;"></span>
+            </div>
+            <div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:10px;">كبّر النطاق أو صغّره بأزرار − / + (بخطوة 50 متر، و500 متر عند تجاوز 2000) أو اكتب الرقم، ويكفي تغيير النطاق وحده بدون إحداثيات (يُستخدم الموقع العام). اترك كل الحقول فارغة للإعدادات العامة (الافتراضي ${WORK_RADIUS_METERS} متر). يمكنك لصق الإحداثيات من خرائط جوجل (مثال: 33.2931, 44.4332) في خانة Latitude.</div>` + (rows || '<div style="text-align:center;color:#94a3b8;font-weight:700;">لا يوجد موظفون.</div>');
+        };
+        window.stepRadius = (k, d) => {
+            const r = document.getElementById('loc-rad-' + k); if (!r) return;
+            const cur = Number(r.value) || WORK_RADIUS_METERS;
+            const st = cur >= 2000 ? d * 10 : d;   // خطوة أكبر للنطاقات الكبيرة
+            r.value = Math.max(20, Math.min(100000, cur + st));
+        };
+        window.applyRadiusAll = async () => {
+            if (loggedInId !== '__admin__') return;
+            const msg = document.getElementById('loc-msg-all');
+            const rd = Math.round(Number(document.getElementById('loc-rad-all').value));
+            if (!isFinite(rd) || rd < 20 || rd > 100000) { msg.style.color = '#dc2626'; msg.textContent = '⚠️ النطاق بين 20 و 100000 متر'; return; }
+            if (!confirm('تطبيق نطاق ' + rd + ' متر على جميع الموظفين؟')) return;
+            if (!_checkWriteRate()) return;
+            msg.style.color = '#64748b'; msg.textContent = '⏳ ...';
+            const { error } = await supabaseClient.from('alsaree3_employees').update({ work_radius: rd }).not('employee_key', 'is', null);
+            if (error) { console.error('[RadiusAll]', error); msg.style.color = '#dc2626'; msg.textContent = '❌ فشل الحفظ'; return; }
+            msg.style.color = '#16a34a'; msg.textContent = '✅ تم';
+            window.openEmpLocations();
+        };
+        window.splitLatLng = (k) => {
+            const a = document.getElementById('loc-lat-' + k), b = document.getElementById('loc-lng-' + k);
+            if (!a || !b) return;
+            const m = a.value.match(/(-?\d+(?:\.\d+)?)\s*[,،\s]\s*(-?\d+(?:\.\d+)?)/);
+            if (m) { a.value = m[1]; b.value = m[2]; }
+        };
+        window.fillMyLocation = (k) => {
+            const msg = document.getElementById('loc-msg-' + k);
+            if (!navigator.geolocation) { msg.style.color = '#dc2626'; msg.textContent = '❌ المتصفح لا يدعم الموقع'; return; }
+            msg.style.color = '#64748b'; msg.textContent = '⏳ جاري تحديد موقعك...';
+            navigator.geolocation.getCurrentPosition(pos => {
+                document.getElementById('loc-lat-' + k).value = pos.coords.latitude.toFixed(6);
+                document.getElementById('loc-lng-' + k).value = pos.coords.longitude.toFixed(6);
+                const r = document.getElementById('loc-rad-' + k); if (!r.value) r.value = WORK_RADIUS_METERS;
+                msg.style.color = '#16a34a'; msg.textContent = '✔ تم (اضغط حفظ) — الدقة ±' + Math.round(pos.coords.accuracy) + 'م';
+            }, () => { msg.style.color = '#dc2626'; msg.textContent = '❌ تعذّر تحديد الموقع'; }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+        };
+        window.saveEmpLocation = async (k) => {
+            if (loggedInId !== '__admin__') return;
+            const msg = document.getElementById('loc-msg-' + k);
+            const latS = document.getElementById('loc-lat-' + k).value.trim(), lngS = document.getElementById('loc-lng-' + k).value.trim(), radS = document.getElementById('loc-rad-' + k).value.trim();
+            let row;
+            if (!latS && !lngS && !radS) row = { work_lat: null, work_lng: null, work_radius: null };
+            else if (!latS && !lngS) {
+                const rd = Math.round(Number(radS));
+                if (!isFinite(rd) || rd < 20 || rd > 100000) { msg.style.color = '#dc2626'; msg.textContent = '⚠️ النطاق بين 20 و 100000 متر'; return; }
+                row = { work_lat: null, work_lng: null, work_radius: rd };   // نطاق فقط، على الموقع العام
+            } else {
+                const la = Number(latS), ln = Number(lngS), rd = radS ? Math.round(Number(radS)) : WORK_RADIUS_METERS;
+                if (!isFinite(la) || !isFinite(ln) || la < -90 || la > 90 || ln < -180 || ln > 180) { msg.style.color = '#dc2626'; msg.textContent = '⚠️ إحداثيات غير صحيحة'; return; }
+                if (!isFinite(rd) || rd < 20 || rd > 100000) { msg.style.color = '#dc2626'; msg.textContent = '⚠️ النطاق بين 20 و 100000 متر'; return; }
+                row = { work_lat: la, work_lng: ln, work_radius: rd };
+            }
+            if (!_checkWriteRate()) return;
+            msg.style.color = '#64748b'; msg.textContent = '⏳ ...';
+            const { data, error } = await supabaseClient.from('alsaree3_employees').update(row).eq('employee_key', k).select('employee_key');
+            if (error || !data || !data.length) { console.error('[EmpLoc save]', error); msg.style.color = '#dc2626'; msg.textContent = '❌ فشل الحفظ (تحقق من الصلاحيات)'; return; }
+            msg.style.color = '#16a34a'; msg.textContent = row.work_radius === null ? '✅ تمت العودة للإعدادات العامة' : ('✅ تم الحفظ — النطاق ' + row.work_radius + ' متر');
+        };
+
         window.submitAddEmployee = async () => {
             if (loggedInId !== '__admin__') return;
             const msg = document.getElementById('ae-msg'), btn = document.getElementById('ae-go');
@@ -1490,7 +1746,7 @@
         };
 
         // ===== بطاقة الأداء الشهرية (للمسؤول): درجة من 100 بأوزان قابلة للتعديل =====
-        const SC_WEIGHTS = { att: 35, brk: 25, tkt: 20, ord: 5, hrs: 20 };   // att+brk+tkt+hrs = 100 ، و ord = نقاط مكافأة إضافية (لا خصم)
+        const SC_WEIGHTS = { att: 40, brk: 30, tkt: 0, ord: 5, hrs: 30 };   // att+brk+tkt+hrs = 100 ، و ord = نقاط مكافأة إضافية (لا خصم)
         let SC_ORDERS_DAILY_TARGET = 10;   // هدف الطلبات اليدوية (قبول + توزيع) باليوم لدرجة 100%
         let SC_BREAK_ALLOW_PER_HOUR_MIN = 5;   // مسموح البريك: 5 دقائق لكل ساعة عمل فعلية
         let SC_REST_ALLOW_MIN = 15;     // مسموح الاستراحة يومياً (دقيقة)
@@ -1559,11 +1815,11 @@
         const RS_KEY = 'a3_rating_settings_v3';
         const RS_DEFS = [
             ['أوزان الدرجة النهائية (بطاقة الأداء) — الحضور+البريك+الحل+الساعات = 100', [
-                ['w_att', 'الحضور والتأخير', 35, 0, v => { SC_WEIGHTS.att = v; }, () => SC_WEIGHTS.att],
-                ['w_brk', 'البريك والاستراحة', 25, 0, v => { SC_WEIGHTS.brk = v; }, () => SC_WEIGHTS.brk],
-                ['w_tkt', 'سرعة حل الطلبات', 20, 0, v => { SC_WEIGHTS.tkt = v; }, () => SC_WEIGHTS.tkt],
+                ['w_att', 'الحضور والتأخير', 40, 0, v => { SC_WEIGHTS.att = v; }, () => SC_WEIGHTS.att],
+                ['w_brk', 'البريك والاستراحة', 30, 0, v => { SC_WEIGHTS.brk = v; }, () => SC_WEIGHTS.brk],
+                ['w_tkt', 'سرعة حل الطلبات (واتساب) — 0 = خارج التقييم', 0, 0, v => { SC_WEIGHTS.tkt = v; }, () => SC_WEIGHTS.tkt],
                 ['w_ord', 'مكافأة الطلبات (نقاط إضافية، بلا خصم)', 5, 0, v => { SC_WEIGHTS.ord = v; }, () => SC_WEIGHTS.ord],
-                ['w_hrs', 'ساعات الحضور', 20, 0, v => { SC_WEIGHTS.hrs = v; }, () => SC_WEIGHTS.hrs]
+                ['w_hrs', 'ساعات الحضور', 30, 0, v => { SC_WEIGHTS.hrs = v; }, () => SC_WEIGHTS.hrs]
             ]],
             ['المسموح والأهداف', [
                 ['ord_target', 'هدف الطلبات باليوم (= 100%)', 10, 1, v => { SC_ORDERS_DAILY_TARGET = v; }, () => SC_ORDERS_DAILY_TARGET],
@@ -1610,6 +1866,7 @@
         function _scDayName(ds) { const p = String(ds).split('-').map(Number); return _SC_DN[new Date(p[0], p[1] - 1, p[2]).getDay()]; }
         function _scDescHtml() {
             return 'الأوزان: الحضور والتأخير ' + SC_WEIGHTS.att + ' · البريك والاستراحة ' + SC_WEIGHTS.brk + ' · سرعة حل الطلبات ' + SC_WEIGHTS.tkt + ' · ساعات الحضور ' + SC_WEIGHTS.hrs + '<br>مكافأة الطلبات: حتى +' + SC_WEIGHTS.ord + ' نقطة تُضاف للدرجة (كاملة عند ' + SC_ORDERS_DAILY_TARGET + ' طلب باليوم) — من لا طلبات له لا يُخصم منه شيء. ساعات الحضور تُقاس بعد استثناء البريك المسموح ودقائق التأخير (التأخير يُخصم مرة واحدة فقط في بند الحضور)'
+                + '<br>الأفضلية: عند تساوي الدرجة يتقدّم من أخذ بريكاً واستراحة أقل. الخصم على البريك يبدأ بعد 5:00 في الساعة (من 5:01).'
                 + '<br>لا تُحتسب أيام OFF والإجازات المعتمدة والأيام المستثناة. اضغط على اسم الموظف لرؤية تفصيل كل يوم وتعديل دوامه ويوم الأوف.';
         }
 
@@ -1865,6 +2122,36 @@
             finally { _cardAutoBusy = false; }
         }
 
+        // ===== موظف الشهر: الأعلى أداءً من بداية الشهر حتى اليوم (من بطاقة الأداء) =====
+        let _eomBusy = false;
+        window.refreshTopPerformer = async (force) => {
+            if (loggedInId !== '__admin__' || _eomBusy) return;
+            const box = document.getElementById('eom-banner'); if (!box) return;
+            _eomBusy = true;
+            const today = getTodayDateString();
+            if (force) box.innerHTML = '<div style="padding:10px;text-align:center;color:#94a3b8;font-weight:700;font-size:0.85rem;">⏳ جاري حساب موظف الشهر...</div>';
+            try {
+                const rows = await window.loadScoreCard(today.slice(0, 7) + '-01', today, true);
+                const bx = document.getElementById('eom-banner'); if (!bx) return;
+                const ranked = (rows || []).filter(r => r.hasData && r.days > 0);
+                if (!ranked.length) { bx.innerHTML = '<div style="padding:10px;text-align:center;color:#94a3b8;font-weight:700;font-size:0.85rem;">🏆 موظف الشهر: لا توجد بيانات كافية بعد هذا الشهر</div>'; return; }
+                const medals = ['🥇', '🥈', '🥉'];
+                const top = ranked.slice(0, 3);
+                const w = top[0];
+                const monthName = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'][Number(today.slice(5, 7)) - 1];
+                bx.innerHTML = '<div style="border:1px solid #fcd34d;background:linear-gradient(135deg,#fffbeb,#fef3c7);border-radius:18px;padding:12px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:14px;">'
+                    + '<div style="font-size:2rem;line-height:1;">🏆</div>'
+                    + '<div style="flex:1;min-width:200px;"><div style="font-size:0.75rem;font-weight:800;color:#92400e;">موظف الشهر حتى الآن — ' + monthName + ' (من 1 إلى ' + Number(today.slice(8, 10)) + ')</div>'
+                    + '<div style="font-size:1.25rem;font-weight:900;color:#78350f;">' + sanitize(w.name) + ' <span style="font-size:0.95rem;color:#16a34a;">' + Math.round(w.total) + '%</span></div>'
+                    + '<div style="font-size:0.72rem;font-weight:700;color:#a16207;">' + w.days + ' يوم دوام' + (w.absent ? ' · ' + w.absent + ' غياب' : '') + ' · يتحدّث تلقائياً</div></div>'
+                    + '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + top.map((r, i) => '<div style="background:#fff;border:1px solid #fde68a;border-radius:12px;padding:6px 12px;font-size:0.8rem;font-weight:800;color:#334155;">' + medals[i] + ' ' + sanitize(r.name) + ' · ' + Math.round(r.total) + '%</div>').join('') + '</div>'
+                    + '<div style="display:flex;gap:6px;"><button onclick="window.openScoreCard()" style="background:#fff;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:5px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">التفاصيل</button>'
+                    + '<button onclick="window.refreshTopPerformer(true)" style="background:#fff;border:1px solid #cbd5e1;color:#475569;border-radius:10px;padding:5px 10px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">🔄</button></div></div>';
+            } catch (e) { console.warn('[TopPerformer]', e); }
+            finally { _eomBusy = false; }
+        };
+        setInterval(() => { if (loggedInId === '__admin__' && document.getElementById('eom-banner')) window.refreshTopPerformer(false); }, 600000);
+
         window.loadScoreCard = async (from, to, silent) => {
             if (loggedInId !== '__admin__') return;
             const re = /^\d{4}-\d{2}-\d{2}$/;
@@ -1894,7 +2181,7 @@
                         }
                     }
                 });
-                const blank = name => ({ name, days: 0, absent: 0, punct: [], brkDay: [], hrDays: 0, hrSecs: 0, hrPermMin: 0, hrReqSecs: 0 });
+                const blank = name => ({ name, days: 0, absent: 0, usedMin: 0, punct: [], brkDay: [], hrDays: 0, hrSecs: 0, hrPermMin: 0, hrReqSecs: 0 });
                 const byKey = {}, names = {};
                 (data || []).forEach(r => { (byKey[r.employee_key] = byKey[r.employee_key] || {})[r.history_date] = r; if (r.name) names[r.employee_key] = r.name; });
                 const keys = Array.from(new Set(Object.keys(employeesData).concat(Object.keys(byKey))));
@@ -1925,6 +2212,7 @@
                         const secs = Number(r.total_work_seconds) || 0;
                         const brkM = Number(r.total_break_minutes) || 0, restM = Number(r.total_rest_minutes) || 0;
                         const used = brkM + restM;
+                        a.usedMin += used;   // مجموع البريك+الاستراحة: يُستعمل للأفضلية عند تساوي الدرجة
                         const allow = SC_BREAK_ALLOW_PER_HOUR_MIN * (secs / 3600) + SC_REST_ALLOW_MIN + permMin;
                         const _P = BREAK_SCORE_MAX_PENALTY;   // أقل بريك = درجة أعلى (متدرج داخل المسموح ثم يستمر بالنزول عند التجاوز)
                         a.brkDay.push(used <= allow ? 100 - _P * (used / allow) : Math.max(0, (100 - _P) - (used - allow) / allow * (100 - _P)));
@@ -1965,8 +2253,8 @@
                     let ws = 0, tot = 0;
                     ['att', 'brk', 'tkt', 'hrs'].forEach(c => { if (comps[c] !== null) { ws += SC_WEIGHTS[c]; tot += comps[c] * SC_WEIGHTS[c]; } });
                     const _bonus = (comps.ord !== null) ? comps.ord / 100 * SC_WEIGHTS.ord : 0;
-                    return { k, name: a.name || k, att, brk, tkt, ord, hrs, total: Math.min(100, (ws ? tot / ws : 0) + (ws ? _bonus : 0)), hasData, days: a.days, absent: a.absent };
-                }).sort((p, q) => (q.hasData - p.hasData) || (q.total - p.total));
+                    return { k, name: a.name || k, att, brk, tkt, ord, hrs, total: Math.min(100, (ws ? tot / ws : 0) + (ws ? _bonus : 0)), hasData, days: a.days, absent: a.absent, usedAvg: a.days > 0 ? a.usedMin / a.days : 0 };
+                }).sort((p, q) => (q.hasData - p.hasData) || (Math.round(q.total * 10) - Math.round(p.total * 10)) || (p.usedAvg - q.usedAvg));   // تساوي الدرجة: الأقل بريكاً واستراحة يتقدّم
                 if (silent) return rows;
                 if (rows.length === 0) { box.style.cssText = 'padding:20px;color:#64748b;font-weight:700;'; box.innerHTML = '<p>لا يوجد موظفون.</p>'; return; }
                 window._scLast = { from, to, rows };
@@ -2024,9 +2312,7 @@
         };
 
         window.closeAdmin = () => {
-            isViewingHistory = false;
-            const section = document.getElementById('admin-section');
-            section.innerHTML = '<div class="text-center"><button onclick="window.openAdmin()" class="px-6 py-3 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-black shadow transition">⚙️ فتح لوحة المسؤول</button></div>';
+            window.lockAdmin();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 
@@ -2592,6 +2878,25 @@
                 if (changed) { try { render(); } catch (e) {} }
             } catch (e) { console.warn('[Orders]', e); }
         }
+        // ===== مسودة حقول الطلب المتأخر: تبقى سليمة عند إعادة رسم البطاقات (كل بضع ثوانٍ) =====
+        window._ld = window._ld || { o: '', r: '', open: false, other: false };
+        window._syncDD = () => {   // تحديث نص الزر والعنصر المختار دون إعادة رسم
+            const btn = document.getElementById('late-dd-btn');
+            if (btn) { const sp = btn.querySelector('span'); if (sp) sp.textContent = window._ld.r || 'اختر سبب التأخير ▾'; btn.classList.toggle('empty', !window._ld.r); btn.classList.toggle('open', !!window._ld.open); const ar = btn.querySelectorAll('span')[1]; if (ar) ar.textContent = window._ld.open ? '▴' : '▾'; }
+            const list = document.getElementById('late-dd-list'); if (list) list.style.display = window._ld.open ? 'flex' : 'none';
+            document.querySelectorAll('#late-dd-list .tk-dd-item[data-r]').forEach(c => c.classList.toggle('sel', !window._ld.other && c.dataset.r === window._ld.r));
+            const oth = document.querySelector('#late-dd-list .tk-dd-item.other'); if (oth) oth.classList.toggle('sel', !!window._ld.other);
+        };
+        window.toggleLateDD = (ev) => { if (ev) ev.stopPropagation(); window._ld.open = !window._ld.open; window._syncDD(); };
+        window.pickLateReason = (btn, other) => {
+            const ri = document.getElementById('late-reason'); if (!ri) return;
+            window._ld.open = false;
+            if (other) { window._ld.other = true; window._ld.r = ''; ri.value = ''; ri.style.display = ''; window._syncDD(); ri.focus(); return; }
+            window._ld.other = false; window._ld.r = btn.dataset.r || ''; ri.value = window._ld.r; ri.style.display = 'none'; window._syncDD();
+            const li = document.getElementById('late-input');
+            if (li && !li.value.trim()) li.focus();   // الخطوة التالية: رقم الطلب إن لم يكتبه
+        };
+        document.addEventListener('click', (e) => { if (window._ld.open && !e.target.closest('#late-dd')) { window._ld.open = false; window._syncDD(); } });
         window.addOrder = async (b, late) => {
             const baseKind = _ordKind();
             const kind = late ? baseKind + '_late' : baseKind;
@@ -2620,7 +2925,7 @@
                 return;
             }
             inp.value = '';
-            if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; }
+            if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.other = false; window._ld.open = false; }
             if (navigator.vibrate) navigator.vibrate(30);
             _ordLoadedAt[kind] = Date.now();
             await _fetchMyOrders(kind);
@@ -3284,15 +3589,24 @@
             let lat = null, lng = null;
             const isRealCheckIn = (status === 'حضور') && (d.status === 'خارج العمل' || d.status === 'أوف' || !d.startTime);
             if (!isAdmin && isRealCheckIn && !auto) {
-                const loc = await verifyWorkLocation();
+                const loc = await verifyWorkLocation(id);
                 if (!loc.ok) { alert('📍 ' + loc.msg); return; }
                 lat = (loc.lat === undefined ? null : loc.lat); lng = (loc.lng === undefined ? null : loc.lng);
             }
             if (!_checkWriteRate()) return;
+            // إن كان الموظف في بريك: نحفظ محلياً ثواني البريك التي لا يحفظها السيرفر (يحفظ دقائق كاملة فقط)
+            const _wasBreak = d.status === 'بريك' && d.lastActionTime && d.startTime;
+            const _bkStart = _wasBreak ? d.lastActionTime : 0, _bkBase = Number(d.totalBreakMinutes) || 0, _bkNow = Date.now();
+            const _bkHour = _wasBreak ? Math.max(0, Math.floor((_bkStart - d.startTime) / 3600000)) : 0;
             const { data, error } = await supabaseClient.rpc('alsaree3_set_status', {
                 p_key: id, p_status: status, p_auto: auto === true, p_lat: lat, p_lng: lng
             });
             if (error) { _rpcFail(error); try { await resyncEmployees(); } catch (e) {} return; }
+            if (_wasBreak && status !== 'بريك' && data && data.total_break_minutes !== undefined) {
+                const savedMin = (Number(data.total_break_minutes) || 0) - _bkBase;
+                const rem = Math.floor((_bkNow - _bkStart) / 1000) - Math.max(0, savedMin) * 60;
+                if (rem > 0) _brkRemAdd(id, _bkHour, _brkRemGet(id, _bkHour) + Math.min(rem, 59));
+            }
             _applyServerRow(id, data);
         };
 
@@ -3372,24 +3686,8 @@
                 
                 let currentHourIndex = d.startTime ? Math.floor((now - d.startTime) / 3600000) : 0;
                 let hourlyBreaks = d.hourlyBreaks || {};
-                // احسب فقط دقائق البريك الحالي التي تقع ضمن الساعة الحالية
-                let cB = 0;
-                if (d.status === 'بريك' && d.lastActionTime) {
-                    let breakStartHourIndex = d.startTime ? Math.floor((d.lastActionTime - d.startTime) / 3600000) : 0;
-                    if (breakStartHourIndex === currentHourIndex) {
-                        // البريك بدأ في نفس الساعة الحالية — احسب كل المدة
-                        cB = Math.floor((now - d.lastActionTime) / 60000);
-                    } else {
-                        // البريك بدأ في ساعة سابقة — الجزء الحالي فقط هو من بداية الساعة الحالية
-                        let currentHourStart = d.startTime + (currentHourIndex * 3600000);
-                        cB = Math.floor((now - currentHourStart) / 60000);
-                        if (cB < 0) cB = 0;
-                    }
-                }
-                let activeHourBreakTotal = (hourlyBreaks[currentHourIndex] || 0) + cB;
-                // لا نعرض عداد البريك الساعي لموظف خارج العمل أو في يوم OFF (كانت تظهر بقايا قديمة)
-                if (d.status === 'خارج العمل' || d.status === 'أوف') activeHourBreakTotal = 0;
-                
+                let activeHourBreakSec = d.startTime ? breakSecInHour(d, i, currentHourIndex, now) : 0;
+                if (d.status === 'خارج العمل' || d.status === 'أوف') activeHourBreakSec = 0;
                 let cR = (d.status === 'راحة' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
                 let accR = (d.totalRestMinutes || 0) + cR;
 
@@ -3435,13 +3733,15 @@
                         if (!_ordLoadedAt[_lk] || Date.now() - _ordLoadedAt[_lk] > 20000) { _ordLoadedAt[_lk] = Date.now(); _fetchMyOrders(_lk); }
                         const _ol = _ordData[_k], _dn = _ol.length;
                         const _ll = _ordData[_lk], _ln = _ll.length;
-                        const _lateReasons = { accept: ['ازدحام في المطعم', 'نقص مواد', 'المطعم لم يستلم الطلب', 'المطعم مغلق', 'مشكلة في النظام'], dispatch: ['لا يوجد سائق متاح', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'تأخير في التجهيز من المطعم', 'تبديل السائق', 'سائق عطلان', 'مشكلة في النظام'] };
+                        const _lateReasons = { accept: ['ازدحام في المطعم', 'نقص مواد', 'المطعم لم يستلم الطلب', 'المطعم مغلق', 'مشكلة في النظام'], dispatch: ['سائق لديه أكثر من طلب', 'لا يوجد سائق متاح', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'تأخير في التجهيز من المطعم', 'تبديل السائق', 'سائق عطلان', 'مشكلة في النظام'] };
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
                         taskExtra = `<div class="tk-row"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
                         <div class="tk-stat">اليوم: ${_dn} طلب ${_k === 'accept' ? 'مقبول' : 'موزّع'}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>
-                        <div class="tk-row" style="margin-bottom:6px;"><input id="late-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="${_latePh}" class="tk-input" onkeydown="if(event.key===\'Enter\'){var r=document.getElementById(\'late-reason\');if(r)r.focus();}"></div>
-                        <div class="tk-row"><input id="late-reason" type="text" list="late-reasons-${_k}" maxlength="100" autocomplete="off" placeholder="سبب التأخير (إجباري)" class="tk-input" style="direction:rtl;" onkeydown="if(event.key===\'Enter\')window.addOrder(null, true)"><datalist id="late-reasons-${_k}">${_lateReasons[_k].map(r => '<option value="' + r + '">').join('')}</datalist><button onclick="window.addOrder(this, true)" class="tk-btn" style="flex:0 0 auto;background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر</button></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="late-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="${_latePh}" class="tk-input" oninput="window._ld.o=this.value" onkeydown="if(event.key===\'Enter\'){var r=document.getElementById(\'late-reason\');if(r)r.focus();}"></div>
+                        <div class="tk-dd" id="late-dd"><button type="button" id="late-dd-btn" class="tk-dd-btn${window._ld.r ? '' : ' empty'}${window._ld.open ? ' open' : ''}" onclick="window.toggleLateDD(event)"><span>${window._ld.r ? sanitize(window._ld.r) : 'اختر سبب التأخير ▾'}</span><span>${window._ld.open ? '▴' : '▾'}</span></button>
+                        <div class="tk-dd-list" id="late-dd-list" style="display:${window._ld.open ? 'flex' : 'none'};">${_lateReasons[_k].map(r => '<button type="button" class="tk-dd-item' + (window._ld.r === r && !window._ld.other ? ' sel' : '') + '" data-r="' + sanitize(r) + '" onclick="window.pickLateReason(this)">' + sanitize(r) + '</button>').join('')}<button type="button" class="tk-dd-item other${window._ld.other ? ' sel' : ''}" onclick="window.pickLateReason(this, true)">✏️ أخرى (اكتب السبب)</button></div></div>
+                        <div class="tk-row"><input id="late-reason" type="text" maxlength="100" autocomplete="off" placeholder="اكتب السبب هنا (إجباري)" class="tk-input" style="direction:rtl;${window._ld.other ? '' : 'display:none;'}" oninput="window._ld.r=this.value;window._syncDD()" onkeydown="if(event.key==='Enter')window.addOrder(null, true)"><button onclick="window.addOrder(this, true)" class="tk-btn" style="flex:0 0 auto;background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر</button></div>
                         <div class="tk-stat">اليوم: ${_ln} ${_lateTx}${_ln ? ' · آخر رقم: ' + sanitize(String(_ll[0].order_no)) : ''}</div>`;
                     }
                 }
@@ -3472,7 +3772,7 @@
                 h += `<div class="card-box ${stateClass} ${myCard}">
                         <h3 class="font-black text-black mb-2 text-2xl flex justify-between items-center tracking-wide"><span>${myBadge}${sanitize(d.name)}</span><div class="text-right leading-tight">${d.startTime && d.status !== 'أوف' ? '<span class=\"text-xs font-bold text-gray-400\">⏱ Total Hours</span><br>' : ''}${curTimer}</div></h3>
                         <div class="flex justify-between text-xs font-bold text-gray-500 mb-4 border-b border-green-200 pb-2">
-                            <span>Break This Hour: <b id="hourbreak-${sanitize(i)}" class="${activeHourBreakTotal > 5 ? 'text-red-600' : 'text-black'}">${activeHourBreakTotal} / 5 min</b></span>
+                            <span>Break This Hour: <b id="hourbreak-${sanitize(i)}" class="${activeHourBreakSec > BREAK_HOUR_LIMIT_SEC ? 'text-red-600' : 'text-black'}">${mmss(activeHourBreakSec)} / 5:00</b></span>
                             <span>Available Rest: <b id="accrest-${sanitize(i)}" class="${accR > 15 ? 'text-red-600': 'text-black'}">${accR} / 15 m</b></span>
                         </div>
                         <div class="flex justify-between text-xs font-bold text-gray-500 mb-4 pb-2 border-b border-green-200">
@@ -3483,11 +3783,18 @@
                     </div>`;
             }
             const _di = document.getElementById('disp-input'), _dv = _di ? _di.value : '', _df = !!_di && document.activeElement === _di;
+            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason'].indexOf(_ae.id) !== -1) ? _ae.id : null;
+            const _aeSel = _aeId ? [_ae.selectionStart, _ae.selectionEnd] : null;
             document.getElementById('app').innerHTML = h;
             if (_dv || _df) {
                 const _nx = document.getElementById('disp-input');
                 if (_nx) { _nx.value = _dv; if (_df) { _nx.focus(); try { _nx.setSelectionRange(_dv.length, _dv.length); } catch (e) {} } }
             }
+            // حقول الطلب المتأخر: استرجاع المسودة والتركيز بعد إعادة الرسم
+            { const _li = document.getElementById('late-input'), _lr = document.getElementById('late-reason');
+              if (_li && window._ld.o) _li.value = window._ld.o;
+              if (_lr && window._ld.r) _lr.value = window._ld.r;
+              if (_aeId) { const _t = document.getElementById(_aeId); if (_t) { _t.focus(); try { if (_aeSel && _aeSel[0] !== null) _t.setSelectionRange(_aeSel[0], _aeSel[1]); } catch (e) {} } } }
         }
         
         // ===== معالجة لقطة بيانات الموظفين (تُستدعى من Realtime ومن المزامنة الدورية) =====
@@ -3614,7 +3921,7 @@
 
                     // أضف البريك المحفوظ في hourlyBreaks لهذه الساعة (بالدقائق → ثواني)
                     let hourlyBreaks = d.hourlyBreaks || {};
-                    hourBreakSec += (hourlyBreaks[currentHourIdx] || 0) * 60;
+                    hourBreakSec += (hourlyBreaks[currentHourIdx] || 0) * 60 + _brkRemGet(i, currentHourIdx);
 
                     // عرض mm:ss
                     let dispMin = Math.floor(hourBreakSec / 60);
@@ -3627,8 +3934,8 @@
                     let remMin = Math.floor(remainSec / 60);
                     let remSec = (remainSec % 60).toString().padStart(2, '0');
 
-                    hourBreakEl.textContent = `${dispMin}:${dispSec} / 5m  (resets in ${remMin}:${remSec})`;
-                    hourBreakEl.className = hourBreakSec >= 300 ? 'text-red-600' : 'text-black';
+                    hourBreakEl.textContent = `${dispMin}:${dispSec} / 5:00  (resets in ${remMin}:${remSec})`;
+                    hourBreakEl.className = hourBreakSec > BREAK_HOUR_LIMIT_SEC ? 'text-red-600' : 'text-black';
                 }
                 if (accRestEl) {
                     let cR = (d.status === 'راحة' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
