@@ -5,7 +5,7 @@
     <script>if (window.top !== window.self) { document.documentElement.innerHTML = ""; throw new Error("framing blocked"); }</script>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'">
     <meta name="referrer" content="no-referrer">
     <title>Alsaree3 - Digital Monitoring System v6.4</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -2972,6 +2972,21 @@
             if (li && !li.value.trim()) li.focus();   // الخطوة التالية: رقم الطلب إن لم يكتبه
         };
         document.addEventListener('click', (e) => { if (window._ld.open && !e.target.closest('#late-dd')) { window._ld.open = false; window._syncDD(); } });
+        // ===== إرسال الطلبات المتأخرة إلى Google Sheets (Apps Script) =====
+        const SHEET_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxlWcgTLmzHcrsJY_K2R2vTjECDy2yL3h79EGTa0GToA8hDJ7ZzgSs47dKMcQYR6KJ2/exec'; // رابط النشر ينتهي بـ /exec
+        const SHEET_SECRET = 'Poiuytrewq123456@';          // نفس قيمة SECRET في السكربت
+        function sendLateToSheet(order, reason) {
+            if (!SHEET_WEBAPP_URL) return;
+            try {
+                fetch(SHEET_WEBAPP_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ secret: SHEET_SECRET, order: order, restaurant: '', reason: reason, date: getTodayDateString() }),
+                    keepalive: true
+                }).catch(function (e) { console.warn('[Sheet]', e); });
+            } catch (e) { console.warn('[Sheet]', e); }
+        }
         window.addOrder = async (b, late) => {
             const baseKind = _ordKind();
             const kind = late ? baseKind + '_late' : baseKind;
@@ -2999,6 +3014,7 @@
                     : '❌ تعذّر التسجيل. حاول مرة أخرى.\n\nالسبب: ' + (error.code ? '[' + error.code + '] ' : '') + _em.slice(0, 200));
                 return;
             }
+            if (late) sendLateToSheet(v, reason);
             inp.value = '';
             if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.other = false; window._ld.open = false; }
             if (navigator.vibrate) navigator.vibrate(30);
