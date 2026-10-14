@@ -5,7 +5,7 @@
     <script>if (window.top !== window.self) { document.documentElement.innerHTML = ""; throw new Error("framing blocked"); }</script>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src https://alsaree3.jitbit.com; worker-src 'none'; manifest-src 'none'">
     <meta name="referrer" content="no-referrer">
     <title>Alsaree3 - Digital Monitoring System v6.4</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -80,6 +80,10 @@
         #logout-btn:hover { border-color:#f87171; color:#dc2626; }
         #leave-btn { position:fixed; top:18px; left:125px; z-index:100; background:#fff; border:2px solid #86efac; border-radius:14px; padding:8px 18px; font-family:'Cairo',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer; color:#15803d; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
         #leave-btn:hover { background:#f0fdf4; }
+        #ticket-btn { position:fixed; top:62px; left:18px; z-index:100; background:#fff; border:2px solid #c7d2fe; border-radius:14px; padding:8px 18px; font-family:'Cairo',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer; color:#4338ca; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
+        #ticket-btn:hover { background:#eef2ff; }
+        #helpdesk-btn { position:fixed; top:62px; left:18px; z-index:100; background:#fff; border:2px solid #fed7aa; border-radius:14px; padding:8px 18px; font-family:'Cairo',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer; color:#c2410c; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
+        #helpdesk-btn:hover { background:#fff7ed; }
     </style>
 </head>
 <body>
@@ -105,6 +109,7 @@
     </div>
 
     <button id="leave-btn" style="display:none" onclick="window.openLeaveRequest()">📝 طلب إجازة / إذن</button>
+    <button id="helpdesk-btn" style="display:none" onclick="window.openHelpdesk()">🗂️ التذاكر (Helpdesk)</button>
     <!-- زر الخروج -->
     <button id="logout-btn" style="display:none" onclick="window.doLogout()">🚪 خروج</button>
 
@@ -858,7 +863,7 @@
             document.getElementById('main-app').style.display = 'block';
             document.getElementById('logout-btn').style.display = 'block';
             document.getElementById('logout-btn').textContent = (loggedInId === '__admin__') ? '🚪 خروج المسؤول' : '🚪 خروج';
-            document.getElementById('leave-btn').style.display = (loggedInId === '__admin__') ? 'none' : 'block';
+            document.getElementById('leave-btn').style.display = (loggedInId === '__admin__') ? 'none' : 'block'; document.getElementById('helpdesk-btn').style.display = 'block';
             resetBtn();
 
             if (loggedInId !== '__admin__') {
@@ -914,7 +919,8 @@
                 document.getElementById('main-app').style.display = 'none';
                 document.getElementById('logout-btn').style.display = 'none';
                 document.getElementById('leave-btn').style.display = 'none';
-                ['leave-overlay', 'leave-admin-overlay', 'month-overlay', 'device-log-overlay', 'pin-overlay'].forEach(oid => { const oe = document.getElementById(oid); if (oe) oe.remove(); });
+                document.getElementById('helpdesk-btn').style.display = 'none';
+                ['tk-hd-overlay', 'tk-jb-overlay', 'leave-overlay', 'leave-admin-overlay', 'month-overlay', 'device-log-overlay', 'pin-overlay'].forEach(oid => { const oe = document.getElementById(oid); if (oe) oe.remove(); });
                 document.getElementById('admin-section').classList.add('hidden');
                 document.getElementById('admin-section').innerHTML = '';
                 document.getElementById('login-password').value = '';
@@ -2987,6 +2993,107 @@
                 }).catch(function (e) { console.warn('[Sheet]', e); });
             } catch (e) { console.warn('[Sheet]', e); }
         }
+        // ===== تسجيل الطلبات المقبولة (رقم الطلب + اسم المطعم) في شيت "القبول" عبر Apps Script =====
+        const ACCEPT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzNN1kxknuwJmqOcFp2h5rko-ADZ7fQWzkOGq9cs3MZyKqx2Zzj1oze26CvC31Jscg/exec';   // ← الصق هنا رابط النشر (ينتهي بـ /exec) الخاص بسكربت شيت القبول
+        window._accR = window._accR || '';
+        function _sheetEmpName() { return (loggedInId === '__admin__') ? 'المسؤول' : ((employeesData[loggedInId] && employeesData[loggedInId].name) || String(loggedInId || '')); }
+        function _postAcceptSheet(payload) {
+            if (!ACCEPT_SHEET_URL) return;
+            try {
+                fetch(ACCEPT_SHEET_URL, {
+                    method: 'POST', mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(Object.assign({ secret: SHEET_SECRET, date: getTodayDateString(), time: new Date().toLocaleTimeString('en-GB', { hour12: false }) }, payload)),
+                    keepalive: true
+                }).catch(function (e) { console.warn('[AcceptSheet]', e); });
+            } catch (e) { console.warn('[AcceptSheet]', e); }
+        }
+        function sendAcceptToSheet(order, restaurant) { _postAcceptSheet({ type: 'accept', order: order, restaurant: restaurant, employee: _sheetEmpName() }); }
+        function sendAcceptUndoToSheet(order) { _postAcceptSheet({ type: 'accept_undo', order: order }); }
+        // ===== عرض Helpdesk (Jitbit) كاملاً داخل البرنامج =====
+        const HELPDESK_URL = 'https://alsaree3.jitbit.com/helpdesk/';
+        window.openHelpdesk = function () {
+            // Jitbit يمنع التضمين داخل iframe، لذلك نفتحه في تبويب جديد
+            window.open(HELPDESK_URL, '_blank', 'noopener');
+            return;
+            if (document.getElementById('tk-hd-overlay')) return;
+            const ov = document.createElement('div');
+            ov.id = 'tk-hd-overlay';
+            ov.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:1100;display:flex;flex-direction:column;direction:rtl;font-family:Cairo,sans-serif;';
+            const bar = document.createElement('div');
+            bar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f1f5f9;border-bottom:1px solid #cbd5e1;';
+            const close = document.createElement('button');
+            close.textContent = '✖ إغلاق';
+            close.style.cssText = 'background:#fff;border:2px solid #cbd5e1;border-radius:12px;padding:6px 14px;font-family:inherit;font-weight:800;cursor:pointer;';
+            close.onclick = function () { ov.remove(); };
+            const ext = document.createElement('a');
+            ext.textContent = '↗ فتح في نافذة جديدة';
+            ext.href = HELPDESK_URL; ext.target = '_blank'; ext.rel = 'noopener';
+            ext.style.cssText = 'background:#fff7ed;border:2px solid #fed7aa;color:#c2410c;border-radius:12px;padding:6px 14px;font-weight:800;text-decoration:none;font-size:.9rem;';
+            const ttl = document.createElement('div');
+            ttl.textContent = '🗂️ Helpdesk';
+            ttl.style.cssText = 'font-weight:900;color:#334155;margin-inline-start:auto;';
+            bar.appendChild(close); bar.appendChild(ext); bar.appendChild(ttl);
+            const fr = document.createElement('iframe');
+            fr.src = HELPDESK_URL;
+            fr.style.cssText = 'flex:1;width:100%;border:0;background:#fff;';
+            fr.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
+            ov.appendChild(bar); ov.appendChild(fr);
+            document.body.appendChild(ov);
+        };
+
+        // ===== رفع تذكرة إلى Jitbit تلقائياً (عبر Apps Script) =====
+        window.openJitbitTicket = function () {
+            if (document.getElementById('tk-jb-overlay')) return;
+            const who = (loggedInId === '__admin__') ? 'المسؤول' : ((employeesData[loggedInId] && employeesData[loggedInId].name) || String(loggedInId || ''));
+            const ov = document.createElement('div');
+            ov.id = 'tk-jb-overlay';
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;direction:rtl;font-family:Cairo,sans-serif;';
+            const box = document.createElement('div');
+            box.style.cssText = 'background:#fff;border-radius:24px;padding:24px;width:100%;max-width:440px;box-shadow:0 25px 50px rgba(0,0,0,.25);';
+            const fld = 'width:100%;border:2px solid #c7d2fe;border-radius:14px;padding:10px 12px;font-family:inherit;font-size:.95rem;font-weight:700;margin-bottom:10px;outline:none;';
+            box.innerHTML = '<div style="font-weight:900;font-size:1.1rem;color:#4338ca;margin-bottom:12px;">🎫 رفع تذكرة إلى Helpdesk</div>'
+                + '<input id="tkjb-subject" maxlength="150" placeholder="عنوان التذكرة (إجباري)" style="' + fld + '">'
+                + '<input id="tkjb-order" maxlength="30" placeholder="رقم الطلب (اختياري)" style="' + fld + 'direction:ltr;text-align:center;">'
+                + '<textarea id="tkjb-body" rows="5" maxlength="2000" placeholder="تفاصيل المشكلة (إجباري)" style="' + fld + 'resize:vertical;"></textarea>'
+                + '<div id="tkjb-msg" style="min-height:22px;font-weight:800;font-size:.85rem;margin-bottom:8px;"></div>'
+                + '<div style="display:flex;gap:8px;"><button id="tkjb-send" style="flex:1;background:#4f46e5;color:#fff;border:none;border-radius:14px;padding:11px;font-family:inherit;font-weight:900;cursor:pointer;">إرسال</button>'
+                + '<button id="tkjb-cancel" style="flex:0 0 auto;background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:14px;padding:11px 18px;font-family:inherit;font-weight:800;cursor:pointer;">إلغاء</button></div>';
+            ov.appendChild(box);
+            document.body.appendChild(ov);
+            const msg = document.getElementById('tkjb-msg'), btn = document.getElementById('tkjb-send');
+            document.getElementById('tkjb-cancel').onclick = function () { ov.remove(); };
+            ov.addEventListener('click', function (ev) { if (ev.target === ov) ov.remove(); });
+            btn.onclick = async function () {
+                const subject = document.getElementById('tkjb-subject').value.trim();
+                const order = document.getElementById('tkjb-order').value.trim();
+                const body = document.getElementById('tkjb-body').value.trim();
+                msg.style.color = '#dc2626';
+                if (!subject || !body) { msg.textContent = '⚠️ اكتب العنوان والتفاصيل'; return; }
+                if (!SHEET_WEBAPP_URL) { msg.textContent = '⚠️ رابط الربط غير مضبوط'; return; }
+                if (!_checkWriteRate()) return;
+                btn.disabled = true; btn.textContent = 'جارٍ الإرسال...';
+                try {
+                    const r = await fetch(SHEET_WEBAPP_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ secret: SHEET_SECRET, type: 'jitbit_ticket', subject: subject, order: order, body: body, employee: who, date: getTodayDateString() })
+                    });
+                    const t = (await r.text()).trim();
+                    if (t.indexOf('ok') === 0) {
+                        msg.style.color = '#15803d'; msg.textContent = '✅ تم رفع التذكرة بنجاح';
+                        setTimeout(function () { ov.remove(); }, 1400);
+                        return;
+                    }
+                    msg.textContent = '❌ فشل الرفع: ' + t.slice(0, 120);
+                } catch (e) {
+                    console.error('[JitbitTicket]', e);
+                    msg.textContent = '❌ تعذّر الاتصال. حاول مرة أخرى.';
+                }
+                btn.disabled = false; btn.textContent = 'إرسال';
+            };
+        };
+
         window.addOrder = async (b, late) => {
             const baseKind = _ordKind();
             const kind = late ? baseKind + '_late' : baseKind;
@@ -3001,6 +3108,12 @@
                 if (reason.length > 100) reason = reason.slice(0, 100);
             }
             if (!/^[0-9A-Za-z\u0600-\u06FF#_\-\/]{1,30}$/.test(v)) { alert('⚠️ رقم الطلب غير صالح'); return; }
+            let restName = '';
+            if (!late && baseKind === 'accept') {
+                const rn = document.getElementById('acc-rest');
+                restName = rn ? rn.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
+                if (!restName) { alert('⚠️ اكتب اسم المطعم أولاً'); if (rn) rn.focus(); return; }
+            }
             if (!_checkWriteRate()) return;
             if (b && b.classList) b.classList.add('busy');
             const { error } = await supabaseClient.rpc('alsaree3_dispatch_add', late ? { p_order: v, p_kind: kind, p_reason: reason } : { p_order: v, p_kind: kind });
@@ -3015,6 +3128,7 @@
                 return;
             }
             if (late) sendLateToSheet(v, reason);
+            if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName); window._accR = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; }
             inp.value = '';
             if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.other = false; window._ld.open = false; }
             if (navigator.vibrate) navigator.vibrate(30);
@@ -3027,6 +3141,7 @@
             _tkToast(_msg + v, async () => {
                 const { error: e2 } = await supabaseClient.rpc('alsaree3_dispatch_undo', { p_kind: kind });
                 if (e2) { console.error('[OrderUndo]', e2); return false; }
+                if (kind === 'accept') sendAcceptUndoToSheet(v);
                 await _fetchMyOrders(kind); refreshOrderCounts(true); try { render(); } catch (e) {} return true;
             });
         };
@@ -3827,7 +3942,8 @@
                         const _lateReasons = { accept: ['ازدحام في المطعم', 'نقص مواد', 'المطعم لم يستلم الطلب', 'المطعم مغلق', 'مشكلة في النظام'], dispatch: ['سائق لديه أكثر من طلب', 'لا يوجد سائق متاح', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'تأخير في التجهيز من المطعم', 'تبديل السائق', 'سائق عطلان', 'مشكلة في النظام'] };
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
-                        taskExtra = `<div class="tk-row"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
+                        taskExtra = `${_k === 'accept' ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{window.addOrder();}}"></div>
+                        <div class="tk-row"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (إجباري)" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>` : `<div class="tk-row"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>`}
                         <div class="tk-stat">اليوم: ${_dn} طلب ${_k === 'accept' ? 'مقبول' : 'موزّع'}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>
                         <div class="tk-row" style="margin-bottom:6px;"><input id="late-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="${_latePh}" class="tk-input" oninput="window._ld.o=this.value" onkeydown="if(event.key===\'Enter\'){var r=document.getElementById(\'late-reason\');if(r)r.focus();}"></div>
                         <div class="tk-dd" id="late-dd"><button type="button" id="late-dd-btn" class="tk-dd-btn${window._ld.r ? '' : ' empty'}${window._ld.open ? ' open' : ''}" onclick="window.toggleLateDD(event)"><span>${window._ld.r ? sanitize(window._ld.r) : 'اختر سبب التأخير ▾'}</span><span>${window._ld.open ? '▴' : '▾'}</span></button>
@@ -3837,7 +3953,7 @@
                     }
                 }
                 const waBox = (i === loggedInId && !isAdmin) ? `
-                        <div class="mb-3"><button onclick="window.openWA()" class="tk-btn tk-wa tk-small">💬 واتساب الزبائن</button></div>` : '';
+                        <div class="mb-3 flex gap-2"><button onclick="window.openWA()" class="tk-btn tk-wa tk-small">💬 واتساب الزبائن</button><button onclick="window.openJitbitTicket()" class="tk-btn tk-in tk-small">🎫 رفع تذكرة</button></div>` : '';
                 const taskButtonsHtml = canControl ? `
                         <div class="block mb-3 text-xs font-bold text-black text-right pr-1">المهمة الحالية (Current Task):</div>
                         <div class="grid grid-cols-3 gap-2 mb-5">
@@ -3874,13 +3990,14 @@
                     </div>`;
             }
             const _di = document.getElementById('disp-input'), _dv = _di ? _di.value : '', _df = !!_di && document.activeElement === _di;
-            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason'].indexOf(_ae.id) !== -1) ? _ae.id : null;
+            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest'].indexOf(_ae.id) !== -1) ? _ae.id : null;
             const _aeSel = _aeId ? [_ae.selectionStart, _ae.selectionEnd] : null;
             document.getElementById('app').innerHTML = h;
             if (_dv || _df) {
                 const _nx = document.getElementById('disp-input');
                 if (_nx) { _nx.value = _dv; if (_df) { _nx.focus(); try { _nx.setSelectionRange(_dv.length, _dv.length); } catch (e) {} } }
             }
+            { const _ar = document.getElementById('acc-rest'); if (_ar && window._accR) _ar.value = window._accR; }
             // حقول الطلب المتأخر: استرجاع المسودة والتركيز بعد إعادة الرسم
             { const _li = document.getElementById('late-input'), _lr = document.getElementById('late-reason');
               if (_li && window._ld.o) _li.value = window._ld.o;
