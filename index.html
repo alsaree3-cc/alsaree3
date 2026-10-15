@@ -1824,7 +1824,7 @@
                 ['w_att', 'الحضور والتأخير', 40, 0, v => { SC_WEIGHTS.att = v; }, () => SC_WEIGHTS.att],
                 ['w_brk', 'البريك والاستراحة', 30, 0, v => { SC_WEIGHTS.brk = v; }, () => SC_WEIGHTS.brk],
                 ['w_tkt', 'سرعة حل الطلبات (واتساب) — 0 = خارج التقييم', 0, 0, v => { SC_WEIGHTS.tkt = v; }, () => SC_WEIGHTS.tkt],
-                ['w_ord', 'مكافأة الطلبات (نقاط إضافية، بلا خصم)', 5, 0, v => { SC_WEIGHTS.ord = v; }, () => SC_WEIGHTS.ord],
+                ['w_ord', 'مكافأة القبول والتوزيع الشهرية (نقاط إضافية، بلا خصم)', 5, 0, v => { SC_WEIGHTS.ord = v; }, () => SC_WEIGHTS.ord],
                 ['w_hrs', 'ساعات الحضور', 30, 0, v => { SC_WEIGHTS.hrs = v; }, () => SC_WEIGHTS.hrs]
             ]],
             ['المسموح والأهداف', [
@@ -1844,7 +1844,7 @@
                 ['viol_pts', 'خصم كل مخالفة بريك/استراحة (نقطة)', 3, 0, v => { VIOLATION_POINTS = v; }, () => VIOLATION_POINTS],
                 ['brk_pen', 'أقصى خصم متدرج للبريك (نقطة)', 10, 0, v => { BREAK_SCORE_MAX_PENALTY = v; }, () => BREAK_SCORE_MAX_PENALTY],
                 ['rest_pen', 'أقصى خصم متدرج للاستراحة (نقطة)', 5, 0, v => { REST_SCORE_MAX_PENALTY = v; }, () => REST_SCORE_MAX_PENALTY],
-                ['ord_bonus', 'أقصى مكافأة للطلبات (نقطة)', 5, 0, v => { ORDERS_BONUS_MAX = v; }, () => ORDERS_BONUS_MAX]
+                ['ord_bonus', 'أقصى مكافأة يومية للقبول والتوزيع (نقطة)', 5, 0, v => { ORDERS_BONUS_MAX = v; }, () => ORDERS_BONUS_MAX]
             ]],
             ['الأرشفة والتصفير الشهري (1 = تشغيل، 0 = إيقاف)', [
                 ['auto_arch', 'أرشفة البطاقة وتصفيرها تلقائياً نهاية كل شهر', 1, 0, v => { CARD_AUTO_ARCHIVE = v ? 1 : 0; }, () => CARD_AUTO_ARCHIVE]
@@ -2273,7 +2273,7 @@
                 const th = 'padding:7px;font-size:0.75rem;';
                 window._scDetail = detail;
                 let html = '<table style="width:100%;border-collapse:collapse;font-size:0.88rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
-                    + ['#', 'الموظف', 'الدرجة النهائية', 'الحضور والتأخير', 'البريك والاستراحة', 'سرعة الطلبات', 'قبول وتوزيع الطلبات', 'ساعات الحضور', 'أيام/غياب'].map(h => '<th style="padding:10px;">' + h + '</th>').join('') + '</tr></thead><tbody>';
+                    + ['#', 'الموظف', 'الدرجة النهائية', 'الحضور والتأخير', 'البريك والاستراحة', 'سرعة الطلبات', '🎁 مكافأة القبول والتوزيع', 'ساعات الحضور', 'أيام/غياب'].map(h => '<th style="padding:10px;">' + h + '</th>').join('') + '</tr></thead><tbody>';
                 rows.forEach((r, i) => {
                     const offNow = getOffDay(r.k), shiftNow = getShiftStart(r.k);
                     const sel = '<select class="es-off" data-key="' + sanitize(r.k) + '" style="border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;font-family:Cairo,sans-serif;font-weight:700;font-size:0.8rem;">'
@@ -2302,7 +2302,7 @@
                     html += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + (r.hasData ? (medals[i] || (i + 1)) : '-') + '</td>'
                         + '<td style="padding:9px;font-weight:900;cursor:pointer;" onclick="window.scToggle(' + i + ')" title="تفصيل الأيام والتحكم">' + sanitize(r.name) + ' <span style="color:#94a3b8;font-size:0.75rem;">▾</span></td>'
                         + '<td style="padding:9px;font-weight:900;font-size:1.1rem;color:' + (r.hasData ? c(r.total) : '#94a3b8') + ';">' + (r.hasData ? Math.round(r.total) : '-') + '</td>'
-                        + [r.att, r.brk, r.tkt, r.ord, r.hrs].map(v => '<td style="padding:9px;font-weight:800;color:' + c(v) + ';">' + f(v) + '</td>').join('')
+                        + [['att', r.att], ['brk', r.brk], ['tkt', r.tkt], ['ord', r.ord], ['hrs', r.hrs]].map(p => { const v = p[1]; if (p[0] === 'ord') return '<td style="padding:9px;font-weight:900;color:' + (v ? '#15803d' : '#94a3b8') + ';">' + (v === null ? '-' : '+' + (Math.round(v / 100 * SC_WEIGHTS.ord * 10) / 10) + ' نقطة') + '</td>'; return '<td style="padding:9px;font-weight:800;color:' + c(v) + ';">' + f(v) + '</td>'; }).join('')
                         + '<td style="padding:9px;direction:ltr;text-align:right;">' + r.days + ' / ' + r.absent + '</td></tr>'
                         + '<tr id="scd-' + i + '" style="display:none;background:#f8fafc;"><td colspan="9" style="padding:10px 12px;">' + ctrl + '<div style="overflow-x:auto;">' + dt + '</div></td></tr>';
                 });
@@ -2960,7 +2960,7 @@
             } catch (e) { console.warn('[Orders]', e); }
         }
         // ===== مسودة حقول الطلب المتأخر: تبقى سليمة عند إعادة رسم البطاقات (كل بضع ثوانٍ) =====
-        window._ld = window._ld || { o: '', r: '', open: false, other: false };
+        window._ld = window._ld || { o: '', r: '', rest: '', open: false, other: false };
         window._syncDD = () => {   // تحديث نص الزر والعنصر المختار دون إعادة رسم
             const btn = document.getElementById('late-dd-btn');
             if (btn) { const sp = btn.querySelector('span'); if (sp) sp.textContent = window._ld.r || 'اختر سبب التأخير ▾'; btn.classList.toggle('empty', !window._ld.r); btn.classList.toggle('open', !!window._ld.open); const ar = btn.querySelectorAll('span')[1]; if (ar) ar.textContent = window._ld.open ? '▴' : '▾'; }
@@ -2981,14 +2981,14 @@
         // ===== إرسال الطلبات المتأخرة إلى Google Sheets (Apps Script) =====
         const SHEET_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxlWcgTLmzHcrsJY_K2R2vTjECDy2yL3h79EGTa0GToA8hDJ7ZzgSs47dKMcQYR6KJ2/exec'; // رابط النشر ينتهي بـ /exec
         const SHEET_SECRET = 'Poiuytrewq123456@';          // نفس قيمة SECRET في السكربت
-        function sendLateToSheet(order, reason) {
+        function sendLateToSheet(order, reason, restaurant) {
             if (!SHEET_WEBAPP_URL) return;
             try {
                 fetch(SHEET_WEBAPP_URL, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ secret: SHEET_SECRET, order: order, restaurant: '', reason: reason, date: getTodayDateString() }),
+                    body: JSON.stringify({ secret: SHEET_SECRET, order: order, restaurant: restaurant || '', reason: reason, date: getTodayDateString() }),
                     keepalive: true
                 }).catch(function (e) { console.warn('[Sheet]', e); });
             } catch (e) { console.warn('[Sheet]', e); }
@@ -3100,12 +3100,16 @@
             const inp = document.getElementById(late ? 'late-input' : 'disp-input'); if (!inp) return;
             const v = inp.value.trim();
             if (!v) { inp.focus(); return; }
-            let reason = null;
+            let reason = null, lateRest = '';
             if (late) {
                 const ri = document.getElementById('late-reason');
                 reason = ri ? ri.value.trim() : '';
                 if (!reason) { alert('⚠️ اكتب سبب التأخير أولاً'); if (ri) ri.focus(); return; }
                 if (reason.length > 100) reason = reason.slice(0, 100);
+                const lr = document.getElementById('late-rest');
+                lateRest = lr ? lr.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
+                if (!lateRest && baseKind === 'accept') { alert('⚠️ اكتب اسم المطعم أولاً'); if (lr) lr.focus(); return; }
+                if (lateRest) reason = (reason + ' — المطعم: ' + lateRest).slice(0, 100);   // يظهر اسم المطعم للمسؤول مع السبب
             }
             if (!/^[0-9A-Za-z\u0600-\u06FF#_\-\/]{1,30}$/.test(v)) { alert('⚠️ رقم الطلب غير صالح'); return; }
             let restName = '';
@@ -3127,10 +3131,10 @@
                     : '❌ تعذّر التسجيل. حاول مرة أخرى.\n\nالسبب: ' + (error.code ? '[' + error.code + '] ' : '') + _em.slice(0, 200));
                 return;
             }
-            if (late) sendLateToSheet(v, reason);
+            if (late) sendLateToSheet(v, reason.split(' — المطعم: ')[0], lateRest);
             if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName); window._accR = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; }
             inp.value = '';
-            if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.other = false; window._ld.open = false; }
+            if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.rest = ''; const _lr2 = document.getElementById('late-rest'); if (_lr2) _lr2.value = ''; window._ld.other = false; window._ld.open = false; }
             if (navigator.vibrate) navigator.vibrate(30);
             _ordLoadedAt[kind] = Date.now();
             await _fetchMyOrders(kind);
@@ -3939,7 +3943,7 @@
                         if (!_ordLoadedAt[_lk] || Date.now() - _ordLoadedAt[_lk] > 20000) { _ordLoadedAt[_lk] = Date.now(); _fetchMyOrders(_lk); }
                         const _ol = _ordData[_k], _dn = _ol.length;
                         const _ll = _ordData[_lk], _ln = _ll.length;
-                        const _lateReasons = { accept: ['ازدحام في المطعم', 'نقص مواد', 'المطعم لم يستلم الطلب', 'المطعم مغلق', 'مشكلة في النظام'], dispatch: ['سائق لديه أكثر من طلب', 'لا يوجد سائق متاح', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'تأخير في التجهيز من المطعم', 'تبديل السائق', 'سائق عطلان', 'مشكلة في النظام'] };
+                        const _lateReasons = { accept: ['تأخير من المطعم', 'ازدحام في المطعم', 'نقص مواد', 'المطعم لم يستلم الطلب', 'المطعم مغلق', 'مشكلة في النظام'], dispatch: ['سائق لديه أكثر من طلب', 'لا يوجد سائق متاح', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'تأخير في التجهيز من المطعم', 'تبديل السائق', 'سائق عطلان', 'مشكلة في النظام'] };
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
                         taskExtra = `${_k === 'accept' ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{window.addOrder();}}"></div>
@@ -3948,12 +3952,13 @@
                         <div class="tk-row" style="margin-bottom:6px;"><input id="late-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="${_latePh}" class="tk-input" oninput="window._ld.o=this.value" onkeydown="if(event.key===\'Enter\'){var r=document.getElementById(\'late-reason\');if(r)r.focus();}"></div>
                         <div class="tk-dd" id="late-dd"><button type="button" id="late-dd-btn" class="tk-dd-btn${window._ld.r ? '' : ' empty'}${window._ld.open ? ' open' : ''}" onclick="window.toggleLateDD(event)"><span>${window._ld.r ? sanitize(window._ld.r) : 'اختر سبب التأخير ▾'}</span><span>${window._ld.open ? '▴' : '▾'}</span></button>
                         <div class="tk-dd-list" id="late-dd-list" style="display:${window._ld.open ? 'flex' : 'none'};">${_lateReasons[_k].map(r => '<button type="button" class="tk-dd-item' + (window._ld.r === r && !window._ld.other ? ' sel' : '') + '" data-r="' + sanitize(r) + '" onclick="window.pickLateReason(this)">' + sanitize(r) + '</button>').join('')}<button type="button" class="tk-dd-item other${window._ld.other ? ' sel' : ''}" onclick="window.pickLateReason(this, true)">✏️ أخرى (اكتب السبب)</button></div></div>
+                        <div class="tk-row"><input id="late-rest" type="text" maxlength="60" autocomplete="off" placeholder="${_k === 'accept' ? 'اسم المطعم (إجباري)' : 'اسم المطعم (اختياري)'}" value="${sanitize(window._ld.rest || '')}" class="tk-input" style="direction:rtl;" oninput="window._ld.rest=this.value" onkeydown="if(event.key==='Enter')window.addOrder(null, true)"></div>
                         <div class="tk-row"><input id="late-reason" type="text" maxlength="100" autocomplete="off" placeholder="اكتب السبب هنا (إجباري)" class="tk-input" style="direction:rtl;${window._ld.other ? '' : 'display:none;'}" oninput="window._ld.r=this.value;window._syncDD()" onkeydown="if(event.key==='Enter')window.addOrder(null, true)"><button onclick="window.addOrder(this, true)" class="tk-btn" style="flex:0 0 auto;background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر</button></div>
                         <div class="tk-stat">اليوم: ${_ln} ${_lateTx}${_ln ? ' · آخر رقم: ' + sanitize(String(_ll[0].order_no)) : ''}</div>`;
                     }
                 }
                 const waBox = (i === loggedInId && !isAdmin) ? `
-                        <div class="mb-3 flex gap-2"><button onclick="window.openWA()" class="tk-btn tk-wa tk-small">💬 واتساب الزبائن</button><button onclick="window.openJitbitTicket()" class="tk-btn tk-in tk-small">🎫 رفع تذكرة</button></div>` : '';
+                        <div class="mb-3 flex gap-2"><button onclick="window.openWA()" class="tk-btn tk-wa tk-small">💬 واتساب الزبائن</button></div>` : '';
                 const taskButtonsHtml = canControl ? `
                         <div class="block mb-3 text-xs font-bold text-black text-right pr-1">المهمة الحالية (Current Task):</div>
                         <div class="grid grid-cols-3 gap-2 mb-5">
