@@ -920,7 +920,7 @@
                 document.getElementById('logout-btn').style.display = 'none';
                 document.getElementById('leave-btn').style.display = 'none';
                 document.getElementById('helpdesk-btn').style.display = 'none';
-                ['tk-hd-overlay', 'tk-jb-overlay', 'leave-overlay', 'leave-admin-overlay', 'month-overlay', 'device-log-overlay', 'pin-overlay'].forEach(oid => { const oe = document.getElementById(oid); if (oe) oe.remove(); });
+                ['tk-hd-overlay', 'tk-jb-overlay', 'leave-overlay', 'leave-admin-overlay', 'month-overlay', 'mreport-overlay', 'device-log-overlay', 'pin-overlay'].forEach(oid => { const oe = document.getElementById(oid); if (oe) oe.remove(); });
                 document.getElementById('admin-section').classList.add('hidden');
                 document.getElementById('admin-section').innerHTML = '';
                 document.getElementById('login-password').value = '';
@@ -1024,7 +1024,7 @@
         window.lockAdmin = () => {
             const section = document.getElementById('admin-section'); if (!section) return;
             isViewingHistory = false;
-            ['add-emp-overlay', 'loc-admin-overlay', 'leave-admin-overlay', 'month-overlay', 'device-log-overlay'].forEach(oid => { const oe = document.getElementById(oid); if (oe) oe.remove(); });
+            ['add-emp-overlay', 'loc-admin-overlay', 'leave-admin-overlay', 'month-overlay', 'mreport-overlay', 'device-log-overlay'].forEach(oid => { const oe = document.getElementById(oid); if (oe) oe.remove(); });
             section.classList.remove('hidden');
             section.innerHTML = '<div class="text-center"><button onclick="window.openAdmin()" class="px-6 py-3 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-black shadow transition">🔒 فتح لوحة المسؤول</button></div>';
         };
@@ -1064,6 +1064,7 @@
 
                 <div class="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 rounded-2xl bg-slate-50 border border-slate-200">
                     <button onclick="window.openMonthSummary()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100"><span class="text-sm">📊</span><span>ملخص الشهر</span></button>
+                    <button onclick="window.openMonthReport()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100"><span class="text-sm">📈</span><span>تقرير الشهر</span></button>
                     <button onclick="window.openScoreCard()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100"><span class="text-sm">🏆</span><span>بطاقة الأداء</span></button>
                     <button onclick="window.downloadPDF()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-green-50 border-green-200 text-green-800 hover:bg-green-100"><span class="text-sm">📄</span><span>تقرير PDF</span></button>
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
@@ -1749,6 +1750,177 @@
                 console.error('[MonthSummary]', e);
                 box.innerHTML = '<p style="color:#dc2626;">❌ فشل تحميل ملخص الشهر</p>';
             }
+        };
+
+
+        // ===== تقرير الشهر: من بداية الشهر حتى اليوم (أو أي مدة) — عرض + حفظ في السيرفر + PDF/CSV =====
+        window._mrLast = null;
+        const _MR_BTN = 'background:#f1f5f9;border:1px solid #cbd5e1;border-radius:10px;padding:6px 12px;font-family:Cairo,sans-serif;font-weight:700;font-size:0.82rem;cursor:pointer;';
+        const _MR_INP = 'border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;font-family:Cairo,sans-serif;';
+        window.openMonthReport = () => {
+            if (loggedInId !== '__admin__') return;
+            const today = getTodayDateString(), first = today.slice(0, 8) + '01';
+            _modal('mreport-overlay', '📈 تقرير الشهر', `
+                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">
+                    <label style="font-weight:800;font-size:0.85rem;">من <input type="date" id="mr-from" value="${first}" style="${_MR_INP}"></label>
+                    <label style="font-weight:800;font-size:0.85rem;">إلى <input type="date" id="mr-to" value="${today}" style="${_MR_INP}"></label>
+                    <button style="${_MR_BTN}background:#4f46e5;color:#fff;border-color:#4f46e5;" onclick="window.loadMonthReport()">🔍 عرض</button>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+                    <button style="${_MR_BTN}" onclick="window._mrPreset('month')">من بداية الشهر حتى اليوم</button>
+                    <button style="${_MR_BTN}" onclick="window._mrPreset('full')">كل الشهر الحالي</button>
+                    <button style="${_MR_BTN}" onclick="window._mrPreset('last')">الشهر الماضي</button>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;padding:8px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;">
+                    <button style="${_MR_BTN}background:#f0fdf4;border-color:#86efac;color:#166534;" onclick="window.saveMonthReport()">💾 حفظ التقرير</button>
+                    <button style="${_MR_BTN}" onclick="window.mrPdf()">📄 PDF</button>
+                    <button style="${_MR_BTN}" onclick="window.mrCsv()">📊 Excel / CSV</button>
+                    <button style="${_MR_BTN}background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8;" onclick="window.mrShowSaved()">📚 التقارير المحفوظة</button>
+                </div>
+                <div id="mr-msg" style="font-size:0.82rem;font-weight:800;margin-bottom:8px;min-height:1em;"></div>
+                <div style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:10px;">النسبة = متوسط التقييم اليومي لأيام الدوام الفعلية (أيام OFF والإجازات المعتمدة والغياب لا تُحتسب). بيانات اليوم الحالي تظهر حسب ما هو محفوظ في السجل.</div>
+                <div id="mr-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div>`, 1100);
+            window.loadMonthReport();
+        };
+        window._mrPreset = (kind) => {
+            const t = getTodayDateString(), [y, m] = t.split('-').map(Number);
+            let from = t.slice(0, 8) + '01', to = t;
+            if (kind === 'full') to = _ymd(new Date(y, m, 0));
+            if (kind === 'last') { from = _ymd(new Date(y, m - 2, 1)); to = _ymd(new Date(y, m - 1, 0)); }
+            document.getElementById('mr-from').value = from; document.getElementById('mr-to').value = to;
+            window.loadMonthReport();
+        };
+        function _mrMsg(txt, color) { const e = document.getElementById('mr-msg'); if (e) { e.style.color = color || '#64748b'; e.textContent = txt || ''; } }
+        function _mrPct(a) { return a.days > 0 ? Math.round((a.sum / a.days) * 10) / 10 : null; }
+        function _mrHrs(secs) { return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm'; }
+        window.loadMonthReport = async () => {
+            if (loggedInId !== '__admin__') return;
+            const box = document.getElementById('mr-content'); if (!box) return;
+            const from = (document.getElementById('mr-from') || {}).value, to = (document.getElementById('mr-to') || {}).value;
+            if (!_isoDate(from) || !_isoDate(to)) { _mrMsg('⚠️ اختر التاريخين', '#d97706'); return; }
+            if (from > to) { _mrMsg('⚠️ تاريخ البداية بعد النهاية', '#d97706'); return; }
+            if ((new Date(to) - new Date(from)) / 86400000 > 366) { _mrMsg('⚠️ المدة أطول من سنة', '#d97706'); return; }
+            _mrMsg(''); box.style.color = '#94a3b8'; box.innerHTML = '⏳ جاري التحميل...';
+            try {
+                const { data, error } = await supabaseClient.from('alsaree3_history')
+                    .select('*').gte('history_date', from).lte('history_date', to).order('history_date').limit(5000);
+                if (error) throw error;
+                await _loadEmpMeta();
+                const { data: lvRows } = await supabaseClient.from('alsaree3_leave_requests')
+                    .select('employee_key,kind,start_date,days,hours').eq('status', 'approved');
+                const leaveSet = {}, permHours = {};
+                (lvRows || []).forEach(q => {
+                    if (q.kind === 'day') _expandDates(q.start_date, q.days).forEach(ds => { if (ds >= from && ds <= to) (leaveSet[q.employee_key] = leaveSet[q.employee_key] || new Set()).add(ds); });
+                    else if (q.start_date >= from && q.start_date <= to) permHours[q.employee_key] = (permHours[q.employee_key] || 0) + (Number(q.hours) || 0);
+                });
+                const agg = {}, today = getTodayDateString();
+                Object.keys(employeesData).forEach(k => { agg[k] = { k, name: employeesData[k].name, days: 0, off: 0, absent: 0, leave: 0, permH: 0, sum: 0, br: 0, rest: 0, secs: 0 }; });
+                (data || []).forEach(r => {
+                    const a = agg[r.employee_key] = agg[r.employee_key] || { k: r.employee_key, name: r.name, days: 0, off: 0, absent: 0, leave: 0, permH: 0, sum: 0, br: 0, rest: 0, secs: 0 };
+                    if (r.name) a.name = r.name;
+                    const rs0 = _resetUpTo(r.employee_key); if (rs0 && r.history_date <= rs0) return;
+                    const ls = leaveSet[r.employee_key]; if (ls && ls.has(r.history_date)) return;
+                    const st = String(r.start_time_str || '');
+                    if (st === 'EXCLUDED') return;
+                    if (isOffDay(r.employee_key, r.history_date) || st.toUpperCase().startsWith('OFF')) { a.off++; return; }
+                    if (!st || st === 'Absent' || st === 'لم يحضر') { if (r.history_date === today) return; a.absent++; return; }
+                    a.days++;
+                    a.sum += (r.rating == null ? 100 : Number(r.rating) || 0);
+                    a.br += Number(r.total_break_minutes) || 0;
+                    a.rest += Number(r.total_rest_minutes) || 0;
+                    a.secs += Number(r.total_work_seconds) || 0;
+                });
+                Object.keys(agg).forEach(k => { agg[k].leave = leaveSet[k] ? leaveSet[k].size : 0; agg[k].permH = Math.round((permHours[k] || 0) * 100) / 100; });
+                const rows = Object.values(agg).sort((p, q) => String(p.name).localeCompare(String(q.name)));
+                window._mrLast = { from, to, rows };
+                if (!rows.length) { box.innerHTML = '<p>لا توجد بيانات لهذه المدة.</p>'; return; }
+                box.style.color = '#000'; box.style.padding = '0'; box.innerHTML = _mrTableHtml(rows);
+            } catch (e) { console.error('[MonthReport]', e); box.style.color = '#dc2626'; box.innerHTML = '❌ فشل تحميل التقرير'; }
+        };
+        function _mrTableHtml(rows) {
+            const th = 'padding:9px;', heads = ['الموظف', 'أيام الدوام', 'OFF', 'غياب', 'إجازة', 'إذن زمني (س)', 'نسبة الفترة', 'إجمالي البريك', 'إجمالي الراحة', 'ساعات العمل'];
+            let h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.88rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
+                + heads.map(x => '<th style="' + th + '">' + x + '</th>').join('') + '</tr></thead><tbody>';
+            rows.forEach(a => {
+                const pct = a.pct !== undefined ? a.pct : _mrPct(a);
+                const color = pct === null ? '#64748b' : pct >= 90 ? '#16a34a' : pct >= 75 ? '#d97706' : '#dc2626';
+                h += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="' + th + 'font-weight:900;">' + sanitize(a.name || '-') + '</td>'
+                    + '<td style="' + th + '">' + a.days + '</td><td style="' + th + '">' + a.off + '</td><td style="' + th + '">' + a.absent + '</td><td style="' + th + '">' + a.leave + '</td><td style="' + th + '">' + a.permH + '</td>'
+                    + '<td style="' + th + 'font-weight:900;font-size:1.02rem;color:' + color + ';">' + (pct === null ? '-' : pct + '%') + '</td>'
+                    + '<td style="' + th + '">' + a.br + ' min</td><td style="' + th + '">' + a.rest + ' min</td><td style="' + th + 'direction:ltr;text-align:right;">' + _mrHrs(a.secs) + '</td></tr>';
+            });
+            return h + '</tbody></table></div>';
+        }
+        // حفظ التقرير في السيرفر (داخل monthly_history لكل موظف تحت monthReports) — لا يغيّر أي حساب حالي
+        window.saveMonthReport = async () => {
+            if (loggedInId !== '__admin__') return;
+            const L = window._mrLast; if (!L || !L.rows || !L.rows.length) { _mrMsg('⚠️ اعرض التقرير أولاً', '#d97706'); return; }
+            if (!confirm('💾 حفظ تقرير الفترة (' + L.from + ' ← ' + L.to + ') في السيرفر؟\n(إن وُجد تقرير محفوظ لنفس الفترة سيُستبدل)')) return;
+            const at = new Date().toISOString().slice(0, 16).replace('T', ' '), key = L.from + '_' + L.to, snaps = {};
+            L.rows.forEach(a => { snaps[a.k] = { from: L.from, to: L.to, name: a.name, days: a.days, off: a.off, absent: a.absent, leave: a.leave, permH: a.permH, pct: _mrPct(a), br: a.br, rest: a.rest, secs: a.secs, savedAt: at }; });
+            _mrMsg('⏳ جاري الحفظ...');
+            try {
+                await _mhPatch(Object.keys(snaps), (mh, k) => {
+                    const mr = Object.assign({}, mh.monthReports || {}); mr[key] = snaps[k];
+                    Object.keys(mr).sort().reverse().slice(36).forEach(old => delete mr[old]);   // نحتفظ بآخر 36 تقرير فقط
+                    mh.monthReports = mr; return mh;
+                });
+                _mrMsg('✅ تم حفظ التقرير (' + key.replace('_', ' ← ') + ')', '#16a34a');
+            } catch (e) { console.error('[MonthReportSave]', e); _mrMsg('❌ فشل الحفظ: ' + ((e && e.message) || ''), '#dc2626'); }
+        };
+        window.mrShowSaved = async () => {
+            if (loggedInId !== '__admin__') return;
+            const box = document.getElementById('mr-content'); if (!box) return;
+            box.style.color = '#94a3b8'; box.style.padding = '20px'; box.innerHTML = '⏳ جاري التحميل...';
+            try {
+                const { data, error } = await supabaseClient.from('alsaree3_employees').select('employee_key,monthly_history'); if (error) throw error;
+                const by = {};
+                (data || []).forEach(r => { const a = _parseMH(r.monthly_history).monthReports || {}; Object.keys(a).forEach(k => { (by[k] = by[k] || []).push(Object.assign({ k: r.employee_key }, a[k])); }); });
+                const keys = Object.keys(by).sort().reverse();
+                if (!keys.length) { box.innerHTML = 'لا توجد تقارير محفوظة بعد.'; return; }
+                box.style.color = '#000'; box.style.padding = '0';
+                box.innerHTML = keys.map(k => {
+                    const rs = by[k].sort((a, b) => String(a.name).localeCompare(String(b.name))), h0 = rs[0];
+                    return '<div style="border:1px solid #e2e8f0;border-radius:14px;padding:10px;margin-bottom:12px;"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">'
+                        + '<b style="color:#334155;">' + sanitize(h0.from) + ' ← ' + sanitize(h0.to) + '</b><span style="font-size:0.75rem;color:#64748b;font-weight:700;">محفوظ: ' + sanitize(h0.savedAt || '') + '</span>'
+                        + '<button data-k="' + sanitize(k) + '" onclick="window.mrDeleteSaved(this.dataset.k)" style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:8px;padding:2px 10px;font-weight:800;font-size:0.72rem;cursor:pointer;font-family:Cairo,sans-serif;">🗑️ حذف</button></div>'
+                        + _mrTableHtml(rs) + '</div>';
+                }).join('');
+            } catch (e) { console.error('[MonthReportSaved]', e); box.style.color = '#dc2626'; box.innerHTML = '❌ فشل تحميل التقارير المحفوظة'; }
+        };
+        window.mrDeleteSaved = async (key) => {
+            if (loggedInId !== '__admin__') return;
+            if (!(await _askPin('حذف تقرير محفوظ'))) return;
+            if (!confirm('🗑️ حذف التقرير (' + key + ') لكل الموظفين؟ لا يمكن التراجع.')) return;
+            try { await _mhPatch(null, mh => { if (mh.monthReports) { mh.monthReports = Object.assign({}, mh.monthReports); delete mh.monthReports[key]; } return mh; }); window.mrShowSaved(); }
+            catch (e) { console.error(e); alert('❌ فشل الحذف: ' + ((e && e.message) || '')); }
+        };
+        window.mrPdf = async () => {
+            if (loggedInId !== '__admin__') return;
+            const L = window._mrLast; if (!L || !L.rows || !L.rows.length) { _mrMsg('⚠️ اعرض التقرير أولاً', '#d97706'); return; }
+            _mrMsg('⏳ جاري تجهيز PDF...');
+            try {
+                await loadPdfLibs();
+                const { jsPDF } = window.jspdf, doc = new jsPDF({ orientation: 'landscape' });
+                doc.setFontSize(14); doc.text('Alsaree3 Morning Call Center - Monthly Report: ' + L.from + ' to ' + L.to, 14, 15);
+                const body = L.rows.map(a => { const p = _mrPct(a); return [a.name || a.k, a.days, a.off, a.absent, a.leave, a.permH, p === null ? '-' : p + '%', a.br + ' min', a.rest + ' min', _mrHrs(a.secs)]; });
+                doc.autoTable({ head: [['Name', 'Work days', 'OFF', 'Absent', 'Leave', 'Permission (h)', 'Avg Rating', 'Break', 'Rest', 'Work hours']], body, startY: 22,
+                    styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [238, 242, 255] } });
+                doc.save('Alsaree3_Monthly_Report_' + L.from + '_to_' + L.to + '.pdf');
+                _mrMsg('✅ تم تحميل PDF', '#16a34a');
+            } catch (e) { console.error('[MonthReportPDF]', e); _mrMsg('❌ فشل إنشاء PDF', '#dc2626'); }
+        };
+        window.mrCsv = () => {
+            if (loggedInId !== '__admin__') return;
+            const L = window._mrLast; if (!L || !L.rows || !L.rows.length) { _mrMsg('⚠️ اعرض التقرير أولاً', '#d97706'); return; }
+            const q = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""').replace(/^([=+\-@])/, "'$1") + '"';
+            const lines = [['الموظف', 'أيام الدوام', 'OFF', 'غياب', 'إجازة', 'إذن زمني (س)', 'نسبة الفترة %', 'البريك (د)', 'الراحة (د)', 'ساعات العمل'].map(q).join(',')];
+            L.rows.forEach(a => { const p = _mrPct(a); lines.push([a.name || a.k, a.days, a.off, a.absent, a.leave, a.permH, p === null ? '' : p, a.br, a.rest, _mrHrs(a.secs)].map(q).join(',')); });
+            const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob), a = document.createElement('a');
+            a.href = url; a.download = 'Alsaree3_Monthly_Report_' + L.from + '_to_' + L.to + '.csv';
+            document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+            _mrMsg('✅ تم تحميل الملف', '#16a34a');
         };
 
         // ===== بطاقة الأداء الشهرية (للمسؤول): درجة من 100 بأوزان قابلة للتعديل =====
