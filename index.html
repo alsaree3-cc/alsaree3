@@ -2902,7 +2902,8 @@
 
                 let h = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;"><span style="font-weight:800;">📅 التاريخ</span>'
                       + '<input type="date" value="' + sanitize(date) + '" onchange="window.openTickets(this.value)" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
-                      + '<button onclick="window.openTickets(window._tkDate)" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:4px 10px;font-weight:800;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تحديث</button></div>'
+                      + '<button onclick="window.openTickets(window._tkDate)" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:4px 10px;font-weight:800;cursor:pointer;font-family:Cairo,sans-serif;">🔄 تحديث</button>'
+                      + '<button onclick="window.openAdminAddOrder()" style="background:#0d9488;color:#fff;border:none;border-radius:8px;padding:4px 12px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">➕ إضافة طلب (قبول / توزيع)</button></div>'
                       + '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:16px;padding:10px 12px;margin-bottom:12px;">'
                       + '<div style="font-weight:900;color:#92400e;margin-bottom:6px;font-size:0.9rem;">🔎 بحث برقم الطلب</div>'
                       + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
@@ -3034,6 +3035,68 @@
             if (!_checkWriteRate()) return;
             const { error } = await supabaseClient.rpc('alsaree3_ticket_edit', { p_id: Number(id), p_body: v.trim() });
             if (error) { _adminToolFail(error); return; }
+            await _adminToolDone();
+        };
+        // ===== المسؤول يسجّل طلباً (قبول / توزيع / متأخر) نيابةً عن موظف =====
+        window.openAdminAddOrder = () => {
+            if (loggedInId !== '__admin__') return;
+            const date = window._tkDate || getTodayDateString();
+            const emps = Object.keys(employeesData).filter(k => k !== '__admin__');
+            const opts = emps.map(k => `<option value="${sanitize(k)}">${sanitize(employeesData[k].name || k)}</option>`).join('');
+            _modal('aao-overlay', '➕ إضافة طلب لموظف', `
+                <div style="display:grid;gap:10px;">
+                    <label style="font-weight:700;">الموظف<select id="aao-emp" class="login-select">${opts}</select></label>
+                    <label style="font-weight:700;">النوع
+                        <select id="aao-kind" class="login-select" onchange="window.aaoKindChange()">
+                            <option value="accept">✅ قبول</option><option value="dispatch">🚴 توزيع</option>
+                            <option value="accept_late">⏱️ متأخر في التجهيز (قبول)</option><option value="dispatch_late">⏱️ متأخر في الوصول (توزيع)</option>
+                        </select></label>
+                    <label style="font-weight:700;">رقم الطلب<input id="aao-order" class="login-select" style="direction:ltr;text-align:left;" maxlength="30" inputmode="numeric" autocomplete="off"></label>
+                    <label id="aao-rest-wrap" style="font-weight:700;">اسم المطعم<input id="aao-rest" class="login-select" maxlength="60" autocomplete="off"></label>
+                    <label id="aao-reason-wrap" style="font-weight:700;display:none;">سبب التأخير<input id="aao-reason" class="login-select" maxlength="100" autocomplete="off"></label>
+                    <label style="font-weight:700;">التاريخ<input id="aao-date" type="date" class="login-select" value="${sanitize(date)}"></label>
+                    <div id="aao-msg" class="error-msg"></div>
+                    <button id="aao-go" class="login-btn" onclick="window.submitAdminAddOrder()">إضافة</button>
+                </div>`, 480);
+        };
+        window.aaoKindChange = () => {
+            const k = document.getElementById('aao-kind').value, late = k.endsWith('_late');
+            document.getElementById('aao-reason-wrap').style.display = late ? '' : 'none';
+            document.getElementById('aao-rest-wrap').style.display = (k === 'dispatch') ? 'none' : '';
+        };
+        window.submitAdminAddOrder = async () => {
+            if (loggedInId !== '__admin__') return;
+            const g = id => document.getElementById(id), msg = g('aao-msg'), btn = g('aao-go');
+            const emp = g('aao-emp').value, kind = g('aao-kind').value, late = kind.endsWith('_late'), base = late ? kind.replace('_late', '') : kind;
+            const order = g('aao-order').value.trim(), date = g('aao-date').value;
+            let rest = g('aao-rest').value.trim().replace(/\s+/g, ' ').slice(0, 60), reason = g('aao-reason').value.trim();
+            if (!emp || !employeesData[emp]) { msg.textContent = '⚠️ اختر الموظف'; return; }
+            if (!/^[0-9A-Za-z\u0600-\u06FF#_\-\/]{1,30}$/.test(order)) { msg.textContent = '⚠️ رقم الطلب غير صالح'; return; }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { msg.textContent = '⚠️ اختر التاريخ'; return; }
+            if (base === 'accept' && !rest) { msg.textContent = '⚠️ اكتب اسم المطعم'; return; }
+            if (late) {
+                if (!reason) { msg.textContent = '⚠️ اكتب سبب التأخير'; return; }
+                if (rest) reason = (reason + ' — المطعم: ' + rest).slice(0, 100);
+            }
+            if (!_checkWriteRate()) return;
+            btn.disabled = true; msg.textContent = '';
+            const args = { p_employee: emp, p_order: order, p_kind: kind, p_date: date };
+            if (late) args.p_reason = reason;
+            const { error } = await supabaseClient.rpc('alsaree3_order_add_admin', args);
+            btn.disabled = false;
+            if (error) {
+                const em = String(error.message || '');
+                console.error('[AdminAddOrder]', error);
+                msg.textContent = em.startsWith('[A3]') ? '⚠️ ' + em.slice(4)
+                    : (em.indexOf('duplicate') !== -1 || error.code === '23505') ? '⚠️ رقم الطلب هذا مسجّل مسبقاً في هذا اليوم'
+                    : (error.code === 'PGRST202' || /function|could not find/i.test(em)) ? '❌ دالة الإضافة غير موجودة في Supabase بعد (alsaree3_order_add_admin)'
+                    : '❌ تعذّرت الإضافة: ' + em.slice(0, 120);
+                return;
+            }
+            const nm = employeesData[emp].name || emp;
+            if (base === 'accept' && !late) _postAcceptSheet({ type: 'accept', order: order, restaurant: rest, employee: nm, date: date });
+            else if (late && date === getTodayDateString()) sendLateToSheet(order, reason.split(' — المطعم: ')[0], rest);
+            g('aao-overlay').remove();
             await _adminToolDone();
         };
         window.adminDelOrder = async (id) => {
