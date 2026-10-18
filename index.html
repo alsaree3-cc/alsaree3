@@ -2880,7 +2880,7 @@
             const _btn = (label, fn, bg, bd, col) => '<button onclick="' + fn + '" style="background:' + bg + ';border:1px solid ' + bd + ';color:' + col + ';border-radius:8px;padding:2px 8px;font-weight:900;font-size:0.75rem;cursor:pointer;font-family:Cairo,sans-serif;margin-inline-start:4px;">' + label + '</button>';
             const _delB = (fn) => _btn('🗑️ حذف', fn, '#fef2f2', '#fca5a5', '#b91c1c');
             const _edtB = (fn) => _btn('✏️ تعديل', fn, '#eff6ff', '#93c5fd', '#1d4ed8');
-            const _nm = (k) => sanitize(employeesData[k] ? employeesData[k].name : k);
+            const _nm = (k) => k === '__admin__' ? 'المسؤول' : sanitize(employeesData[k] ? employeesData[k].name : k);
             try {
                 let { data, error } = await supabaseClient.rpc('alsaree3_tickets_admin', { p_date: date });
                 if (error) throw error;
@@ -3042,7 +3042,8 @@
             if (loggedInId !== '__admin__') return;
             const date = window._tkDate || getTodayDateString();
             const emps = Object.keys(employeesData).filter(k => k !== '__admin__');
-            const opts = emps.map(k => `<option value="${sanitize(k)}">${sanitize(employeesData[k].name || k)}</option>`).join('');
+            const opts = emps.map(k => `<option value="${sanitize(k)}">${sanitize(employeesData[k].name || k)}</option>`).join('')
+                + '<option value="__admin__">👤 المسؤول</option>';
             _modal('aao-overlay', '➕ إضافة طلب لموظف', `
                 <div style="display:grid;gap:10px;">
                     <label style="font-weight:700;">الموظف<select id="aao-emp" class="login-select">${opts}</select></label>
@@ -3070,7 +3071,7 @@
             const emp = g('aao-emp').value, kind = g('aao-kind').value, late = kind.endsWith('_late'), base = late ? kind.replace('_late', '') : kind;
             const order = g('aao-order').value.trim(), date = g('aao-date').value;
             let rest = g('aao-rest').value.trim().replace(/\s+/g, ' ').slice(0, 60), reason = g('aao-reason').value.trim();
-            if (!emp || !employeesData[emp]) { msg.textContent = '⚠️ اختر الموظف'; return; }
+            if (!emp || (emp !== '__admin__' && !employeesData[emp])) { msg.textContent = '⚠️ اختر الموظف'; return; }
             if (!/^[0-9A-Za-z\u0600-\u06FF#_\-\/]{1,30}$/.test(order)) { msg.textContent = '⚠️ رقم الطلب غير صالح'; return; }
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { msg.textContent = '⚠️ اختر التاريخ'; return; }
             if (base === 'accept' && !rest) { msg.textContent = '⚠️ اكتب اسم المطعم'; return; }
@@ -3093,7 +3094,7 @@
                     : '❌ تعذّرت الإضافة: ' + em.slice(0, 120);
                 return;
             }
-            const nm = employeesData[emp].name || emp;
+            const nm = emp === '__admin__' ? 'المسؤول' : (employeesData[emp].name || emp);
             if (base === 'accept' && !late) _postAcceptSheet({ type: 'accept', order: order, restaurant: rest, employee: nm, date: date });
             else if (late && date === getTodayDateString()) sendLateToSheet(order, reason.split(' — المطعم: ')[0], rest);
             g('aao-overlay').remove();
