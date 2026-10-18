@@ -161,10 +161,9 @@
             const r = _ruleFor(id); return r ? r.start : null;
         }
         function getOffDay(id) {
-            const _r = _ruleFor(id); if (_r && _r.off !== null && _r.off !== undefined) return _r.off;   // أيام الأوف المحددة في SHIFT_RULES هي المرجع
             const m = _empMeta[id];
-            if (m && m.off !== null && m.off !== undefined) return m.off;
-            const r = _ruleFor(id); return r ? r.off : null;
+            if (m && m.off !== null && m.off !== undefined) return m.off;   // المحفوظ من لوحة المسؤول (أوقات الدوام) هو المرجع
+            const r = _ruleFor(id); return r ? r.off : null;                // وإلا القواعد الثابتة SHIFT_RULES
         }
         function isOffDay(id, dateStr) {
             const od = getOffDay(id); if (od === null || od === undefined) return false;
@@ -1073,6 +1072,7 @@
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
                     <button onclick="window.openAddEmployee()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"><span class="text-sm">➕</span><span>إضافة موظف</span></button>
 
+                    <button onclick="window.openEmpSchedules()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-teal-50 border-teal-200 text-teal-800 hover:bg-teal-100"><span class="text-sm">🕘</span><span>أوقات الدوام</span></button>
                     <button onclick="window.openEmpLocations()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100"><span class="text-sm">📍</span><span>مواقع الموظفين</span></button>
                     <button onclick="window.openDeviceLog()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">📱</span><span>سجل الأجهزة</span></button>
                 </div>
@@ -1516,6 +1516,94 @@
         };
 
         // ===== مواقع الموظفين: المسؤول يحدد موقع ونطاق كل موظف =====
+        // ===== أوقات دوام الموظفين: المسؤول يعرض ويعدّل بداية الدوام ويوم الأوف =====
+        const _DAY_NAMES = [['6', 'السبت'], ['0', 'الأحد'], ['1', 'الاثنين'], ['2', 'الثلاثاء'], ['3', 'الأربعاء'], ['4', 'الخميس'], ['5', 'الجمعة']];
+        function _shiftEndLabel(st) {
+            const m = /^(\d{1,2}):(\d{2})/.exec(String(st || '')); if (!m) return '—';
+            const t = (Number(m[1]) * 60 + Number(m[2]) + Math.round((Number(SC_DAILY_HOURS) || 8) * 60)) % 1440;
+            return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
+        }
+        window.esLiveEnd = (k) => {
+            const i = document.getElementById('es-st-' + k), o = document.getElementById('es-end-' + k);
+            if (i && o) o.textContent = _shiftEndLabel(i.value);
+        };
+        window.openEmpSchedules = async () => {
+            if (loggedInId !== '__admin__') return;
+            _modal('sched-admin-overlay', '🕘 أوقات دوام الموظفين', '<div style="text-align:center;padding:20px;font-weight:700;color:#94a3b8;">⏳ جاري التحميل...</div>', 760);
+            const body = document.getElementById('sched-admin-overlay-body');
+            const { data, error } = await supabaseClient.from('alsaree3_employees').select('employee_key, name, shift_start, off_day').order('employee_key');
+            if (error) {
+                console.error('[EmpSched]', error);
+                body.innerHTML = `<div style="direction:rtl;font-weight:700;color:#b91c1c;margin-bottom:8px;">⚠️ أعمدة الدوام غير موجودة في Supabase. نفّذ هذا الأمر مرة واحدة في SQL Editor ثم أعد فتح النافذة:</div>
+                    <pre style="direction:ltr;text-align:left;background:#0f172a;color:#e2e8f0;padding:12px;border-radius:12px;font-size:0.78rem;white-space:pre-wrap;">alter table alsaree3_employees
+  add column if not exists shift_start text,
+  add column if not exists off_day integer;</pre>`;
+                return;
+            }
+            try { await _loadEmpMeta(true); } catch (e) {}
+            const rows = (data || []).map(r => {
+                const k = sanitize(r.employee_key), nm = sanitize(r.name || r.employee_key);
+                const st = r.shift_start ? String(r.shift_start).slice(0, 5) : (getShiftStart(r.employee_key) || '');
+                const od = (r.off_day === null || r.off_day === undefined) ? getOffDay(r.employee_key) : Number(r.off_day);
+                const opts = '<option value="">بدون</option>' + _DAY_NAMES.map(d => `<option value="${d[0]}"${(od !== null && od !== undefined && String(od) === d[0]) ? ' selected' : ''}>${d[1]}</option>`).join('');
+                return `<div style="border:1px solid #e2e8f0;border-radius:16px;padding:12px;margin-bottom:10px;">
+                    <div style="font-weight:900;color:#334155;margin-bottom:8px;">${nm} <span style="font-size:0.75rem;color:#94a3b8;direction:ltr;display:inline-block;">(${k})</span></div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end;">
+                        <label style="font-weight:700;font-size:0.8rem;color:#475569;">بداية الدوام
+                            <input id="es-st-${k}" type="time" value="${sanitize(st)}" oninput="window.esLiveEnd('${k}')" class="login-select" style="padding:8px;font-size:0.9rem;"></label>
+                        <div style="font-weight:700;font-size:0.8rem;color:#475569;">نهاية الدوام (حسب ${Number(SC_DAILY_HOURS) || 8} ساعات)
+                            <div id="es-end-${k}" style="padding:9px;border-radius:16px;background:#f1f5f9;border:2px solid #e2e8f0;text-align:center;font-weight:900;color:#0f172a;direction:ltr;">${_shiftEndLabel(st)}</div></div>
+                        <label style="font-weight:700;font-size:0.8rem;color:#475569;">يوم الأوف
+                            <select id="es-off-${k}" class="login-select" style="padding:8px;font-size:0.9rem;">${opts}</select></label>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap;">
+                        <button onclick="window.saveOneSchedule('${k}')" style="padding:8px 16px;border-radius:12px;background:#22c55e;border:none;color:#fff;font-family:Cairo,sans-serif;font-weight:900;font-size:0.8rem;cursor:pointer;">💾 حفظ</button>
+                        <span id="es-msg-${k}" style="font-size:0.78rem;font-weight:700;"></span>
+                    </div>
+                </div>`;
+            }).join('');
+            body.innerHTML = `<div style="direction:rtl;">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#f0fdfa;border:1px solid #99f6e4;border-radius:14px;padding:10px;margin-bottom:12px;">
+                    <span style="font-weight:900;color:#115e59;font-size:0.85rem;">تعديل سريع:</span>
+                    <button onclick="window.saveAllSchedules()" style="padding:7px 14px;border-radius:12px;background:#0d9488;border:none;color:#fff;font-family:Cairo,sans-serif;font-weight:900;font-size:0.8rem;cursor:pointer;">💾 حفظ الكل</button>
+                    <span id="es-msg-all" style="font-size:0.78rem;font-weight:700;"></span>
+                </div>
+                <div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:10px;">بداية الدوام هي المعتمدة لحساب خصم التأخير، ويوم الأوف لا يُحتسب فيه تأخير أو غياب. نهاية الدوام تُحسب تلقائياً من ساعات الدوام اليومية في إعدادات بطاقة الأداء.</div>
+                ${rows || '<div style="text-align:center;color:#94a3b8;font-weight:700;">لا يوجد موظفون</div>'}
+            </div>`;
+        };
+        async function _saveSchedule(k) {
+            const st = document.getElementById('es-st-' + k), of = document.getElementById('es-off-' + k);
+            if (!st || !of) return false;
+            const row = { shift_start: st.value || null, off_day: of.value === '' ? null : Number(of.value) };
+            const { data, error } = await supabaseClient.from('alsaree3_employees').update(row).eq('employee_key', k).select('employee_key');
+            if (error || !data || !data.length) { console.error('[EmpSched save]', k, error); return false; }
+            return true;
+        }
+        window.saveOneSchedule = async (k) => {
+            if (loggedInId !== '__admin__') return;
+            const msg = document.getElementById('es-msg-' + k); if (!msg) return;
+            if (!_checkWriteRate()) return;
+            msg.style.color = '#64748b'; msg.textContent = '⏳ ...';
+            const ok = await _saveSchedule(k);
+            if (!ok) { msg.style.color = '#dc2626'; msg.textContent = '❌ فشل الحفظ (تحقق من الصلاحيات)'; return; }
+            _metaAt = 0; try { await _loadEmpMeta(true); } catch (e) {}
+            msg.style.color = '#16a34a'; msg.textContent = '✅ تم الحفظ';
+        };
+        window.saveAllSchedules = async () => {
+            if (loggedInId !== '__admin__') return;
+            const msg = document.getElementById('es-msg-all'); if (!msg) return;
+            const keys = Array.from(document.querySelectorAll('[id^="es-st-"]')).map(x => x.id.slice(6));
+            if (!keys.length) return;
+            if (!_checkWriteRate()) return;
+            msg.style.color = '#64748b'; msg.textContent = '⏳ ...';
+            const res = await Promise.all(keys.map(k => _saveSchedule(k)));
+            const bad = res.filter(x => !x).length;
+            _metaAt = 0; try { await _loadEmpMeta(true); } catch (e) {}
+            if (bad) { msg.style.color = '#dc2626'; msg.textContent = '⚠️ فشل حفظ ' + bad + ' من ' + keys.length; }
+            else { msg.style.color = '#16a34a'; msg.textContent = '✅ تم حفظ ' + keys.length + ' موظف'; }
+        };
+
         window.openEmpLocations = async () => {
             if (loggedInId !== '__admin__') return;
             _modal('loc-admin-overlay', '📍 مواقع الموظفين', '<div style="text-align:center;padding:20px;font-weight:700;color:#94a3b8;">⏳ جاري التحميل...</div>', 760);
