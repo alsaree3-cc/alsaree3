@@ -84,6 +84,46 @@
         #ticket-btn:hover { background:#eef2ff; }
         #helpdesk-btn { position:fixed; top:62px; left:18px; z-index:100; background:#fff; border:2px solid #fed7aa; border-radius:14px; padding:8px 18px; font-family:'Cairo',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer; color:#c2410c; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
         #helpdesk-btn:hover { background:#fff7ed; }
+    
+        /* ===== قائمة المسؤول الجانبية (ستايل Alsaree3 Admin Panel) ===== */
+        #admin-section:not(.hidden):has(> .adm-side) { display: grid; grid-template-columns: 250px minmax(0, 1fr); column-gap: 20px; align-items: start; }
+        #admin-section:has(> .adm-side) > * { grid-column: 2; min-width: 0; }
+        #admin-section:has(> .adm-side) > .adm-side { grid-column: 1; grid-row: 1 / span 30; position: sticky; top: 12px; }
+        .adm-side { background: #103d42; border-radius: 20px; padding: 14px 10px 12px; display: flex; flex-direction: column; gap: 2px; box-shadow: 0 10px 25px rgba(16,61,66,.25); }
+        .adm-brand { display: flex; align-items: center; gap: 10px; padding: 4px 6px 14px; margin-bottom: 6px; border-bottom: 1px solid #1f5a5f; direction: ltr; }
+        .adm-logo { width: 42px; height: 42px; border-radius: 12px; flex: none; background: #d6fd26 url(data:image/png;base64,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) center/cover no-repeat; }
+        .adm-brand-t { color: #fff; font-weight: 900; font-size: 1.05rem; line-height: 1.1; text-align: left; }
+        .adm-brand-s { color: #8fb5b3; font-weight: 700; font-size: .72rem; text-align: left; }
+        .adm-side > button { width: 100% !important; justify-content: flex-start !important; gap: 12px !important; background: transparent !important; border: 0 !important; border-radius: 12px !important; color: #a9c9c7 !important; padding: 11px 14px !important; font-size: .92rem !important; box-shadow: none !important; transform: none !important; }
+        .adm-side > button > span:first-child { filter: grayscale(1) brightness(1.7); opacity: .9; font-size: 1.05rem; }
+        .adm-side > button:hover { background: #16494e !important; color: #d6fd26 !important; box-shadow: inset -3px 0 0 #d6fd26 !important; }
+        .adm-side > button:hover > span:first-child { filter: none; }
+        .adm-side > span { display: block !important; width: 100% !important; height: 1px !important; margin: 6px 0 !important; background: #1f5a5f !important; }
+        @media (max-width: 820px) {
+            #admin-section:has(> .adm-side) { display: block; }
+            .adm-side { position: static !important; margin-bottom: 16px; }
+        }
+    
+        /* ===== جدول المسؤول (نفس ألوان القائمة الجانبية) ===== */
+        .adm-tablewrap { border: 1px solid #cfe3e1 !important; border-radius: 20px !important; box-shadow: 0 6px 18px rgba(16,61,66,.08); background: #fff; }
+        #reportTable thead tr { background: #103d42 !important; border-bottom: 0 !important; }
+        #reportTable thead th { color: #e6f4f2 !important; font-weight: 800 !important; padding: 14px 12px !important; white-space: nowrap; }
+        #reportTable thead th:first-child { color: #d6fd26 !important; }
+        #reportTable thead th.text-amber-700 { color: #fcd34d !important; }
+        #reportTable thead th.text-emerald-700 { color: #86efac !important; }
+        #reportTable thead th.text-blue-700 { color: #93c5fd !important; }
+        #reportTable thead th.text-red-700 { color: #fca5a5 !important; }
+        #reportTable tbody tr { border-bottom: 1px solid #e3efee !important; transition: background .15s; }
+        #reportTable tbody tr:nth-child(even) { background: #f6fbfa; }
+        #reportTable tbody tr:hover { background: #e8f5f3; }
+        #reportTable tbody td:first-child { color: #103d42 !important; font-weight: 900; }
+        #reportTable tbody button { border-radius: 999px !important; }
+    
+        .adm-side > .adm-sec-label { color: #fca5a5; font-size: .72rem; font-weight: 800; padding: 4px 14px 2px; text-align: right; }
+        .adm-side > button.adm-primary { background: #d6fd26 !important; color: #103d42 !important; font-weight: 900 !important; margin-top: 2px; }
+        .adm-side > button.adm-primary > span:first-child { filter: none; opacity: 1; }
+        .adm-side > button.adm-primary:hover { filter: brightness(.95); box-shadow: none !important; color: #103d42 !important; }
+        .adm-side > button.adm-danger:hover { color: #fca5a5 !important; box-shadow: inset -3px 0 0 #f87171 !important; }
     </style>
 </head>
 <body>
@@ -1061,27 +1101,34 @@
                     </div>
                 </div>
 
-                <div class="flex flex-col md:flex-row md:items-start gap-4">
-                <aside class="flex flex-wrap md:flex-col items-center md:items-stretch gap-2 md:gap-2 w-full md:w-52 shrink-0 px-3 py-3 rounded-2xl bg-slate-50 border border-slate-200 md:sticky md:top-4">
-                    <button onclick="window.openMonthSummary()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 md:w-full md:justify-start md:gap-2.5 md:py-2.5 md:px-3.5 md:text-sm rounded-full md:rounded-xl border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100"><span class="text-sm">📊</span><span>ملخص الشهر</span></button>
-                    <button onclick="window.openMonthReport()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 md:w-full md:justify-start md:gap-2.5 md:py-2.5 md:px-3.5 md:text-sm rounded-full md:rounded-xl border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100"><span class="text-sm">📈</span><span>تقرير الشهر</span></button>
-                    <button onclick="window.openScoreCard()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 md:w-full md:justify-start md:gap-2.5 md:py-2.5 md:px-3.5 md:text-sm rounded-full md:rounded-xl border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100"><span class="text-sm">🏆</span><span>بطاقة الأداء</span></button>
-                    <button onclick="window.downloadPDF()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 md:w-full md:justify-start md:gap-2.5 md:py-2.5 md:px-3.5 md:text-sm rounded-full md:rounded-xl border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-green-50 border-green-200 text-green-800 hover:bg-green-100"><span class="text-sm">📄</span><span>تقرير PDF</span></button>
-                    <span class="hidden sm:block md:w-full w-px h-5 md:h-px bg-slate-300 mx-1 md:mx-0 md:my-1"></span>
-                    <button id="leave-admin-btn" onclick="window.openLeaveAdmin()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 md:w-full md:justify-start md:gap-2.5 md:py-2.5 md:px-3.5 md:text-sm rounded-full md:rounded-xl border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-purple-50 border-purple-200 text-purple-800 hover:bg-purple-100"><span class="text-sm">📥</span><span>الإجازات والأذونات</span><span id="leave-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
-                    <button onclick="window.openTickets()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 md:w-full md:justify-start md:gap-2.5 md:py-2.5 md:px-3.5 md:text-sm rounded-full md:rounded-xl border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"><span class="text-sm">📋</span><span>مهام واتساب</span><span id="tickets-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
-                    <span class="hidden sm:block md:w-full w-px h-5 md:h-px bg-slate-300 mx-1 md:mx-0 md:my-1"></span>
-                    <button onclick="window.openAddEmployee()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 md:w-full md:justify-start md:gap-2.5 md:py-2.5 md:px-3.5 md:text-sm rounded-full md:rounded-xl border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"><span class="text-sm">➕</span><span>إضافة موظف</span></button>
+                <div class="adm-side">
+                    <div class="adm-brand"><div class="adm-logo"></div><div><div class="adm-brand-t">Alsaree3</div><div class="adm-brand-s">Admin Panel</div></div></div>
+                    <button onclick="window.openMonthSummary()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100"><span class="text-sm">📊</span><span>ملخص الشهر</span></button>
+                    <button onclick="window.openMonthReport()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100"><span class="text-sm">📈</span><span>تقرير الشهر</span></button>
+                    <button onclick="window.openScoreCard()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100"><span class="text-sm">🏆</span><span>بطاقة الأداء</span></button>
+                    <button onclick="window.downloadPDF()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-green-50 border-green-200 text-green-800 hover:bg-green-100"><span class="text-sm">📄</span><span>تقرير PDF</span></button>
+                    <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
+                    <button id="leave-admin-btn" onclick="window.openLeaveAdmin()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-purple-50 border-purple-200 text-purple-800 hover:bg-purple-100"><span class="text-sm">📥</span><span>الإجازات والأذونات</span><span id="leave-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
+                    <button onclick="window.openTickets()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"><span class="text-sm">📋</span><span>مهام واتساب</span><span id="tickets-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
+                    <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
+                    <button onclick="window.openAddEmployee()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"><span class="text-sm">➕</span><span>إضافة موظف</span></button>
 
-                    <button onclick="window.openEmpSchedules()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 md:w-full md:justify-start md:gap-2.5 md:py-2.5 md:px-3.5 md:text-sm rounded-full md:rounded-xl border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-teal-50 border-teal-200 text-teal-800 hover:bg-teal-100"><span class="text-sm">🕘</span><span>أوقات الدوام</span></button>
-                    <button onclick="window.openEmpLocations()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 md:w-full md:justify-start md:gap-2.5 md:py-2.5 md:px-3.5 md:text-sm rounded-full md:rounded-xl border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100"><span class="text-sm">📍</span><span>مواقع الموظفين</span></button>
-                    <button onclick="window.openDeviceLog()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 md:w-full md:justify-start md:gap-2.5 md:py-2.5 md:px-3.5 md:text-sm rounded-full md:rounded-xl border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">📱</span><span>سجل الأجهزة</span></button>
-                </aside>
+                    <button onclick="window.openEmpSchedules()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-teal-50 border-teal-200 text-teal-800 hover:bg-teal-100"><span class="text-sm">🕘</span><span>أوقات الدوام</span></button>
+                    <button onclick="window.openEmpLocations()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100"><span class="text-sm">📍</span><span>مواقع الموظفين</span></button>
+                    <button onclick="window.openDeviceLog()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">📱</span><span>سجل الأجهزة</span></button>
+                    <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
+                    <button onclick="window.runRatingDiagnostic()" title="يفحص هل السيرفر يحسب التقييم ويسجّل خصم التأخير" class="adm-act"><span class="text-sm">🔍</span><span>فحص التقييم</span></button>
+                    <button onclick="window.endOfDay()" class="adm-primary"><span class="text-sm">🌙</span><span>إنهاء اليوم وحفظ التقرير</span></button>
+                    <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
+                    <div class="adm-sec-label">🔒 منطقة حساسة · تتطلب الرمز السري</div>
+                    <button onclick="window.triggerInstantGlobalReset()" class="adm-danger"><span class="text-sm">🔄</span><span>تصفير اليوم</span></button>
+                    <button onclick="window.resetMonthlySystem()" class="adm-danger"><span class="text-sm">🗓️</span><span>تصفير الشهر</span></button>
+                    <button onclick="window.excludeDayPrompt()" title="استثناء يوم مؤرشف من التقييم / تصفير الجميع لليوم الحالي" class="adm-danger"><span class="text-sm">🚫</span><span>استثناء يوم / تصفير الجميع</span></button>
+                </div>
 
-                <div class="flex-1 min-w-0 w-full">
                 <div id="eom-banner" class="mb-5"></div>
 
-                <div class="overflow-x-auto rounded-2xl border border-slate-200 mb-5">
+                <div class="overflow-x-auto rounded-2xl border border-slate-200 mb-5 adm-tablewrap">
                     <table id="reportTable" class="w-full text-md text-right border-collapse">
                         <thead>
                             <tr class="bg-green-50 text-black border-b border-green-200">
@@ -1092,22 +1139,7 @@
                         </tbody>
                     </table>
                 </div>
-
-                <div class="flex flex-col md:flex-row md:items-stretch gap-3">
-                    <button onclick="window.runRatingDiagnostic()" title="يفحص هل السيرفر يحسب التقييم ويسجّل خصم التأخير" class="md:w-36 shrink-0 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-black text-sm shadow-sm transition"><span>🔍</span><span>فحص التقييم</span></button>
-                    <button onclick="window.endOfDay()" class="md:w-56 shrink-0 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm shadow-sm transition"><span>🌙</span><span>إنهاء اليوم وحفظ التقرير</span></button>
-
-                    <div class="flex-1 rounded-xl border border-red-200 bg-red-50/60 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2">
-                        <div class="text-red-700 font-black text-xs whitespace-nowrap sm:ml-2">🔒 منطقة حساسة <span class="font-bold text-red-400">· تتطلب الرمز السري</span></div>
-                        <div class="flex flex-wrap gap-2 flex-1 sm:justify-end">
-                            <button onclick="window.triggerInstantGlobalReset()" class="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-700 hover:bg-amber-50 font-black text-xs transition whitespace-nowrap">🔄 تصفير اليوم</button>
-                            <button onclick="window.resetMonthlySystem()" class="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-white border border-red-300 text-red-700 hover:bg-red-50 font-black text-xs transition whitespace-nowrap">🗓️ تصفير الشهر</button>
-                            <button onclick="window.excludeDayPrompt()" title="استثناء يوم مؤرشف من التقييم / تصفير الجميع لليوم الحالي" class="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-white border border-slate-400 text-slate-700 hover:bg-slate-50 font-black text-xs transition whitespace-nowrap">🚫 استثناء يوم / تصفير الجميع</button>
-                        </div>
-                    </div>
-                </div>
-                </div>
-                </div>`;
+            `;
             
             section.innerHTML = html; 
             try { window.refreshTopPerformer(true); } catch (e) {}
@@ -1506,18 +1538,14 @@
         };
         window.openAddEmployee = () => {
             if (loggedInId !== '__admin__') return;
-            _modal('add-emp-overlay', '➕ إضافة موظف / مسؤول', `
+            _modal('add-emp-overlay', '➕ إضافة موظف جديد', `
                 <div style="display:grid;gap:10px;">
-                    <label style="font-weight:700;">نوع الحساب
-                        <select id="ae-type" class="login-select" onchange="window.aeToggleType()"><option value="employee">👤 موظف</option><option value="admin">🛡️ مسؤول</option></select></label>
-                    <label style="font-weight:700;" id="ae-key-wrap">المفتاح (إنجليزي صغير بدون مسافات، مثال: ali)<input id="ae-key" class="login-select" style="direction:ltr;text-align:left;" maxlength="30"></label>
-                    <label style="font-weight:700;"><span id="ae-name-lbl">اسم الموظف</span><input id="ae-name" class="login-select" maxlength="60"></label>
-                    <label style="font-weight:700;display:none;" id="ae-email-wrap">إيميل المسؤول (نفس إيميل حسابه في Supabase)<input id="ae-email" type="email" class="login-select" style="direction:ltr;text-align:left;" maxlength="100" placeholder="admin@example.com"></label>
-                    <label style="font-weight:700;" id="ae-shift-wrap">بداية الدوام (للخصم عند التأخير)<input id="ae-shift" type="time" class="login-select" value="09:00"></label>
-                    <label style="font-weight:700;" id="ae-off-wrap">يوم الأوف الأسبوعي
+                    <label style="font-weight:700;">المفتاح (إنجليزي صغير بدون مسافات، مثال: ali)<input id="ae-key" class="login-select" style="direction:ltr;text-align:left;" maxlength="30"></label>
+                    <label style="font-weight:700;">اسم الموظف<input id="ae-name" class="login-select" maxlength="60"></label>
+                    <label style="font-weight:700;">بداية الدوام (للخصم عند التأخير)<input id="ae-shift" type="time" class="login-select" value="09:00"></label>
+                    <label style="font-weight:700;">يوم الأوف الأسبوعي
                         <select id="ae-off" class="login-select"><option value="">بدون</option><option value="6">السبت</option><option value="0">الأحد</option><option value="1">الاثنين</option><option value="2">الثلاثاء</option><option value="3">الأربعاء</option><option value="4">الخميس</option><option value="5">الجمعة</option></select></label>
-                    <div id="ae-note-admin" style="display:none;font-size:0.8rem;color:#64748b;font-weight:700;">المسؤول لا يحتاج بطاقة دوام. أنشئ له مستخدماً في Supabase > Authentication (إيميل + كلمة سر)، ثم اكتب إيميله هنا وسيظهر لك أمر SQL جاهز لمنحه صلاحية المسؤول.</div>
-                    <div id="ae-note-emp" style="font-size:0.8rem;color:#64748b;font-weight:700;">الموظف الجديد يدخل تلقائياً في مجموعة البريك المشتركة. بعد الإضافة أنشئ له حساب دخول من Supabase (انظر الرسالة بعد الحفظ).</div>
+                    <div style="font-size:0.8rem;color:#64748b;font-weight:700;">الموظف الجديد يدخل تلقائياً في مجموعة البريك المشتركة. بعد الإضافة أنشئ له حساب دخول من Supabase (انظر الرسالة بعد الحفظ).</div>
                     <div id="ae-msg" class="error-msg"></div>
                     <button id="ae-go" class="login-btn" onclick="window.submitAddEmployee()">إضافة</button>
                 </div>`, 480);
@@ -1714,40 +1742,8 @@
             msg.style.color = '#16a34a'; msg.textContent = row.work_radius === null ? '✅ تمت العودة للإعدادات العامة' : ('✅ تم الحفظ — النطاق ' + row.work_radius + ' متر');
         };
 
-        window.aeToggleType = () => {
-            const isA = document.getElementById('ae-type').value === 'admin';
-            const show = (id, on) => { const e = document.getElementById(id); if (e) e.style.display = on ? '' : 'none'; };
-            show('ae-key-wrap', !isA); show('ae-shift-wrap', !isA); show('ae-off-wrap', !isA); show('ae-note-emp', !isA);
-            show('ae-email-wrap', isA); show('ae-note-admin', isA);
-            document.getElementById('ae-name-lbl').textContent = isA ? 'اسم المسؤول' : 'اسم الموظف';
-            document.getElementById('ae-go').textContent = isA ? 'إنشاء أمر صلاحية المسؤول' : 'إضافة';
-            document.getElementById('ae-msg').textContent = '';
-        };
-        window.copyAdminSql = () => {
-            const t = document.getElementById('aa-sql'); if (!t) return;
-            t.select();
-            try { navigator.clipboard.writeText(t.value); } catch (e) { document.execCommand('copy'); }
-            const b = document.getElementById('aa-copy'); if (b) { b.textContent = '✅ تم النسخ'; setTimeout(() => { b.textContent = '📋 نسخ'; }, 1500); }
-        };
         window.submitAddEmployee = async () => {
             if (loggedInId !== '__admin__') return;
-            if (document.getElementById('ae-type') && document.getElementById('ae-type').value === 'admin') {
-                const m = document.getElementById('ae-msg');
-                const nm = document.getElementById('ae-name').value.trim();
-                const em = document.getElementById('ae-email').value.trim().toLowerCase();
-                if (!nm) { m.textContent = '⚠️ اكتب اسم المسؤول'; return; }
-                if (!/^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$/.test(em)) { m.textContent = '⚠️ اكتب إيميل صحيح'; return; }
-                const sql = "insert into alsaree3_profiles (id, role)\nselect id, 'admin' from auth.users where email = '" + em + "';";
-                document.getElementById('add-emp-overlay').remove();
-                _modal('add-admin-overlay', '🛡️ منح صلاحية المسؤول: ' + sanitize(nm), `
-                    <div style="display:grid;gap:10px;">
-                        <div style="font-size:0.85rem;color:#475569;font-weight:700;line-height:1.8;">1) في Supabase > Authentication أنشئ مستخدماً بالإيميل <b style="direction:ltr;display:inline-block;">${sanitize(em)}</b> وكلمة سر.<br>2) افتح SQL Editor ونفّذ هذا الأمر:</div>
-                        <textarea id="aa-sql" readonly class="login-select" style="direction:ltr;text-align:left;font-family:monospace;font-size:0.85rem;height:90px;cursor:text;">${sanitize(sql)}</textarea>
-                        <button id="aa-copy" class="login-btn" onclick="window.copyAdminSql()">📋 نسخ</button>
-                        <div style="font-size:0.78rem;color:#64748b;font-weight:700;">بعدها يدخل ${sanitize(nm)} بنفس صفحة الدخول ويظهر له لوحة المسؤول.</div>
-                    </div>`, 520);
-                return;
-            }
             const msg = document.getElementById('ae-msg'), btn = document.getElementById('ae-go');
             const key = document.getElementById('ae-key').value.trim().toLowerCase();
             const name = document.getElementById('ae-name').value.trim();
@@ -4572,6 +4568,94 @@
             if (!loggedInId) return;
             checkAndApplyRatings();
         }, 60000);
+
+        // ===== تنبيه نسيان تسجيل الحضور (الموظف + المسؤول) =====
+        const CHECKIN_REMIND_EVERY_SEC = 180;     // تكرار الصوت/الإشعار كل 3 دقائق حتى يسجّل حضوره
+        const CHECKIN_REMIND_MAX_LATE_MIN = 300;  // يتوقف التنبيه بعد 5 ساعات من بداية الدوام (يُعتبر غائباً)
+        const _ciLastAlert = {};
+        function _ciNotCheckedIn(d) {
+            if (!d) return false;
+            if (d.status === 'أوف') return false;                                   // اختار يوم أوف
+            const today = getTodayDateString();
+            if (d.startTime && _ymd(new Date(d.startTime)) === today) return false; // سجّل حضوره اليوم
+            if (['حضور', 'بريك', 'راحة'].includes(d.status) && d.lastActiveDate === today) return false;
+            return true;
+        }
+        // دقائق التأخير عن بداية الدوام، أو null إن لم ينطبق التنبيه (بلا دوام / أوف / إجازة / قبل الموعد)
+        function _ciLateMin(id) {
+            const st = getShiftStart(id); if (!st) return null;
+            const today = getTodayDateString();
+            if (isOffDay(id, today) || onLeaveDay(id, today)) return null;
+            const [h, m] = st.split(':').map(Number);
+            const sd = new Date(); sd.setHours(h, m, 0, 0);
+            const late = Math.floor((Date.now() - sd.getTime()) / 60000);
+            if (late < 0 || late > CHECKIN_REMIND_MAX_LATE_MIN) return null;
+            return late;
+        }
+        function _ciBeep() {
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+                const ctx = new AC();
+                [0, 0.35, 0.7].forEach(t => {
+                    const o = ctx.createOscillator(), g = ctx.createGain();
+                    o.type = 'sine'; o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+                    g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+                    g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + t + 0.03);
+                    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.28);
+                    o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.3);
+                });
+                setTimeout(() => { try { ctx.close(); } catch (e) {} }, 1500);
+            } catch (e) {}
+            try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch (e) {}
+        }
+        function _ciNotify(title, body) {
+            try { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body: body, tag: 'alsaree3-checkin', renotify: true }); } catch (e) {}
+        }
+        function _ciSetBanner(html, onBtn) {
+            let el = document.getElementById('checkin-reminder');
+            if (!html) { if (el) el.remove(); return; }
+            if (!el) {
+                el = document.createElement('div'); el.id = 'checkin-reminder';
+                el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:#dc2626;color:#fff;padding:12px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;font-weight:800;font-size:1rem;direction:rtl;box-shadow:0 4px 14px rgba(0,0,0,.25);font-family:inherit;';
+                document.body.appendChild(el);
+            }
+            if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
+            el.querySelectorAll('[data-ci]').forEach(b => { b.onclick = () => onBtn && onBtn(b.dataset.ci); });
+        }
+        function checkMissedCheckIn() {
+            if (!loggedInId || Object.keys(employeesData).length === 0) { _ciSetBanner(null); return; }
+            const now = Date.now();
+            const btnCss = 'background:#fff;color:#b91c1c;border:none;border-radius:10px;padding:6px 14px;font-weight:900;cursor:pointer;font-family:inherit;';
+            if (loggedInId === '__admin__') {
+                const missing = [];
+                for (const id in employeesData) {
+                    const late = _ciLateMin(id);
+                    if (late !== null && late >= 1 && _ciNotCheckedIn(employeesData[id])) missing.push({ name: employeesData[id].name || id, late: late });
+                }
+                if (!missing.length) { _ciSetBanner(null); return; }
+                _ciSetBanner('<span>⚠️ لم يسجّلوا حضورهم: ' + missing.map(m => sanitize(m.name) + ' (' + m.late + ' د)').join(' • ') + '</span>');
+                return;
+            }
+            const d = employeesData[loggedInId];
+            const late = _ciLateMin(loggedInId);
+            if (late === null || !_ciNotCheckedIn(d)) { _ciSetBanner(null); return; }
+            const st = getShiftStart(loggedInId);
+            const msg = late <= LATE_GRACE_MIN
+                ? '⏰ ' + sanitize(d.name || '') + '، بدأ دوامك الساعة ' + st + ' — سجّل حضورك الآن (باقي ' + (LATE_GRACE_MIN - late + 1) + ' د قبل بدء الخصم)'
+                : '🚨 ' + sanitize(d.name || '') + '، نسيت تسجيل الحضور! دوامك بدأ الساعة ' + st + ' وأنت متأخر ' + late + ' دقيقة';
+            let html = '<span>' + msg + '</span><button data-ci="in" style="' + btnCss + '">✅ سجّل حضوري الآن</button>';
+            if ('Notification' in window && Notification.permission === 'default') html += '<button data-ci="perm" style="' + btnCss + 'background:#fee2e2;">🔔 فعّل الإشعارات</button>';
+            _ciSetBanner(html, (act) => {
+                if (act === 'in') window.updateStatus(loggedInId, 'حضور');
+                else if (act === 'perm') { try { Notification.requestPermission().then(() => checkMissedCheckIn()); } catch (e) {} }
+            });
+            if (!_ciLastAlert[loggedInId] || now - _ciLastAlert[loggedInId] >= CHECKIN_REMIND_EVERY_SEC * 1000) {
+                _ciLastAlert[loggedInId] = now;
+                _ciBeep();
+                _ciNotify('نظام السريع — تسجيل الحضور', late <= LATE_GRACE_MIN ? 'حان موعد دوامك، سجّل حضورك الآن' : 'نسيت تسجيل حضورك! أنت متأخر ' + late + ' دقيقة');
+            }
+        }
+        setInterval(() => { try { checkMissedCheckIn(); } catch (e) { console.error('[CheckInReminder]', e); } }, 5000);
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
