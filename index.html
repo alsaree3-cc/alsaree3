@@ -3466,6 +3466,24 @@
             try { w.focus(); } catch (e) {}
         };
 
+        // ===== إبلاغ واتساب عن طلب متأخر: يفتح واتساب برسالة جاهزة (المطعم/الطلب/السبب/المدة/الموظف) =====
+        // لإرسالها لرقم ثابت اكتبه هنا بصيغة دولية بدون + مثال: '9647XXXXXXXXX' — اتركه فارغاً ليختار الموظف المستلم.
+        const WA_REPORT_PHONE = '';
+        window._LATE_DURS = ['أكثر من 10 دقائق', 'أكثر من 15 دقيقة', 'أكثر من 20 دقيقة', 'أكثر من 30 دقيقة', 'أكثر من 45 دقيقة', 'أكثر من ساعة'];
+        window.waLateReport = () => {
+            const g = (id) => { const e = document.getElementById(id); return e ? e.value.trim().replace(/\s+/g, ' ') : ''; };
+            const order = g('late-input'), rest = g('late-rest'), reason = g('late-reason') || (window._ld.r || '');
+            const dur = g('late-dur') || window._ld.dur || window._LATE_DURS[2];
+            if (!order) { alert('⚠️ اكتب رقم الطلب أولاً'); const e = document.getElementById('late-input'); if (e) e.focus(); return; }
+            if (!rest) { alert('⚠️ اكتب اسم المطعم أولاً'); const e = document.getElementById('late-rest'); if (e) e.focus(); return; }
+            if (!reason) { alert('⚠️ اختر سبب التأخير أولاً'); return; }
+            const txt = 'اسم المطعم : ' + rest + '\nرقم الطلب : ' + order + '\nسبب التبليغ : ' + reason + '\nمدة التأخير : ' + dur + '\nاسم الموظف : ' + _sheetEmpName();
+            const url = 'https://wa.me/' + String(WA_REPORT_PHONE || '').replace(/\D/g, '') + '?text=' + encodeURIComponent(txt);
+            const w = window.open(url, '_blank');
+            if (!w) { alert('⚠️ المتصفح منع فتح النافذة. اسمح بالنوافذ المنبثقة لهذا الموقع.'); return; }
+            try { w.opener = null; } catch (e) {}
+        };
+
         // ===== تسجيل الطلبات يدوياً برقمها: التوزيع (Dispatcher) والقبول (Accept) =====
         let _ordData = { dispatch: [], accept: [], accept_late: [], dispatch_late: [] }, _ordLoadedAt = { dispatch: 0, accept: 0, accept_late: 0, dispatch_late: 0 };
         function _ordKind() { const me = employeesData[loggedInId]; return me && me.currentTask === 'قبول' ? 'accept' : 'dispatch'; }
@@ -4515,6 +4533,7 @@
                         <div class="tk-dd-list" id="late-dd-list" style="display:${window._ld.open ? 'flex' : 'none'};">${_lateReasons[_k].map(r => '<button type="button" class="tk-dd-item' + (window._ld.r === r && !window._ld.other ? ' sel' : '') + '" data-r="' + sanitize(r) + '" onclick="window.pickLateReason(this)">' + sanitize(r) + '</button>').join('')}<button type="button" class="tk-dd-item other${window._ld.other ? ' sel' : ''}" onclick="window.pickLateReason(this, true)">✏️ أخرى (اكتب السبب)</button></div></div>
                         <div class="tk-row"><input id="late-rest" type="text" maxlength="60" autocomplete="off" placeholder="${_k === 'accept' ? 'اسم المطعم (إجباري)' : 'اسم المطعم (اختياري)'}" value="${sanitize(window._ld.rest || '')}" class="tk-input" style="direction:rtl;" oninput="window._ld.rest=this.value" onkeydown="if(event.key==='Enter')window.addOrder(null, true)"></div>
                         <div class="tk-row"><input id="late-reason" type="text" maxlength="100" autocomplete="off" placeholder="اكتب السبب هنا (إجباري)" class="tk-input" style="direction:rtl;${window._ld.other ? '' : 'display:none;'}" oninput="window._ld.r=this.value;window._syncDD()" onkeydown="if(event.key==='Enter')window.addOrder(null, true)"><button onclick="window.addOrder(this, true)" class="tk-btn" style="flex:0 0 auto;background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر</button></div>
+                        <div class="tk-row"><select id="late-dur" class="tk-input" style="direction:rtl;text-align:right;" onchange="window._ld.dur=this.value">${(window._LATE_DURS || []).map((x, ix) => '<option value="' + x + '"' + ((window._ld.dur ? window._ld.dur === x : ix === 2) ? ' selected' : '') + '>' + x + '</option>').join('')}</select><button type="button" onclick="window.waLateReport()" class="tk-btn tk-wa" style="flex:0 0 auto;">💬 إبلاغ واتساب</button></div>
                         ` : ''}`;
                     }
                 }
