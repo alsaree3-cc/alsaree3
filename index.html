@@ -278,6 +278,7 @@
         .qp-btn:disabled{cursor:default;transform:none}
         .qp-btn.qp-wait{background:#fef3c7;color:#92400e;border-color:#fcd34d}
         .qp-btn.qp-ok{background:#dcfce7;color:#166534;border-color:#86efac}
+        .qp-btn.qp-view{opacity:.6;cursor:default}
         .qp-btn.qp-no{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
         .qp-admin{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;direction:rtl;background:#fffbeb;border:1px solid #fcd34d;border-radius:14px;padding:8px 10px;margin-bottom:12px;animation:qpPulse 1.4s infinite}
         .qp-admin b{font-size:.8rem;font-weight:900;color:#92400e}
@@ -4515,6 +4516,11 @@
             else if (r && r.status === 'rejected' && r.decided_at && Date.now() - new Date(r.decided_at).getTime() < 120000) { cls = 'qp-no'; txt = '❌ تم الرفض'; dis = true; }
             return '<button type="button" id="qp-btn" class="qp-btn ' + cls + '"' + (dis ? ' disabled' : '') + ' onclick="window.qpRequest()">' + txt + '</button>';
         }
+        function _qpCardBtn(key, isAdmin) {
+            if (!isAdmin && key === loggedInId) return _qpBtnHtml();
+            if (isAdmin && window._qp.pending[key]) return '<button type="button" class="qp-btn qp-wait" disabled>⏳ استئذان</button>';
+            return '<button type="button" class="qp-btn qp-view" disabled>🙋 استئذان</button>';
+        }
         function _qpAdminBanner(r) {
             const id = Number(r && r.id); if (!Number.isFinite(id)) return '';
             return '<div class="qp-admin"><b>🙋 طلب استئذان عاجل · ' + QP_MINUTES + ' د</b><span style="display:flex;gap:6px;">'
@@ -4730,7 +4736,7 @@
                         </div>`;
 
                 h += `<div class="card-box ${stateClass} ${myCard}">
-                        <div class="emp-brand">${(i === loggedInId && !isAdmin) ? _qpBtnHtml() : ''}<div class="adm-logo"></div><div><div class="adm-brand-t">Alsaree3</div><div class="adm-brand-s">Employee</div></div></div>
+                        <div class="emp-brand">${_qpCardBtn(i, isAdmin)}<div class="adm-logo"></div><div><div class="adm-brand-t">Alsaree3</div><div class="adm-brand-s">Employee</div></div></div>
                         ${(isAdmin && window._qp.pending[i]) ? _qpAdminBanner(window._qp.pending[i]) : ''}
                         <div class="emp-head">
                             <div class="emp-avatar">${sanitize(Array.from(String(d.name || '?'))[0])}</div>
