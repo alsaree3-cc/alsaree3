@@ -5144,7 +5144,7 @@
                 el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(52px + env(safe-area-inset-bottom, 0px));z-index:9990;max-width:94vw;background:#ea580c;color:#fff;padding:10px 16px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-weight:800;font-size:.95rem;direction:rtl;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:center;font-family:Cairo,sans-serif;';
                 document.body.appendChild(el);
             }
-            const key = JSON.stringify(list.map(x => [x.name, x.count]));
+            const key = JSON.stringify(list.map(x => [x.name, x.count, (x.orders || []).join(',')]));
             if (el.dataset.k === key && el.dataset.a === (loggedInId === '__admin__' ? '1' : '0')) return;
             el.dataset.k = key; el.dataset.a = (loggedInId === '__admin__' ? '1' : '0');
             el.textContent = '';
@@ -5153,7 +5153,8 @@
             list.forEach(x => {
                 const w = document.createElement('span');
                 w.style.cssText = 'background:rgba(255,255,255,.2);border-radius:999px;padding:3px 12px;display:inline-flex;gap:8px;align-items:center;';
-                const n = document.createElement('span'); n.textContent = x.name + ' (' + x.count + ' طلب' + (x.since ? ' · منذ ' + x.since : '') + ')'; w.appendChild(n);
+                const n = document.createElement('span'); const _os = (x.orders || []).slice(0, 5).map(o => '#' + o).join(' ، ') + ((x.orders || []).length > 5 ? ' …' : '');
+                n.textContent = x.name + ' (' + x.count + ' طلب' + (_os ? ': ' + _os : '') + (x.since ? ' · منذ ' + x.since : '') + ')'; w.appendChild(n);
                 {
                     const b = document.createElement('button');
                     b.textContent = '✅ تم تسليم';
@@ -5177,7 +5178,8 @@
                 const g = {};
                 j.unpaid.forEach(u => {
                     const k = String(u.driver || '').trim().toLowerCase(); if (!k) return;
-                    const o = g[k] = g[k] || { name: String(u.driver).trim(), count: 0, since: '' };
+                    const o = g[k] = g[k] || { name: String(u.driver).trim(), count: 0, since: '', orders: [] };
+                    { const on = String(u.order != null ? u.order : (u.order_no != null ? u.order_no : '')).trim(); if (on) o.orders.push(on); }
                     o.count++; if (!o.since || String(u.time) < o.since) o.since = String(u.time).slice(0, 5);
                 });
                 const list = Object.keys(g).map(k => g[k]);
@@ -5298,6 +5300,6 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed;bottom:40px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-manual-dispatch-qp-return-captain-order</div>
+<div id="ver-tag" style="position:fixed;bottom:40px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-manual-dispatch-qp-return-captain-order-banner</div>
 </body>
 </html>
