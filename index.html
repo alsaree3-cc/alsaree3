@@ -3634,6 +3634,21 @@
             };
         };
 
+        window.addCaptain = (b) => {
+            const dr = document.getElementById('disp-rest'), dd = document.getElementById('disp-driver');
+            const rest = dr ? dr.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
+            const drv = dd ? dd.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
+            if (!rest) { alert('⚠️ اكتب اسم المطعم أولاً'); if (dr) dr.focus(); return; }
+            if (!drv) { alert('⚠️ اكتب اسم السائق أولاً'); if (dd) dd.focus(); return; }
+            if (!CAPTAIN_SHEET_URL) { alert('⚠️ شيت كفالة الكابتن غير مربوط'); return; }
+            if (!_checkWriteRate()) return;
+            sendDispatchToSheet('', rest, drv);
+            window._dispR = ''; window._dispD = '';
+            if (dr) dr.value = ''; if (dd) dd.value = '';
+            if (navigator.vibrate) navigator.vibrate(30);
+            _tkToast('🚴 سُجّلت كفالة الكابتن: ' + drv + ' — ' + rest);
+            if (dr) dr.focus();
+        };
         window.addOrder = async (b, late) => {
             const baseKind = _ordKind();
             const kind = late ? baseKind + '_late' : baseKind;
@@ -3658,14 +3673,6 @@
                 restName = rn ? rn.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
                 if (!restName) { alert('⚠️ اكتب اسم المطعم أولاً'); if (rn) rn.focus(); return; }
             }
-            let dispRest = '', dispDriver = '';
-            if (!late && baseKind === 'dispatch') {
-                const dr = document.getElementById('disp-rest'), dd = document.getElementById('disp-driver');
-                dispRest = dr ? dr.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
-                dispDriver = dd ? dd.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
-                if (!dispRest) { alert('⚠️ اكتب اسم المطعم أولاً'); if (dr) dr.focus(); return; }
-                if (!dispDriver) { alert('⚠️ اكتب اسم السائق أولاً'); if (dd) dd.focus(); return; }
-            }
             if (!_checkWriteRate()) return;
             if (b && b.classList) b.classList.add('busy');
             const { error } = await supabaseClient.rpc('alsaree3_dispatch_add', late ? { p_order: v, p_kind: kind, p_reason: reason } : { p_order: v, p_kind: kind });
@@ -3680,7 +3687,6 @@
                 return;
             }
             if (late) sendLateToSheet(v, reason.split(' — المطعم: ')[0], lateRest);
-            if (!late && baseKind === 'dispatch') { sendDispatchToSheet(v, dispRest, dispDriver); window._dispR = ''; window._dispD = ''; const _r1 = document.getElementById('disp-rest'), _d1 = document.getElementById('disp-driver'); if (_r1) _r1.value = ''; if (_d1) _d1.value = ''; }
             if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName); window._accR = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; }
             inp.value = '';
             if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.rest = ''; const _lr2 = document.getElementById('late-rest'); if (_lr2) _lr2.value = ''; window._ld.other = false; window._ld.open = false; window._ld.show = false; }
@@ -3695,7 +3701,6 @@
                 const { error: e2 } = await supabaseClient.rpc('alsaree3_dispatch_undo', { p_kind: kind });
                 if (e2) { console.error('[OrderUndo]', e2); return false; }
                 if (kind === 'accept') sendAcceptUndoToSheet(v);
-                if (kind === 'dispatch') sendDispatchUndoToSheet(v);
                 await _fetchMyOrders(kind); refreshOrderCounts(true); try { render(); } catch (e) {} return true;
             });
         };
@@ -4499,8 +4504,9 @@
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
                         taskExtra = `${_k === 'accept' ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{window.addOrder();}}"></div>
-                        <div class="tk-row"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (إجباري)" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>` : `<div class="tk-row" style="gap:6px;margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">🚴 كفالة الكابتن ${_capOpen ? '▴' : '▾'}</button><button type="button" class="tk-btn" onclick="window.toggleLateBox()" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر ${_lateOpen ? '▴' : '▾'}</button></div>${_capOpen ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" style="flex:0 0 36%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('disp-rest');if(r)r.focus();}"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
-                        <div class="tk-row" style="margin-bottom:6px;"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق *" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>` : ''}`}
+                        <div class="tk-row"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (إجباري)" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب (توزيع يدوي)" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
+                        <div class="tk-row" style="gap:6px;margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">🚴 كفالة الكابتن ${_capOpen ? '▴' : '▾'}</button><button type="button" class="tk-btn" onclick="window.toggleLateBox()" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر ${_lateOpen ? '▴' : '▾'}</button></div>${_capOpen ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق *" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addCaptain()"><button onclick="window.addCaptain(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة كفالة</button></div>` : ''}`}
                         <div class="tk-stat" style="margin:0 0 6px;">اليوم: ${_dn} ${_k === 'accept' ? 'مقبول' : 'موزّع'} · ${_ln} ${_lateTx}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>
                         ${_k === 'accept' ? `<button type="button" class="tk-btn tk-late-t" onclick="window.toggleLateBox()" style="width:100%;margin-bottom:6px;background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ ${_lateOpen ? 'إخفاء الطلب المتأخر ▴' : 'تسجيل طلب متأخر ▾'}</button>` : ''}
                         ${_lateOpen ? `
@@ -4910,12 +4916,12 @@
                 const w = document.createElement('span');
                 w.style.cssText = 'background:rgba(255,255,255,.2);border-radius:999px;padding:3px 12px;display:inline-flex;gap:8px;align-items:center;';
                 const n = document.createElement('span'); n.textContent = x.name + ' (' + x.count + ' طلب' + (x.since ? ' · منذ ' + x.since : '') + ')'; w.appendChild(n);
-                if (loggedInId === '__admin__') {
+                {
                     const b = document.createElement('button');
-                    b.textContent = '✅ تم التسليم';
+                    b.textContent = '✅ تم تسليم';
                     b.style.cssText = 'background:#fff;color:#c2410c;border:none;border-radius:10px;padding:3px 10px;font-weight:900;cursor:pointer;font-family:inherit;';
                     b.onclick = () => {
-                        if (!confirm('تأكيد: السائق ' + x.name + ' سلّم الحساب؟')) return;
+                        if (!confirm('تأكيد: السائق ' + x.name + ' سلّم الحساب؟\nسيُكتب «تم تسليم» في الشيت.')) return;
                         _postCaptainSheet({ type: 'driver_paid', driver: x.name });
                         w.remove(); setTimeout(() => { try { window.refreshUnpaidDrivers(); } catch (e) {} }, 4000);
                     };
@@ -4948,6 +4954,6 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed;bottom:4px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-captain-sheet</div>
+<div id="ver-tag" style="position:fixed;bottom:4px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-manual-dispatch</div>
 </body>
 </html>
