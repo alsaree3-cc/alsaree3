@@ -313,7 +313,6 @@
     <button id="helpdesk-btn" style="display:none" onclick="window.openHelpdesk()">🗂️ التذاكر (Helpdesk)</button>
     <!-- زر الخروج -->
     <button id="logout-btn" style="display:none" onclick="window.doLogout()">🚪 خروج</button>
-    <div class="dev-card fixed-bl" id="dev-card-fixed"></div>
     <div id="live-clock" aria-label="الساعة"><div class="lc-ic">🕒</div><div><div class="lc-time"><span id="lc-h">--</span><span class="lc-colon">:</span><span id="lc-m">--</span><span class="lc-sec" id="lc-s">--</span><span class="lc-ap" id="lc-ap"></span></div><div class="lc-date" id="lc-date"></div></div></div>
 
     <div class="system-container" id="main-app" style="display:none">
@@ -5155,12 +5154,6 @@
                 + '<div class="dc-row dc-glow dc-d2"><div class="dc-ic">✉️</div><div><div class="dc-lb">البريد · Email</div><div class="dc-val">ammaryasir19931993@gmail.com</div></div></div>'
                 + '</div>' + (withMin ? '<button type="button" class="dc-min" title="تصغير / تكبير">▾</button>' : '');
             const l = document.getElementById('dev-card-login'); if (l) l.innerHTML = html(false);
-            const f = document.getElementById('dev-card-fixed');
-            if (f) {
-                f.innerHTML = html(true);
-                if (window.innerWidth < 640) f.classList.add('min');   // على الجوال تبدأ مصغّرة حتى لا تغطي الأزرار
-                f.querySelector('.dc-min').addEventListener('click', () => f.classList.toggle('min'));
-            }
             // دورة الظهور: تظهر ~24 ثانية بحركة بطيئة، ثم تختفي 15 ثانية، ثم تعود
             const SHOW_MS = 24000, HIDE_MS = 15000;
             function cycle(el) {
@@ -5179,7 +5172,7 @@
                 }
                 setTimeout(show, 700);
             }
-            cycle(l); cycle(f);
+            cycle(l);   // البطاقة تظهر وتتحرك فقط في واجهة تسجيل الدخول
         })();
 
 
