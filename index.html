@@ -3535,8 +3535,21 @@
         function sendAcceptUndoToSheet(order) { _postAcceptSheet({ type: 'accept_undo', order: order }); }
         // التوزيع: رقم الطلب + اسم المطعم + اسم السائق (كفالة السائق من الموظف)
         window._dispR = window._dispR || ''; window._dispD = window._dispD || '';
-        function sendDispatchToSheet(order, restaurant, driver) { _postAcceptSheet({ type: 'dispatch', order: order, restaurant: restaurant, driver: driver, employee: _sheetEmpName() }); }
-        function sendDispatchUndoToSheet(order) { _postAcceptSheet({ type: 'dispatch_undo', order: order }); }
+        // ⬇️ الصق هنا رابط نشر سكربت شيت "كفالة الكابتن" (ينتهي بـ /exec)
+        const CAPTAIN_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzQdr9AKfLCVH07lsGxjSPvAwziP6enf4yDZzZf5tqP2yNr-VvQXigXxrPrdpSHb3Q/exec';
+        function _postCaptainSheet(payload) {
+            if (!CAPTAIN_SHEET_URL) return;
+            try {
+                fetch(CAPTAIN_SHEET_URL, {
+                    method: 'POST', mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(Object.assign({ secret: SHEET_SECRET, date: getTodayDateString(), time: new Date().toLocaleTimeString('en-GB', { hour12: false }) }, payload)),
+                    keepalive: true
+                }).catch(function (e) { console.warn('[CaptainSheet]', e); });
+            } catch (e) { console.warn('[CaptainSheet]', e); }
+        }
+        function sendDispatchToSheet(order, restaurant, driver) { _postCaptainSheet({ type: 'dispatch', order: order, restaurant: restaurant, driver: driver, employee: _sheetEmpName() }); setTimeout(() => { try { window.refreshUnpaidDrivers(); } catch (e) {} }, 4000); }
+        function sendDispatchUndoToSheet(order) { _postCaptainSheet({ type: 'dispatch_undo', order: order }); setTimeout(() => { try { window.refreshUnpaidDrivers(); } catch (e) {} }, 4000); }
         // ===== عرض Helpdesk (Jitbit) كاملاً داخل البرنامج =====
         const HELPDESK_URL = 'https://alsaree3.jitbit.com/helpdesk/';
         window.openHelpdesk = function () {
@@ -4878,8 +4891,63 @@
         }
         setInterval(() => { try { checkMissedCheckIn(); } catch (e) { console.error('[CheckInReminder]', e); } }, 5000);
 
+        // ===== منبّه: سائقون لم يسلّموا الحساب (يظهر لكل الموظفين، من شيت كفالة الكابتن) =====
+        let _drvKey = null;
+        function _drvSetBanner(list) {
+            let el = document.getElementById('driver-unpaid-banner');
+            if (!list || !list.length) { if (el) el.remove(); return; }
+            if (!el) {
+                el = document.createElement('div'); el.id = 'driver-unpaid-banner';
+                el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom, 0px));z-index:9990;max-width:94vw;background:#ea580c;color:#fff;padding:10px 16px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-weight:800;font-size:.95rem;direction:rtl;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:center;font-family:Cairo,sans-serif;';
+                document.body.appendChild(el);
+            }
+            const key = JSON.stringify(list.map(x => [x.name, x.count]));
+            if (el.dataset.k === key && el.dataset.a === (loggedInId === '__admin__' ? '1' : '0')) return;
+            el.dataset.k = key; el.dataset.a = (loggedInId === '__admin__' ? '1' : '0');
+            el.textContent = '';
+            const t = document.createElement('span'); t.textContent = '💰 سائقون لم يسلّموا الحساب:'; el.appendChild(t);
+            list.forEach(x => {
+                const w = document.createElement('span');
+                w.style.cssText = 'background:rgba(255,255,255,.2);border-radius:999px;padding:3px 12px;display:inline-flex;gap:8px;align-items:center;';
+                const n = document.createElement('span'); n.textContent = x.name + ' (' + x.count + ' طلب' + (x.since ? ' · منذ ' + x.since : '') + ')'; w.appendChild(n);
+                if (loggedInId === '__admin__') {
+                    const b = document.createElement('button');
+                    b.textContent = '✅ تم التسليم';
+                    b.style.cssText = 'background:#fff;color:#c2410c;border:none;border-radius:10px;padding:3px 10px;font-weight:900;cursor:pointer;font-family:inherit;';
+                    b.onclick = () => {
+                        if (!confirm('تأكيد: السائق ' + x.name + ' سلّم الحساب؟')) return;
+                        _postCaptainSheet({ type: 'driver_paid', driver: x.name });
+                        w.remove(); setTimeout(() => { try { window.refreshUnpaidDrivers(); } catch (e) {} }, 4000);
+                    };
+                    w.appendChild(b);
+                }
+                el.appendChild(w);
+            });
+        }
+        window.refreshUnpaidDrivers = async function () {
+            if (!CAPTAIN_SHEET_URL || !loggedInId) { _drvSetBanner(null); return; }
+            try {
+                const r = await fetch(CAPTAIN_SHEET_URL + '?secret=' + encodeURIComponent(SHEET_SECRET) + '&t=' + Date.now(), { method: 'GET' });
+                const j = await r.json();
+                if (!j || !j.ok || !Array.isArray(j.unpaid)) return;
+                const g = {};
+                j.unpaid.forEach(u => {
+                    const k = String(u.driver || '').trim().toLowerCase(); if (!k) return;
+                    const o = g[k] = g[k] || { name: String(u.driver).trim(), count: 0, since: '' };
+                    o.count++; if (!o.since || String(u.time) < o.since) o.since = String(u.time).slice(0, 5);
+                });
+                const list = Object.keys(g).map(k => g[k]);
+                const names = list.map(x => x.name).sort().join('|');
+                if (_drvKey !== null && names !== _drvKey && list.length) _ciBeep();   // صوت عند ظهور سائق جديد
+                _drvKey = names;
+                _drvSetBanner(list);
+            } catch (e) { console.warn('[UnpaidDrivers]', e); }
+        };
+        setTimeout(() => { try { window.refreshUnpaidDrivers(); } catch (e) {} }, 4000);
+        setInterval(() => { try { window.refreshUnpaidDrivers(); } catch (e) {} }, 60000);
+
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed;bottom:4px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-captain-sponsor</div>
+<div id="ver-tag" style="position:fixed;bottom:4px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-captain-sheet</div>
 </body>
 </html>
