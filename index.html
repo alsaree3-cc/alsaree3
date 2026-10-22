@@ -3531,6 +3531,10 @@
         }
         function sendAcceptToSheet(order, restaurant) { _postAcceptSheet({ type: 'accept', order: order, restaurant: restaurant, employee: _sheetEmpName() }); }
         function sendAcceptUndoToSheet(order) { _postAcceptSheet({ type: 'accept_undo', order: order }); }
+        // التوزيع: رقم الطلب + اسم المطعم + اسم السائق (كفالة السائق من الموظف)
+        window._dispR = window._dispR || ''; window._dispD = window._dispD || '';
+        function sendDispatchToSheet(order, restaurant, driver) { _postAcceptSheet({ type: 'dispatch', order: order, restaurant: restaurant, driver: driver, employee: _sheetEmpName() }); }
+        function sendDispatchUndoToSheet(order) { _postAcceptSheet({ type: 'dispatch_undo', order: order }); }
         // ===== عرض Helpdesk (Jitbit) كاملاً داخل البرنامج =====
         const HELPDESK_URL = 'https://alsaree3.jitbit.com/helpdesk/';
         window.openHelpdesk = function () {
@@ -3639,6 +3643,14 @@
                 restName = rn ? rn.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
                 if (!restName) { alert('⚠️ اكتب اسم المطعم أولاً'); if (rn) rn.focus(); return; }
             }
+            let dispRest = '', dispDriver = '';
+            if (!late && baseKind === 'dispatch') {
+                const dr = document.getElementById('disp-rest'), dd = document.getElementById('disp-driver');
+                dispRest = dr ? dr.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
+                dispDriver = dd ? dd.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
+                if (!dispRest) { alert('⚠️ اكتب اسم المطعم أولاً'); if (dr) dr.focus(); return; }
+                if (!dispDriver) { alert('⚠️ اكتب اسم السائق أولاً'); if (dd) dd.focus(); return; }
+            }
             if (!_checkWriteRate()) return;
             if (b && b.classList) b.classList.add('busy');
             const { error } = await supabaseClient.rpc('alsaree3_dispatch_add', late ? { p_order: v, p_kind: kind, p_reason: reason } : { p_order: v, p_kind: kind });
@@ -3653,6 +3665,7 @@
                 return;
             }
             if (late) sendLateToSheet(v, reason.split(' — المطعم: ')[0], lateRest);
+            if (!late && baseKind === 'dispatch') { sendDispatchToSheet(v, dispRest, dispDriver); window._dispR = ''; window._dispD = ''; const _r1 = document.getElementById('disp-rest'), _d1 = document.getElementById('disp-driver'); if (_r1) _r1.value = ''; if (_d1) _d1.value = ''; }
             if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName); window._accR = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; }
             inp.value = '';
             if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.rest = ''; const _lr2 = document.getElementById('late-rest'); if (_lr2) _lr2.value = ''; window._ld.other = false; window._ld.open = false; }
@@ -3667,6 +3680,7 @@
                 const { error: e2 } = await supabaseClient.rpc('alsaree3_dispatch_undo', { p_kind: kind });
                 if (e2) { console.error('[OrderUndo]', e2); return false; }
                 if (kind === 'accept') sendAcceptUndoToSheet(v);
+                if (kind === 'dispatch') sendDispatchUndoToSheet(v);
                 await _fetchMyOrders(kind); refreshOrderCounts(true); try { render(); } catch (e) {} return true;
             });
         };
@@ -4468,7 +4482,9 @@
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
                         taskExtra = `${_k === 'accept' ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{window.addOrder();}}"></div>
-                        <div class="tk-row"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (إجباري)" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>` : `<div class="tk-row"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>`}
+                        <div class="tk-row"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (إجباري)" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter'){var r=document.getElementById('disp-rest');if(r)r.focus();}"></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (إجباري)" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
+                        <div class="tk-row"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق (إجباري)" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>`}
                         <div class="tk-stat">اليوم: ${_dn} طلب ${_k === 'accept' ? 'مقبول' : 'موزّع'}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>
                         <div class="tk-row" style="margin-bottom:6px;"><input id="late-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="${_latePh}" class="tk-input" oninput="window._ld.o=this.value" onkeydown="if(event.key===\'Enter\'){var r=document.getElementById(\'late-reason\');if(r)r.focus();}"></div>
                         <div class="tk-dd" id="late-dd"><button type="button" id="late-dd-btn" class="tk-dd-btn${window._ld.r ? '' : ' empty'}${window._ld.open ? ' open' : ''}" onclick="window.toggleLateDD(event)"><span>${window._ld.r ? sanitize(window._ld.r) : 'اختر سبب التأخير ▾'}</span><span>${window._ld.open ? '▴' : '▾'}</span></button>
@@ -4521,7 +4537,7 @@
                     </div>`;
             }
             const _di = document.getElementById('disp-input'), _dv = _di ? _di.value : '', _df = !!_di && document.activeElement === _di;
-            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest'].indexOf(_ae.id) !== -1) ? _ae.id : null;
+            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'disp-rest', 'disp-driver'].indexOf(_ae.id) !== -1) ? _ae.id : null;
             const _aeSel = _aeId ? [_ae.selectionStart, _ae.selectionEnd] : null;
             document.getElementById('app').innerHTML = h;
             if (_dv || _df) {
@@ -4529,6 +4545,7 @@
                 if (_nx) { _nx.value = _dv; if (_df) { _nx.focus(); try { _nx.setSelectionRange(_dv.length, _dv.length); } catch (e) {} } }
             }
             { const _ar = document.getElementById('acc-rest'); if (_ar && window._accR) _ar.value = window._accR; }
+            { const _dr = document.getElementById('disp-rest'), _dd = document.getElementById('disp-driver'); if (_dr && window._dispR) _dr.value = window._dispR; if (_dd && window._dispD) _dd.value = window._dispD; }
             // حقول الطلب المتأخر: استرجاع المسودة والتركيز بعد إعادة الرسم
             { const _li = document.getElementById('late-input'), _lr = document.getElementById('late-reason');
               if (_li && window._ld.o) _li.value = window._ld.o;
