@@ -3602,7 +3602,7 @@
             document.querySelectorAll('#late-dd-list .tk-dd-item[data-r]').forEach(c => c.classList.toggle('sel', !window._ld.other && c.dataset.r === window._ld.r));
             const oth = document.querySelector('#late-dd-list .tk-dd-item.other'); if (oth) oth.classList.toggle('sel', !!window._ld.other);
         };
-        window.toggleCap = () => { const w = window._ld; const open = !!(w.cap || window._dispR || window._dispD); if (open) { w.cap = false; window._dispR = ''; window._dispD = ''; } else { w.cap = true; } try { render(); } catch (err) {} };
+        window.toggleCap = () => { const w = window._ld; const open = !!(w.cap || window._dispR || window._dispD || window._dispO); if (open) { w.cap = false; window._dispR = ''; window._dispD = ''; window._dispO = ''; } else { w.cap = true; } try { render(); } catch (err) {} };
         window.toggleLateBox = () => { const w = window._ld; const open = !!(w.show || w.o || w.r || w.rest || w.other); if (open) { w.show = false; w.o = ''; w.r = ''; w.rest = ''; w.other = false; w.open = false; } else { w.show = true; } try { render(); } catch (err) {} };
         window.toggleLateDD = (ev) => { if (ev) ev.stopPropagation(); window._ld.open = !window._ld.open; window._syncDD(); };
         window.pickLateReason = (btn, other) => {
@@ -3647,7 +3647,7 @@
         function sendAcceptToSheet(order, restaurant) { _postAcceptSheet({ type: 'accept', order: order, restaurant: restaurant, employee: _sheetEmpName() }); }
         function sendAcceptUndoToSheet(order) { _postAcceptSheet({ type: 'accept_undo', order: order }); }
         // التوزيع: رقم الطلب + اسم المطعم + اسم السائق (كفالة السائق من الموظف)
-        window._dispR = window._dispR || ''; window._dispD = window._dispD || '';
+        window._dispR = window._dispR || ''; window._dispD = window._dispD || ''; window._dispO = window._dispO || '';
         // ⬇️ الصق هنا رابط نشر سكربت شيت "كفالة الكابتن" (ينتهي بـ /exec)
         const CAPTAIN_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzQdr9AKfLCVH07lsGxjSPvAwziP6enf4yDZzZf5tqP2yNr-VvQXigXxrPrdpSHb3Q/exec';
         function _postCaptainSheet(payload) {
@@ -3748,18 +3748,21 @@
         };
 
         window.addCaptain = (b) => {
-            const dr = document.getElementById('disp-rest'), dd = document.getElementById('disp-driver');
+            const dr = document.getElementById('disp-rest'), dd = document.getElementById('disp-driver'), dOrd = document.getElementById('disp-order');
             const rest = dr ? dr.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
+            const ord = dOrd ? dOrd.value.trim() : '';
             const drv = dd ? dd.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
             if (!rest) { alert('⚠️ اكتب اسم المطعم أولاً'); if (dr) dr.focus(); return; }
+            if (!ord) { alert('⚠️ اكتب رقم الطلب أولاً'); if (dOrd) dOrd.focus(); return; }
+            if (!/^[0-9A-Za-z\u0600-\u06FF#_\-\/]{1,30}$/.test(ord)) { alert('⚠️ رقم الطلب غير صالح'); if (dOrd) dOrd.focus(); return; }
             if (!drv) { alert('⚠️ اكتب اسم السائق أولاً'); if (dd) dd.focus(); return; }
             if (!CAPTAIN_SHEET_URL) { alert('⚠️ شيت كفالة الكابتن غير مربوط'); return; }
             if (!_checkWriteRate()) return;
-            sendDispatchToSheet('', rest, drv);
-            window._dispR = ''; window._dispD = '';
-            if (dr) dr.value = ''; if (dd) dd.value = '';
+            sendDispatchToSheet(ord, rest, drv);
+            window._dispR = ''; window._dispD = ''; window._dispO = '';
+            if (dr) dr.value = ''; if (dd) dd.value = ''; if (dOrd) dOrd.value = '';
             if (navigator.vibrate) navigator.vibrate(30);
-            _tkToast('🚴 سُجّلت كفالة الكابتن: ' + drv + ' — ' + rest);
+            _tkToast('🚴 سُجّلت كفالة الكابتن: ' + drv + ' — ' + rest + ' — #' + ord);
             if (dr) dr.focus();
         };
         window.addOrder = async (b, late) => {
@@ -4511,11 +4514,15 @@
         function _qpIsQuick(r) { return !!(r && typeof r.note === 'string' && r.note.indexOf(QP_MARK) === 0); }
         function _qpBtnHtml() {
             const r = window._qp.mine, now = new Date(), nowMin = now.getHours() * 60 + now.getMinutes();
-            let cls = '', txt = '🙋 استئذان', dis = false;
+            let cls = '', txt = '🙋 استئذان', dis = false, act = 'window.qpRequest()';
             if (r && r.status === 'pending') { cls = 'qp-wait'; txt = '⏳ بانتظار الرد'; dis = true; }
-            else if (r && r.status === 'approved') { const t = _scParseMin(r.to_time); if (t !== null && nowMin < t) { cls = 'qp-ok'; txt = '✅ تمت الموافقة'; dis = true; } }
+            else if (r && r.status === 'approved') {
+                // بعد الموافقة: يظهر زر «عودة للعمل» حتى يضغطه الموظف (علامة ↩ في الملاحظة = عاد فعلاً)
+                const t = _scParseMin(r.to_time);
+                if (String(r.note || '').indexOf('↩') < 0 && t !== null && nowMin < t + 120) { cls = 'qp-ok'; txt = '↩️ عودة للعمل'; act = 'window.qpReturn()'; }
+            }
             else if (r && r.status === 'rejected' && r.decided_at && Date.now() - new Date(r.decided_at).getTime() < 120000) { cls = 'qp-no'; txt = '❌ تم الرفض'; dis = true; }
-            return '<button type="button" id="qp-btn" class="qp-btn ' + cls + '"' + (dis ? ' disabled' : '') + ' onclick="window.qpRequest()">' + txt + '</button>';
+            return '<button type="button" id="qp-btn" class="qp-btn ' + cls + '"' + (dis ? ' disabled' : '') + ' onclick="' + act + '">' + txt + '</button>';
         }
         function _qpCardBtn(key, isAdmin) {
             if (!isAdmin && key === loggedInId) return _qpBtnHtml();
@@ -4538,6 +4545,22 @@
             const row = { employee_key: loggedInId, emp_name: employeesData[loggedInId].name, kind: 'hourly', start_date: getTodayDateString(), days: 1, from_time: hm(f), to_time: hm(t), hours: Math.round(QP_MINUTES / 60 * 100) / 100, note: QP_MARK + ' استئذان عاجل', status: 'pending' };
             const { error } = await supabaseClient.from('alsaree3_leave_requests').insert(row);
             if (error) { console.error('[QP]', error); alert('❌ تعذر إرسال الطلب، حاول مرة أخرى'); return; }
+            try { window._ciRefreshLeave(true); } catch (e) {}
+            await _qpPoll(true);
+        };
+        // الموظف يضغط «عودة للعمل» بعد الاستئذان: يُنهى الإذن عند وقت العودة الفعلي (إن عاد قبل انتهاء مدته)
+        window.qpReturn = async () => {
+            const m = window._qp.mine;
+            if (!loggedInId || loggedInId === '__admin__' || !m || m.status !== 'approved') return;
+            const id = Number(m.id); if (!Number.isFinite(id)) return;
+            if (!_checkWriteRate()) return;
+            const now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
+            const hm = x => String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0');
+            const f = _scParseMin(m.from_time), t = _scParseMin(m.to_time);
+            const upd = { note: String(m.note || '') + ' ↩' };
+            if (f !== null && t !== null && nm < t) { const e = Math.max(nm, f + 1); upd.to_time = hm(e); upd.hours = Math.round((e - f) / 60 * 100) / 100; }
+            const { data, error } = await supabaseClient.from('alsaree3_leave_requests').update(upd).eq('id', id).eq('employee_key', loggedInId).select('id');
+            if (error || !data || !data.length) { console.error('[QP return]', error); alert('❌ تعذر تسجيل العودة للعمل، حاول مرة أخرى'); return; }
             try { window._ciRefreshLeave(true); } catch (e) {}
             await _qpPoll(true);
         };
@@ -4676,8 +4699,8 @@
                     });
                     const _todayN = _todaySelf.length, _openToday = _todaySelf.filter(t => !t.solved_at).length;
                     // كفالة الكابتن: تظهر في المهام الثلاث (واتساب / توزيع / قبول)
-                    const _capOpenAll = !!(window._ld.cap || window._dispR || window._dispD);
-                    const _capBlock = `<div class="tk-row" style="margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;width:100%;">🚴 كفالة الكابتن ${_capOpenAll ? '▴' : '▾'}</button></div>${_capOpenAll ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
+                    const _capOpenAll = !!(window._ld.cap || window._dispR || window._dispD || window._dispO);
+                    const _capBlock = `<div class="tk-row" style="margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;width:100%;">🚴 كفالة الكابتن ${_capOpenAll ? '▴' : '▾'}</button></div>${_capOpenAll ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-order');if(d)d.focus();}"><input id="disp-order" type="text" maxlength="30" autocomplete="off" inputmode="text" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" oninput="window._dispO=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
                         <div class="tk-row" style="margin-bottom:6px;"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق *" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addCaptain()"><button onclick="window.addCaptain(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة كفالة</button></div>` : ''}`;
                     if (d.currentTask === 'واتساب') {
                         taskExtra = `<div class="tk-row">
@@ -4694,13 +4717,13 @@
                         const _ol = _ordData[_k], _dn = _ol.length;
                         const _ll = _ordData[_lk], _ln = _ll.length;
                         const _lateReasons = { accept: ['تأخير من المطعم', 'ازدحام في المطعم', 'نقص مواد', 'المطعم لم يستلم الطلب', 'المطعم مغلق', 'مشكلة في النظام'], dispatch: ['سائق لديه أكثر من طلب', 'لا يوجد سائق متاح', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'تأخير في التجهيز من المطعم', 'تبديل السائق', 'سائق عطلان', 'مشكلة في النظام'] };
-                        const _capOpen = !!(window._ld.cap || window._dispR || window._dispD);
+                        const _capOpen = !!(window._ld.cap || window._dispR || window._dispD || window._dispO);
                         const _lateOpen = !!(window._ld.show || window._ld.o || window._ld.r || window._ld.rest || window._ld.other);
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
                         taskExtra = `${_k === 'accept' ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{window.addOrder();}}"></div>
                         <div class="tk-row"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (إجباري)" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب (توزيع يدوي)" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
-                        <div class="tk-row" style="gap:6px;margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">🚴 كفالة الكابتن ${_capOpen ? '▴' : '▾'}</button><button type="button" class="tk-btn" onclick="window.toggleLateBox()" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر ${_lateOpen ? '▴' : '▾'}</button></div>${_capOpen ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
+                        <div class="tk-row" style="gap:6px;margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">🚴 كفالة الكابتن ${_capOpen ? '▴' : '▾'}</button><button type="button" class="tk-btn" onclick="window.toggleLateBox()" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر ${_lateOpen ? '▴' : '▾'}</button></div>${_capOpen ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-order');if(d)d.focus();}"><input id="disp-order" type="text" maxlength="30" autocomplete="off" inputmode="text" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" oninput="window._dispO=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
                         <div class="tk-row" style="margin-bottom:6px;"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق *" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addCaptain()"><button onclick="window.addCaptain(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة كفالة</button></div>` : ''}`}
                         ${_k === 'accept' ? _capBlock : ''}
                         <div class="tk-stat" style="margin:0 0 6px;">اليوم: ${_dn} ${_k === 'accept' ? 'مقبول' : 'موزّع'} · ${_ln} ${_lateTx}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>
@@ -4762,7 +4785,7 @@
                     </div>`;
             }
             const _di = document.getElementById('disp-input'), _dv = _di ? _di.value : '', _df = !!_di && document.activeElement === _di;
-            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'disp-rest', 'disp-driver'].indexOf(_ae.id) !== -1) ? _ae.id : null;
+            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'disp-rest', 'disp-order', 'disp-driver'].indexOf(_ae.id) !== -1) ? _ae.id : null;
             const _aeSel = _aeId ? [_ae.selectionStart, _ae.selectionEnd] : null;
             document.getElementById('app').innerHTML = h;
             if (_dv || _df) {
@@ -4770,7 +4793,7 @@
                 if (_nx) { _nx.value = _dv; if (_df) { _nx.focus(); try { _nx.setSelectionRange(_dv.length, _dv.length); } catch (e) {} } }
             }
             { const _ar = document.getElementById('acc-rest'); if (_ar && window._accR) _ar.value = window._accR; }
-            { const _dr = document.getElementById('disp-rest'), _dd = document.getElementById('disp-driver'); if (_dr && window._dispR) _dr.value = window._dispR; if (_dd && window._dispD) _dd.value = window._dispD; }
+            { const _dr = document.getElementById('disp-rest'), _dd = document.getElementById('disp-driver'); if (_dr && window._dispR) _dr.value = window._dispR; if (_dd && window._dispD) _dd.value = window._dispD; const _do = document.getElementById('disp-order'); if (_do && window._dispO) _do.value = window._dispO; }
             // حقول الطلب المتأخر: استرجاع المسودة والتركيز بعد إعادة الرسم
             { const _li = document.getElementById('late-input'), _lr = document.getElementById('late-reason');
               if (_li && window._ld.o) _li.value = window._ld.o;
@@ -5275,6 +5298,6 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed;bottom:40px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-manual-dispatch</div>
+<div id="ver-tag" style="position:fixed;bottom:40px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-manual-dispatch-qp-return-captain-order</div>
 </body>
 </html>
