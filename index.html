@@ -1515,6 +1515,7 @@
             btn.disabled = false;
             if (error) { console.error('[Leave]', error); msg.textContent = '❌ تعذر إرسال الطلب، تحقق من البيانات وحاول مرة أخرى'; return; }
             msg.style.color = '#16a34a'; msg.textContent = '✅ تم إرسال الطلب وبانتظار موافقة المسؤول';
+            try { window._ciRefreshLeave(true); } catch (e) {}
             document.getElementById('lv-note').value = '';
             window._lvLoadMine();
         };
@@ -1578,6 +1579,7 @@
             msg.style.color = '#64748b'; msg.textContent = '⏳ ...';
             const { error } = await supabaseClient.from('alsaree3_leave_requests').insert(row);
             if (error) { console.error('[LeaveAdminAdd]', error); msg.style.color = '#dc2626'; msg.textContent = '❌ رفض السيرفر الإضافة (غالباً صلاحيات Supabase): ' + (error.message || ''); return; }
+            try { window._ciRefreshLeave(true); } catch (e2) {}
             window.refreshLeaveBadge();
             await window._lvAdminLoad();
             const m2 = document.getElementById('lva-msg'); if (m2) { m2.style.color = '#16a34a'; m2.textContent = '✅ تمت الإضافة والاعتماد'; }
@@ -4745,11 +4747,43 @@
             if (['حضور', 'بريك', 'راحة'].includes(d.status) && d.lastActiveDate === today) return false;
             return true;
         }
+        // طلبات إجازة/إذن زمني (قيد الانتظار أو معتمدة) — تُخفي التنبيه فور رفع الطلب
+        let _ciLeave = {}, _ciLeaveAt = 0, _ciLeaveBusy = false;
+        async function _ciRefreshLeave(force) {
+            if (_ciLeaveBusy || !loggedInId) return;
+            if (!force && Date.now() - _ciLeaveAt < 30000) return;
+            _ciLeaveBusy = true;
+            try {
+                let q = supabaseClient.from('alsaree3_leave_requests').select('employee_key,kind,start_date,days,from_time,to_time,status').in('status', ['pending', 'approved']);
+                if (loggedInId !== '__admin__') q = q.eq('employee_key', loggedInId);
+                const { data, error } = await q.order('created_at', { ascending: false }).limit(500);
+                if (!error) {
+                    const m = {};
+                    (data || []).forEach(r => { (m[r.employee_key] = m[r.employee_key] || []).push(r); });
+                    _ciLeave = m;
+                }
+            } catch (e) {}
+            _ciLeaveAt = Date.now(); _ciLeaveBusy = false;
+            try { checkMissedCheckIn(); } catch (e) {}
+        }
+        window._ciRefreshLeave = _ciRefreshLeave;
+        function _ciExcused(id) {
+            const rows = _ciLeave[id]; if (!rows || !rows.length) return false;
+            const today = getTodayDateString();
+            const now = new Date(), nowMin = now.getHours() * 60 + now.getMinutes();
+            const sm = _scParseMin(getShiftStart(id));
+            return rows.some(r => {
+                if (r.kind === 'day') return _expandDates(r.start_date, r.days).includes(today);
+                if (r.start_date !== today || sm === null) return false;
+                const f = _scParseMin(r.from_time), t = _scParseMin(r.to_time);
+                return f !== null && t !== null && f <= sm + LATE_GRACE_MIN && nowMin < t;   // إذن زمني يغطي بداية الدوام ولم ينتهِ
+            });
+        }
         // دقائق التأخير عن بداية الدوام، أو null إن لم ينطبق التنبيه (بلا دوام / أوف / إجازة / قبل الموعد)
         function _ciLateMin(id) {
             const st = getShiftStart(id); if (!st) return null;
             const today = getTodayDateString();
-            if (isOffDay(id, today) || onLeaveDay(id, today)) return null;
+            if (isOffDay(id, today) || onLeaveDay(id, today) || _ciExcused(id)) return null;
             const [h, m] = st.split(':').map(Number);
             const sd = new Date(); sd.setHours(h, m, 0, 0);
             const late = Math.floor((Date.now() - sd.getTime()) / 60000);
@@ -4788,6 +4822,7 @@
         }
         function checkMissedCheckIn() {
             if (!loggedInId || Object.keys(employeesData).length === 0) { _ciSetBanner(null); return; }
+            _ciRefreshLeave(false);
             const now = Date.now();
             const btnCss = 'background:#fff;color:#b91c1c;border:none;border-radius:10px;padding:6px 14px;font-weight:900;cursor:pointer;font-family:inherit;';
             if (loggedInId === '__admin__') {
