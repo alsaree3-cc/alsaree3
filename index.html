@@ -292,7 +292,7 @@
     <div id="login-screen">
         <div class="login-card" style="direction:ltr;text-align:left;">
             <div class="text-center mb-8">
-                <div class="adm-logo" style="width:84px;height:84px;border-radius:22px;margin:0 auto 12px;box-shadow:0 8px 20px rgba(132,204,22,.35);"></div>
+                <div class="adm-logo" style="width:108px;height:108px;border-radius:28px;margin:0 auto 14px;box-shadow:0 8px 20px rgba(132,204,22,.35);"></div>
                 <div class="text-5xl font-black text-green-600 mb-2 tracking-wide">Alsaree3</div>
                 <div class="text-green-700 font-bold text-base bg-green-50 inline-block px-5 py-2 rounded-2xl border border-green-200">🖥️ Morning Call Center</div>
             </div>
@@ -318,7 +318,7 @@
 
     <div class="system-container" id="main-app" style="display:none">
         <div class="text-center mb-10 select-none">
-            <div class="adm-logo" style="width:84px;height:84px;border-radius:22px;margin:0 auto 12px;box-shadow:0 8px 20px rgba(132,204,22,.35);"></div>
+            <div class="adm-logo" style="width:108px;height:108px;border-radius:28px;margin:0 auto 14px;box-shadow:0 8px 20px rgba(132,204,22,.35);"></div>
             <h1 class="text-5xl font-black text-green-600 mb-3 tracking-wide inline-block px-4">Alsaree3</h1><br>
             <p class="text-lg font-extrabold text-green-700 bg-green-50 inline-block px-6 py-2 rounded-2xl border border-green-200">🖥️ Morning Call Center</p>
         </div>
@@ -4675,12 +4675,17 @@
                         return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0') === _todayStr;
                     });
                     const _todayN = _todaySelf.length, _openToday = _todaySelf.filter(t => !t.solved_at).length;
+                    // كفالة الكابتن: تظهر في المهام الثلاث (واتساب / توزيع / قبول)
+                    const _capOpenAll = !!(window._ld.cap || window._dispR || window._dispD);
+                    const _capBlock = `<div class="tk-row" style="margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;width:100%;">🚴 كفالة الكابتن ${_capOpenAll ? '▴' : '▾'}</button></div>${_capOpenAll ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق *" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addCaptain()"><button onclick="window.addCaptain(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة كفالة</button></div>` : ''}`;
                     if (d.currentTask === 'واتساب') {
                         taskExtra = `<div class="tk-row">
                             <button onclick="window.ticketReceived(this)" class="tk-btn tk-in">📩 وصلني طلب</button>
                             <button onclick="window.ticketSolved(this)" ${_openN ? '' : 'disabled'} class="tk-btn tk-ok">✅ تم الحل${_openN ? ' <span class="tk-badge">' + _openN + '</span>' : ''}</button>
                         </div>
-                        <div class="tk-stat">\u0627\u0644\u064a\u0648\u0645: ${_todayN} \u0648\u0635\u0644 \u00b7 ${_todayN - _openToday} \u0627\u0646\u062d\u0644</div>`;
+                        <div class="tk-stat">\u0627\u0644\u064a\u0648\u0645: ${_todayN} \u0648\u0635\u0644 \u00b7 ${_todayN - _openToday} \u0627\u0646\u062d\u0644</div>
+                        ${_capBlock}`;
                     } else if (d.currentTask === 'توزيع' || d.currentTask === 'قبول') {
                         const _k = d.currentTask === 'قبول' ? 'accept' : 'dispatch';
                         if (!_ordLoadedAt[_k] || Date.now() - _ordLoadedAt[_k] > 20000) { _ordLoadedAt[_k] = Date.now(); _fetchMyOrders(_k); }
@@ -4689,7 +4694,7 @@
                         const _ol = _ordData[_k], _dn = _ol.length;
                         const _ll = _ordData[_lk], _ln = _ll.length;
                         const _lateReasons = { accept: ['تأخير من المطعم', 'ازدحام في المطعم', 'نقص مواد', 'المطعم لم يستلم الطلب', 'المطعم مغلق', 'مشكلة في النظام'], dispatch: ['سائق لديه أكثر من طلب', 'لا يوجد سائق متاح', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'تأخير في التجهيز من المطعم', 'تبديل السائق', 'سائق عطلان', 'مشكلة في النظام'] };
-                        const _capOpen = _k === 'dispatch' && !!(window._ld.cap || window._dispR || window._dispD);
+                        const _capOpen = !!(window._ld.cap || window._dispR || window._dispD);
                         const _lateOpen = !!(window._ld.show || window._ld.o || window._ld.r || window._ld.rest || window._ld.other);
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
@@ -4697,6 +4702,7 @@
                         <div class="tk-row"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (إجباري)" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب (توزيع يدوي)" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
                         <div class="tk-row" style="gap:6px;margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">🚴 كفالة الكابتن ${_capOpen ? '▴' : '▾'}</button><button type="button" class="tk-btn" onclick="window.toggleLateBox()" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر ${_lateOpen ? '▴' : '▾'}</button></div>${_capOpen ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
                         <div class="tk-row" style="margin-bottom:6px;"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق *" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addCaptain()"><button onclick="window.addCaptain(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة كفالة</button></div>` : ''}`}
+                        ${_k === 'accept' ? _capBlock : ''}
                         <div class="tk-stat" style="margin:0 0 6px;">اليوم: ${_dn} ${_k === 'accept' ? 'مقبول' : 'موزّع'} · ${_ln} ${_lateTx}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>
                         ${_k === 'accept' ? `<button type="button" class="tk-btn tk-late-t" onclick="window.toggleLateBox()" style="width:100%;margin-bottom:6px;background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ ${_lateOpen ? 'إخفاء الطلب المتأخر ▴' : 'تسجيل طلب متأخر ▾'}</button>` : ''}
                         ${_lateOpen ? `
