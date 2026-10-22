@@ -70,7 +70,7 @@
         .card-box.break-active .timer-text { color: #dc2626 !important; }
 
         /* شاشة تسجيل الدخول */
-        #login-screen { position:fixed; inset:0; background:linear-gradient(135deg,#dcfce7 0%,#bbf7d0 50%,#86efac 100%); display:flex; align-items:center; justify-content:center; z-index:9999; font-family:'Cairo',sans-serif; }
+        #login-screen { position:fixed; inset:0; flex-direction:column; background:linear-gradient(135deg,#dcfce7 0%,#bbf7d0 50%,#86efac 100%); display:flex; align-items:center; justify-content:center; z-index:9999; font-family:'Cairo',sans-serif; }
         .login-card { background:#ffffff; border-radius:32px; padding:40px 36px; box-shadow:0 25px 50px rgba(0,0,0,0.12); width:100%; max-width:420px; border:1px solid #bbf7d0; }
         .login-select { width:100%; padding:14px 16px; border-radius:16px; border:2px solid #d1fae5; font-family:'Cairo',sans-serif; font-size:1rem; font-weight:700; background:#f0fdf4; color:#000; cursor:pointer; outline:none; transition:border 0.2s; direction:rtl; }
         .login-select:focus { border-color:#22c55e; }
@@ -81,6 +81,52 @@
         .login-btn:disabled { background:#86efac; cursor:not-allowed; }
         .error-msg { color:#dc2626; font-weight:700; font-size:0.9rem; text-align:center; min-height:22px; }
         .my-card-highlight { border:3px solid #22c55e !important; box-shadow:0 0 0 6px #bbf7d030 !important; }
+        /* بطاقة المطوّر: مربعة ومرتبة، يتناوب تمييز أقسامها كل 5 ثوانٍ (دورة 15 ثانية) */
+        body { padding-bottom: 64px; }
+        .dev-card { width:min(92vw,300px); box-sizing:border-box; padding:14px; border-radius:22px; direction:ltr; text-align:left; font-family:'Cairo',sans-serif; color:#ecfdf5; background:linear-gradient(145deg,#0b2f33 0%,#103d42 55%,#16626a 100%); border:1px solid rgba(190,242,100,.35); box-shadow:0 14px 30px rgba(16,61,66,.30), inset 0 1px 0 rgba(255,255,255,.10); }
+        .dev-card.in-login { margin-top:18px; flex:none; }
+        .dev-card.fixed-bl { position:fixed; left:14px; bottom:calc(14px + env(safe-area-inset-bottom,0px)); z-index:90; width:262px; }
+        .dev-card .dc-head { display:flex; align-items:center; gap:10px; padding:8px; border-radius:16px; border:1px solid transparent; }
+        .dev-card .dc-av { width:42px; height:42px; flex:none; border-radius:14px; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:1rem; color:#0f172a; background:linear-gradient(135deg,#d9f99d,#a3e635); box-shadow:0 4px 10px rgba(163,230,53,.35); }
+        .dev-card .dc-role { font-size:.66rem; font-weight:800; letter-spacing:.6px; color:#86efac; text-transform:uppercase; }
+        .dev-card .dc-name { font-size:1rem; font-weight:900; color:#fff; line-height:1.25; }
+        .dev-card .dc-min { margin-left:auto; flex:none; width:26px; height:26px; border-radius:8px; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.08); color:#ecfdf5; font-weight:900; line-height:1; cursor:pointer; font-family:inherit; }
+        .dev-card .dc-min:hover { background:rgba(255,255,255,.18); }
+        .dev-card .dc-rows { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+        .dev-card .dc-row { --ib:rgba(255,255,255,.06); --ibd:rgba(255,255,255,.08); display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:14px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); }
+        .dev-card .dc-ic { width:34px; height:34px; flex:none; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:1rem; background:rgba(217,249,157,.14); }
+        .dev-card .dc-lb { font-size:.66rem; font-weight:800; color:#a7f3d0; line-height:1.1; }
+        .dev-card .dc-val { font-size:.86rem; font-weight:900; color:#fff; direction:ltr; word-break:break-all; line-height:1.3; }
+        /* ظهور/اختفاء: تظهر بحركة جاذبة ~10 ثوانٍ ثم تختفي 15 ثانية وتعود */
+        .dev-card { position:relative; overflow:hidden; opacity:0; transform:translateY(46px) scale(.82); pointer-events:none; }
+        .dev-card.fixed-bl { position:fixed; }
+        .dev-card::after { content:''; position:absolute; top:0; bottom:0; left:-60%; width:45%; transform:skewX(-20deg); background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent); opacity:0; pointer-events:none; }
+        .dev-card.in { pointer-events:auto; animation:dcIn .9s cubic-bezier(.2,.9,.3,1.25) forwards, dcFloat 3.2s ease-in-out .9s infinite; }
+        .dev-card.in::after { animation:dcShine 1.4s ease-out .5s 1 both, dcShine 1.4s ease-out 5s 1 both; }
+        .dev-card.out { animation:dcOut .6s ease-in forwards; pointer-events:none; }
+        .dev-card.in .dc-glow { animation:dcGlowOnce 2.6s ease-in-out .8s 1 both; }
+        .dev-card.in .dc-glow.dc-d1 { animation-delay:3.4s; }
+        .dev-card.in .dc-glow.dc-d2 { animation-delay:6s; }
+        .dev-card.in .dc-av { animation:dcPulse 1.6s ease-in-out .9s 3; }
+        @keyframes dcIn { 0% { opacity:0; transform:translateY(46px) scale(.82) rotate(-3deg); } 60% { opacity:1; transform:translateY(-10px) scale(1.05) rotate(1deg); } 100% { opacity:1; transform:translateY(0) scale(1) rotate(0); } }
+        @keyframes dcFloat { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-5px); } }
+        @keyframes dcOut { 0% { opacity:1; transform:translateY(0) scale(1); } 100% { opacity:0; transform:translateY(40px) scale(.85); } }
+        @keyframes dcShine { 0% { left:-60%; opacity:1; } 100% { left:130%; opacity:1; } }
+        @keyframes dcPulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.12) rotate(-4deg); } }
+        @keyframes dcGlowOnce { 0%,100% { background-color:var(--ib,transparent); border-color:var(--ibd,transparent); box-shadow:none; } 15%,85% { background-color:rgba(217,249,157,.16); border-color:rgba(217,249,157,.6); box-shadow:0 0 0 3px rgba(217,249,157,.10); } }
+        .dev-card.min .dc-rows, .dev-card.min .dc-role { display:none; }
+        .dev-card.min { width:auto; padding:8px; border-radius:18px; }
+        .dev-card.min .dc-min { transform:rotate(180deg); }
+        /* ساعة أعلى اليمين */
+        #live-clock { position:fixed; top:14px; right:18px; z-index:100; display:flex; align-items:center; gap:12px; direction:ltr; padding:8px 16px 8px 12px; border-radius:20px; color:#fff; background:linear-gradient(135deg,#103d42 0%,#16626a 100%); border:1px solid rgba(255,255,255,.14); box-shadow:0 8px 22px rgba(16,61,66,.28), inset 0 1px 0 rgba(255,255,255,.12); font-family:'Cairo',sans-serif; user-select:none; pointer-events:none; }
+        #live-clock .lc-ic { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgba(228,255,26,.14); font-size:1.05rem; }
+        #live-clock .lc-time { display:flex; align-items:baseline; gap:2px; font-weight:900; font-size:1.55rem; line-height:1; letter-spacing:.5px; font-variant-numeric:tabular-nums; }
+        #live-clock .lc-sec { font-size:.85rem; font-weight:800; color:#bef264; margin-left:3px; }
+        #live-clock .lc-ap { font-size:.7rem; font-weight:800; color:#0f172a; background:#d9f99d; border-radius:6px; padding:1px 5px; margin-left:6px; align-self:center; }
+        #live-clock .lc-colon { animation:lcBlink 1s steps(1) infinite; }
+        #live-clock .lc-date { font-size:.72rem; font-weight:700; color:#a7f3d0; margin-top:3px; direction:rtl; text-align:left; white-space:nowrap; }
+        @keyframes lcBlink { 50% { opacity:.25; } }
+        @media (max-width:640px) { #live-clock { top:auto; bottom:calc(50px + env(safe-area-inset-bottom,0px)); right:10px; padding:6px 12px 6px 8px; gap:8px; } #live-clock .lc-time { font-size:1.2rem; } #live-clock .lc-ic { width:28px; height:28px; font-size:.9rem; } }
         #logout-btn { position:fixed; top:18px; left:18px; z-index:100; background:#fff; border:2px solid #cbd5e1; border-radius:14px; padding:8px 18px; font-family:'Cairo',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer; color:#374151; transition:all 0.2s; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
         #logout-btn:hover { border-color:#f87171; color:#dc2626; }
         #leave-btn { position:fixed; top:18px; left:125px; z-index:100; background:#fff; border:2px solid #86efac; border-radius:14px; padding:8px 18px; font-family:'Cairo',sans-serif; font-weight:700; font-size:0.9rem; cursor:pointer; color:#15803d; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
@@ -216,12 +262,15 @@
             <div class="error-msg mb-4" id="login-error" style="direction:ltr;text-align:left;"></div>
             <button id="login-btn" class="login-btn" onclick="window.doLogin()">Login →</button>
         </div>
+        <div class="dev-card in-login" id="dev-card-login"></div>
     </div>
 
     <button id="leave-btn" style="display:none" onclick="window.openLeaveRequest()">📝 طلب إجازة / إذن</button>
     <button id="helpdesk-btn" style="display:none" onclick="window.openHelpdesk()">🗂️ التذاكر (Helpdesk)</button>
     <!-- زر الخروج -->
     <button id="logout-btn" style="display:none" onclick="window.doLogout()">🚪 خروج</button>
+    <div class="dev-card fixed-bl" id="dev-card-fixed"></div>
+    <div id="live-clock" aria-label="الساعة"><div class="lc-ic">🕒</div><div><div class="lc-time"><span id="lc-h">--</span><span class="lc-colon">:</span><span id="lc-m">--</span><span class="lc-sec" id="lc-s">--</span><span class="lc-ap" id="lc-ap"></span></div><div class="lc-date" id="lc-date"></div></div></div>
 
     <div class="system-container" id="main-app" style="display:none">
         <div class="text-center mb-10 select-none">
@@ -3388,7 +3437,7 @@
             let t = document.getElementById('accept-toast');
             if (!t) {
                 t = document.createElement('div'); t.id = 'accept-toast';
-                t.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:9985;background:#0f172a;color:#fff;border-radius:12px;padding:10px 16px;font-weight:800;font-family:Cairo,sans-serif;direction:rtl;';
+                t.style.cssText = 'position:fixed;bottom:56px;left:50%;transform:translateX(-50%);z-index:9985;background:#0f172a;color:#fff;border-radius:12px;padding:10px 16px;font-weight:800;font-family:Cairo,sans-serif;direction:rtl;';
                 document.body.appendChild(t);
             }
             t.style.display = 'block';
@@ -3441,7 +3490,7 @@
             let t = document.getElementById('accept-toast');
             if (!t) {
                 t = document.createElement('div'); t.id = 'accept-toast';
-                t.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:9985;background:#0f172a;color:#fff;border-radius:12px;padding:10px 16px;font-weight:800;font-family:Cairo,sans-serif;direction:rtl;';
+                t.style.cssText = 'position:fixed;bottom:56px;left:50%;transform:translateX(-50%);z-index:9985;background:#0f172a;color:#fff;border-radius:12px;padding:10px 16px;font-weight:800;font-family:Cairo,sans-serif;direction:rtl;';
                 document.body.appendChild(t);
             }
             t.style.display = 'block';
@@ -4926,7 +4975,7 @@
             if (!list || !list.length) { if (el) el.remove(); return; }
             if (!el) {
                 el = document.createElement('div'); el.id = 'driver-unpaid-banner';
-                el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom, 0px));z-index:9990;max-width:94vw;background:#ea580c;color:#fff;padding:10px 16px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-weight:800;font-size:.95rem;direction:rtl;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:center;font-family:Cairo,sans-serif;';
+                el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(52px + env(safe-area-inset-bottom, 0px));z-index:9990;max-width:94vw;background:#ea580c;color:#fff;padding:10px 16px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-weight:800;font-size:.95rem;direction:rtl;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:center;font-family:Cairo,sans-serif;';
                 document.body.appendChild(el);
             }
             const key = JSON.stringify(list.map(x => [x.name, x.count]));
@@ -4974,8 +5023,56 @@
         setTimeout(() => { try { window.refreshUnpaidDrivers(); } catch (e) {} }, 4000);
         setInterval(() => { try { window.refreshUnpaidDrivers(); } catch (e) {} }, 60000);
 
+        // ===== بطاقة المطوّر (مرتبة): الاسم ثم الهاتف ثم البريد، يتناوب تمييزها كل 5 ثوانٍ =====
+        (function () {
+            const html = (withMin) =>
+                '<div class="dc-head dc-glow"><div class="dc-av">AK</div><div><div class="dc-role">المطوّر · Developer</div><div class="dc-name">ammar yasir kanaan</div></div>' + (withMin ? '<button type="button" class="dc-min" title="تصغير / تكبير">▾</button>' : '') + '</div>'
+                + '<div class="dc-rows">'
+                + '<div class="dc-row dc-glow dc-d1"><div class="dc-ic">📞</div><div><div class="dc-lb">الهاتف · Phone</div><div class="dc-val">07713399100</div></div></div>'
+                + '<div class="dc-row dc-glow dc-d2"><div class="dc-ic">✉️</div><div><div class="dc-lb">البريد · Email</div><div class="dc-val">ammaryasir19931993@gmail.com</div></div></div>'
+                + '</div>';
+            const l = document.getElementById('dev-card-login'); if (l) l.innerHTML = html(false);
+            const f = document.getElementById('dev-card-fixed');
+            if (f) {
+                f.innerHTML = html(true);
+                if (window.innerWidth < 640) f.classList.add('min');   // على الجوال تبدأ مصغّرة حتى لا تغطي الأزرار
+                f.querySelector('.dc-min').addEventListener('click', () => f.classList.toggle('min'));
+            }
+            // دورة الظهور: تظهر ~10 ثوانٍ بحركة، ثم تختفي 15 ثانية، ثم تعود
+            const SHOW_MS = 10000, HIDE_MS = 15000;
+            function cycle(el) {
+                if (!el) return;
+                function show() {
+                    el.classList.remove('in', 'out'); void el.offsetWidth; el.classList.add('in');
+                    setTimeout(hide, SHOW_MS);
+                }
+                function hide() {
+                    el.classList.remove('in'); void el.offsetWidth; el.classList.add('out');
+                    setTimeout(show, 600 + HIDE_MS);
+                }
+                setTimeout(show, 700);
+            }
+            cycle(l); cycle(f);
+        })();
+
+        // ===== الساعة أعلى اليمين =====
+        (function () {
+            const p2 = n => String(n).padStart(2, '0');
+            const dFmt = new Intl.DateTimeFormat('ar-IQ-u-nu-latn', { weekday: 'long', day: 'numeric', month: 'long' });
+            function tick() {
+                const el = document.getElementById('lc-h'); if (!el) return;
+                const d = new Date(); let h = d.getHours(); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+                el.textContent = p2(h);
+                document.getElementById('lc-m').textContent = p2(d.getMinutes());
+                document.getElementById('lc-s').textContent = p2(d.getSeconds());
+                document.getElementById('lc-ap').textContent = ap;
+                try { document.getElementById('lc-date').textContent = dFmt.format(d); } catch (e) {}
+            }
+            tick(); setInterval(tick, 1000);
+        })();
+
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed;bottom:4px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-manual-dispatch</div>
+<div id="ver-tag" style="position:fixed;bottom:40px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-manual-dispatch</div>
 </body>
 </html>
