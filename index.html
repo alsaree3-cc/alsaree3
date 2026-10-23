@@ -5139,6 +5139,107 @@
         }
         setInterval(() => { try { checkMissedCheckIn(); } catch (e) { console.error('[CheckInReminder]', e); } }, 15000);
 
+        // ===== تنبيه كل ساعة (8 ص – 7 م): إرسال أعداد السواق — صوت متكرر حتى يضغط الموظف «فهمت» =====
+        const CC_HUBS = ['rasafa_south', 'rasafa_north', 'karkh_north', 'karkh_south', 'basra', 'basmaya'];
+        const CC_FIRST_HOUR = 8, CC_LAST_HOUR = 19;
+        let _ccTimer = null, _ccCtx = null; const _ccMemAck = {};
+        function _ccAckKey() { return 'a3_cc_ack_' + loggedInId + '_' + getTodayDateString(); }
+        function _ccGetAck() {
+            try { const v = localStorage.getItem(_ccAckKey()); if (v !== null) return Number(v); } catch (e) {}
+            return _ccMemAck[_ccAckKey()] === undefined ? -1 : _ccMemAck[_ccAckKey()];
+        }
+        function _ccSetAck(h) { _ccMemAck[_ccAckKey()] = h; try { localStorage.setItem(_ccAckKey(), String(h)); } catch (e) {} }
+        function _ccBeep() {
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+                if (!_ccCtx) _ccCtx = new AC();
+                if (_ccCtx.state === 'suspended') _ccCtx.resume();
+                const ctx = _ccCtx, t0 = ctx.currentTime;
+                [[0, 880], [0.3, 1175], [0.6, 880], [0.9, 1175]].forEach(([t, f]) => {
+                    const o = ctx.createOscillator(), g = ctx.createGain();
+                    o.type = 'square'; o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+                    g.gain.setValueAtTime(0.0001, t0 + t);
+                    g.gain.exponentialRampToValueAtTime(0.3, t0 + t + 0.03);
+                    g.gain.exponentialRampToValueAtTime(0.0001, t0 + t + 0.25);
+                    o.start(t0 + t); o.stop(t0 + t + 0.28);
+                });
+            } catch (e) {}
+            try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch (e) {}
+        }
+        function _ccStartSound() { if (_ccTimer) return; _ccBeep(); _ccTimer = setInterval(_ccBeep, 2500); }
+        function _ccStopSound() { if (_ccTimer) { clearInterval(_ccTimer); _ccTimer = null; } }
+        function _ccClose() { _ccStopSound(); const ov = document.getElementById('cc-overlay'); if (ov) ov.remove(); }
+        function _ccShow(hour) {
+            if (document.getElementById('cc-overlay')) return;
+            if (!document.getElementById('cc-css')) {
+                const st = document.createElement('style'); st.id = 'cc-css';
+                st.textContent = '@keyframes ccPulse{0%,100%{box-shadow:0 0 0 0 rgba(234,88,12,.75),0 20px 50px rgba(0,0,0,.4)}50%{box-shadow:0 0 0 14px rgba(234,88,12,0),0 20px 50px rgba(0,0,0,.4)}}'
+                    + '#cc-overlay input.cc-in{width:90px;text-align:center;font-weight:900;font-size:1.05rem;border:2px solid #fdba74;border-radius:10px;padding:5px 8px;background:#fff7ed;color:#7c2d12;direction:ltr;font-family:inherit;}'
+                    + '#cc-overlay input.cc-in:focus{outline:none;border-color:#ea580c;background:#fff;}';
+                document.head.appendChild(st);
+            }
+            const h12 = (hour % 12) || 12, ap = hour >= 12 ? 'م' : 'ص';
+            const ov = document.createElement('div'); ov.id = 'cc-overlay'; ov.dataset.u = String(loggedInId);
+            ov.style.cssText = 'position:fixed;inset:0;z-index:99990;background:rgba(15,23,42,.65);display:flex;align-items:center;justify-content:center;padding:14px;direction:rtl;font-family:Cairo,sans-serif;';
+            const card = document.createElement('div');
+            card.style.cssText = 'background:#fff;border-radius:20px;max-width:420px;width:100%;max-height:94vh;overflow:auto;animation:ccPulse 1.4s ease-in-out infinite;';
+            const head = document.createElement('div');
+            head.style.cssText = 'background:#ea580c;color:#fff;padding:14px 16px;border-radius:20px 20px 0 0;display:flex;align-items:center;gap:10px;';
+            head.insertAdjacentHTML('beforeend', _NTF_LOGO_HTML);
+            const ht = document.createElement('div');
+            const t1 = document.createElement('div'); t1.style.cssText = 'font-weight:900;font-size:1.05rem;'; t1.textContent = '📣 يرجى إرسال أعداد السواق';
+            const t2 = document.createElement('div'); t2.style.cssText = 'font-size:.8rem;opacity:.9;font-weight:700;'; t2.textContent = 'تنبيه الساعة ' + h12 + ':00 ' + ap;
+            ht.appendChild(t1); ht.appendChild(t2); head.appendChild(ht); card.appendChild(head);
+            const body = document.createElement('div'); body.style.cssText = 'padding:14px 16px;';
+            const ttl = document.createElement('div'); ttl.style.cssText = 'direction:ltr;text-align:left;font-weight:900;color:#475569;margin-bottom:8px;'; ttl.textContent = 'number of captains';
+            body.appendChild(ttl);
+            const inputs = {};
+            CC_HUBS.forEach(hub => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #f1f5f9;direction:ltr;';
+                const lb = document.createElement('span'); lb.style.cssText = 'font-weight:800;color:#0f172a;font-family:monospace,Cairo;'; lb.textContent = hub;
+                const inp = document.createElement('input'); inp.className = 'cc-in'; inp.type = 'text'; inp.inputMode = 'numeric'; inp.value = '0'; inp.maxLength = 4;
+                inp.onfocus = () => { try { inp.select(); } catch (e) {} };
+                inp.oninput = () => { inp.value = inp.value.replace(/[\u0660-\u0669]/g, c => String(c.charCodeAt(0) - 0x0660)).replace(/\D/g, ''); };
+                inp.onblur = () => { if (inp.value === '') inp.value = '0'; };
+                inputs[hub] = inp; row.appendChild(lb); row.appendChild(inp); body.appendChild(row);
+            });
+            card.appendChild(body);
+            const foot = document.createElement('div'); foot.style.cssText = 'padding:4px 16px 16px;display:flex;gap:10px;';
+            const copyBtn = document.createElement('button');
+            copyBtn.textContent = '📋 نسخ';
+            copyBtn.style.cssText = 'flex:1;background:#0f766e;color:#fff;border:none;border-radius:12px;padding:10px;font-weight:900;font-size:1rem;cursor:pointer;font-family:inherit;';
+            copyBtn.onclick = () => {
+                const text = 'number of captains\n' + CC_HUBS.map(hub => hub + '\t' + (parseInt(inputs[hub].value, 10) || 0)).join('\n');
+                const done = () => { copyBtn.textContent = '✅ تم النسخ'; setTimeout(() => { copyBtn.textContent = '📋 نسخ'; }, 1500); };
+                const fallback = () => { try { const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px;'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); done(); } catch (e) {} };
+                try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback(); } catch (e) { fallback(); }
+            };
+            const okBtn = document.createElement('button');
+            okBtn.textContent = '✅ فهمت';
+            okBtn.style.cssText = 'flex:1;background:#16a34a;color:#fff;border:none;border-radius:12px;padding:10px;font-weight:900;font-size:1rem;cursor:pointer;font-family:inherit;';
+            okBtn.onclick = () => { _ccSetAck(Math.max(hour, new Date().getHours())); _ccClose(); };
+            foot.appendChild(copyBtn); foot.appendChild(okBtn); card.appendChild(foot);
+            ov.appendChild(card); document.body.appendChild(ov);
+            _ccStartSound();
+            try { if (document.hidden) _ciNotify('نظام السريع', 'يرجى إرسال أعداد السواق'); } catch (e) {}
+        }
+        function _ccCheck() {
+            const forced = /[?&]cctest=1/.test(location.search);   // للتجربة فقط: أضف ?cctest=1 لرابط الموقع
+            const ov = document.getElementById('cc-overlay');
+            if (!loggedInId || (loggedInId === '__admin__' && !forced) || (ov && ov.dataset.u !== String(loggedInId))) { if (ov) _ccClose(); if (!loggedInId || loggedInId === '__admin__' && !forced) return; }
+            if (document.getElementById('cc-overlay')) return;
+            const h = new Date().getHours();
+            if (forced && !window._ccTestDone) { window._ccTestDone = true; _ccShow(h); return; }
+            if (loggedInId === '__admin__') return;
+            if (h < CC_FIRST_HOUR || h > CC_LAST_HOUR) return;
+            const d = employeesData[loggedInId]; if (!d || d.status !== 'حضور') return;
+            if (_ccGetAck() >= h) return;
+            _ccShow(h);
+        }
+        setTimeout(() => { try { _ccCheck(); } catch (e) {} }, 3000);
+        setInterval(() => { try { _ccCheck(); } catch (e) { console.error('[CaptainCount]', e); } }, 10000);
+
         // ===== منبّه: سائقون لم يسلّموا الحساب (يظهر لكل الموظفين، من شيت كفالة الكابتن) =====
         let _drvKey = null;
         function _drvSetBanner(list) {
@@ -5306,6 +5407,6 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed;bottom:40px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.22-manual-dispatch-qp-return-captain-order-banner</div>
+<div id="ver-tag" style="position:fixed;bottom:40px;right:8px;z-index:9;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.23-captain-count-alert</div>
 </body>
 </html>
