@@ -4716,7 +4716,7 @@
                         if (!_ordLoadedAt[_lk] || Date.now() - _ordLoadedAt[_lk] > 20000) { _ordLoadedAt[_lk] = Date.now(); _fetchMyOrders(_lk); }
                         const _ol = _ordData[_k], _dn = _ol.length;
                         const _ll = _ordData[_lk], _ln = _ll.length;
-                        const _lateReasons = { accept: ['تأخير من المطعم', 'ازدحام في المطعم', 'نقص مواد', 'المطعم لم يستلم الطلب', 'المطعم مغلق', 'مشكلة في النظام'], dispatch: ['سائق لديه أكثر من طلب', 'لا يوجد سائق متاح', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'تأخير في التجهيز من المطعم', 'تبديل السائق', 'سائق عطلان', 'مشكلة في النظام'] };
+                        const _lateReasons = { accept: ['تأخير من المطعم', 'ازدحام في المطعم', 'نقص مواد', 'المطعم لم يستلم الطلب', 'المطعم مغلق', 'لم تتم الموافقة', 'مشكلة في النظام'], dispatch: ['سائق لديه أكثر من طلب', 'لا يوجد سائق متاح', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'تأخير في التجهيز من المطعم', 'تبديل السائق', 'سائق عطلان', 'مشكلة في النظام'] };
                         const _capOpen = !!(window._ld.cap || window._dispR || window._dispD || window._dispO);
                         const _lateOpen = !!(window._ld.show || window._ld.o || window._ld.r || window._ld.rest || window._ld.other);
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
@@ -4855,6 +4855,11 @@
                 }
                 employeesData = freshData;
             }
+            // أداء: لا تعيد رسم الواجهة كاملة إن لم تتغير البيانات (المزامنة الدورية كل 15ث كانت تسبب البطء/التعليق)
+            let _sig = null; try { _sig = JSON.stringify(freshData); } catch (e) {}
+            const _app = document.getElementById('app');
+            if (_sig !== null && _sig === window._lastEmpSig && _app && _app.children.length > 0) return;
+            window._lastEmpSig = _sig;
             if (loggedInId) render();
         }
         
@@ -5132,7 +5137,7 @@
                 _ciNotify('نظام السريع — تسجيل الحضور', late <= LATE_GRACE_MIN ? 'حان موعد دوامك، سجّل حضورك الآن' : 'نسيت تسجيل حضورك! أنت متأخر ' + late + ' دقيقة');
             }
         }
-        setInterval(() => { try { checkMissedCheckIn(); } catch (e) { console.error('[CheckInReminder]', e); } }, 5000);
+        setInterval(() => { try { checkMissedCheckIn(); } catch (e) { console.error('[CheckInReminder]', e); } }, 15000);
 
         // ===== منبّه: سائقون لم يسلّموا الحساب (يظهر لكل الموظفين، من شيت كفالة الكابتن) =====
         let _drvKey = null;
@@ -5141,24 +5146,25 @@
             if (!list || !list.length) { if (el) el.remove(); return; }
             if (!el) {
                 el = document.createElement('div'); el.id = 'driver-unpaid-banner';
-                el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(52px + env(safe-area-inset-bottom, 0px));z-index:9990;max-width:94vw;background:#ea580c;color:#fff;padding:10px 16px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-weight:800;font-size:.95rem;direction:rtl;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:center;font-family:Cairo,sans-serif;';
+                el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(52px + env(safe-area-inset-bottom, 0px));z-index:9990;max-width:92vw;background:#ea580c;color:#fff;padding:4px 10px;border-radius:12px;box-shadow:0 4px 14px rgba(0,0,0,.28);font-weight:800;font-size:.72rem;direction:rtl;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;justify-content:center;font-family:Cairo,sans-serif;animation:drvBlink 1s ease-in-out infinite;';
+                if (!document.getElementById('drv-blink-css')) { const st = document.createElement('style'); st.id = 'drv-blink-css'; st.textContent = '@keyframes drvBlink{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(234,88,12,.8),0 4px 14px rgba(0,0,0,.28)}50%{opacity:.45;box-shadow:0 0 0 8px rgba(234,88,12,0),0 4px 14px rgba(0,0,0,.28)}}'; document.head.appendChild(st); }
                 document.body.appendChild(el);
             }
             const key = JSON.stringify(list.map(x => [x.name, x.count, (x.orders || []).join(',')]));
             if (el.dataset.k === key && el.dataset.a === (loggedInId === '__admin__' ? '1' : '0')) return;
             el.dataset.k = key; el.dataset.a = (loggedInId === '__admin__' ? '1' : '0');
             el.textContent = '';
-            el.insertAdjacentHTML('beforeend', _NTF_LOGO_HTML);
+            el.insertAdjacentHTML('beforeend', _NTF_LOGO_HTML.replace(/34px/g, '20px'));
             const t = document.createElement('span'); t.textContent = '💰 سائقون لم يسلّموا الحساب:'; el.appendChild(t);
             list.forEach(x => {
                 const w = document.createElement('span');
-                w.style.cssText = 'background:rgba(255,255,255,.2);border-radius:999px;padding:3px 12px;display:inline-flex;gap:8px;align-items:center;';
+                w.style.cssText = 'background:rgba(255,255,255,.2);border-radius:999px;padding:1px 8px;display:inline-flex;gap:6px;align-items:center;';
                 const n = document.createElement('span'); const _os = (x.orders || []).slice(0, 5).map(o => '#' + o).join(' ، ') + ((x.orders || []).length > 5 ? ' …' : '');
                 n.textContent = x.name + ' (' + x.count + ' طلب' + (_os ? ': ' + _os : '') + (x.since ? ' · منذ ' + x.since : '') + ')'; w.appendChild(n);
                 {
                     const b = document.createElement('button');
                     b.textContent = '✅ تم تسليم';
-                    b.style.cssText = 'background:#fff;color:#c2410c;border:none;border-radius:10px;padding:3px 10px;font-weight:900;cursor:pointer;font-family:inherit;';
+                    b.style.cssText = 'background:#fff;color:#c2410c;border:none;border-radius:8px;padding:1px 7px;font-size:.68rem;font-weight:900;cursor:pointer;font-family:inherit;';
                     b.onclick = () => {
                         if (!confirm('تأكيد: السائق ' + x.name + ' سلّم الحساب؟\nسيُكتب «تم تسليم» في الشيت.')) return;
                         _postCaptainSheet({ type: 'driver_paid', driver: x.name });
