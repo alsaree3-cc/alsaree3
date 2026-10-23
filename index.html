@@ -3791,6 +3791,22 @@
             _tkToast('🚴 سُجّلت كفالة الكابتن: ' + drv + ' — ' + rest + ' — #' + ord);
             if (dr) dr.focus();
         };
+        // ===== قبول طلب كول سنتر: قائمة مكدّسة (رقم الطلب + اسم المطعم) لطلبات اليوم، محفوظة محلياً على هذا الجهاز =====
+        window._accKey = () => 'a3_accstack_' + String(loggedInId) + '_' + new Date().toLocaleDateString('en-CA');
+        window._accGet = () => { try { const a = JSON.parse(localStorage.getItem(window._accKey()) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+        window._accSet = (a) => { try { localStorage.setItem(window._accKey(), JSON.stringify(a.slice(0, 100))); } catch (e) {} };
+        window._accPush = (o, r) => { const a = window._accGet(); a.unshift({ o: String(o), r: String(r || ''), t: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) }); window._accSet(a); };
+        window._accPop = (o) => { const a = window._accGet(); const i = a.findIndex(x => x.o === String(o)); if (i !== -1) { a.splice(i, 1); window._accSet(a); } };
+        window._accStackHtml = () => {
+            const a = window._accGet().slice(0, 8);
+            if (!a.length) return '';
+            return '<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px;max-height:220px;overflow-y:auto;direction:rtl;">'
+                + a.map(x => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:6px 10px;font-weight:800;font-size:0.8rem;color:#14532d;">'
+                    + '<span style="direction:ltr;font-weight:900;">#' + sanitize(x.o) + '</span>'
+                    + '<span style="flex:1;text-align:right;">' + sanitize(x.r) + '</span>'
+                    + '<span style="color:#64748b;font-size:0.72rem;direction:ltr;">' + sanitize(x.t) + '</span></div>').join('')
+                + '</div>';
+        };
         window.addOrder = async (b, late) => {
             const baseKind = _ordKind();
             const kind = late ? baseKind + '_late' : baseKind;
@@ -3829,7 +3845,7 @@
                 return;
             }
             if (late) sendLateToSheet(v, reason.split(' — المطعم: ')[0], lateRest);
-            if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName); window._accR = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; }
+            if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName); window._accPush(v, restName); window._accR = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; }
             inp.value = '';
             if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.rest = ''; const _lr2 = document.getElementById('late-rest'); if (_lr2) _lr2.value = ''; window._ld.other = false; window._ld.open = false; window._ld.show = false; }
             if (navigator.vibrate) navigator.vibrate(30);
@@ -3842,7 +3858,7 @@
             _tkToast(_msg + v, async () => {
                 const { error: e2 } = await supabaseClient.rpc('alsaree3_dispatch_undo', { p_kind: kind });
                 if (e2) { console.error('[OrderUndo]', e2); return false; }
-                if (kind === 'accept') sendAcceptUndoToSheet(v);
+                if (kind === 'accept') { sendAcceptUndoToSheet(v); window._accPop(v); }
                 await _fetchMyOrders(kind); refreshOrderCounts(true); try { render(); } catch (e) {} return true;
             });
         };
@@ -4747,8 +4763,11 @@
                         const _lateOpen = !!(window._ld.show || window._ld.o || window._ld.r || window._ld.rest || window._ld.other);
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
-                        taskExtra = `${_k === 'accept' ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{window.addOrder();}}"></div>
-                        <div class="tk-row"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (إجباري)" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب (توزيع يدوي)" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
+                        taskExtra = `${_k === 'accept' ? `<div style="font-weight:900;font-size:0.85rem;color:#166534;text-align:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:7px;margin-bottom:6px;">📞 قبول طلب كول سنتر</div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب" class="tk-input" style="width:100%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{window.addOrder();}}"></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (إجباري)" class="tk-input" style="direction:rtl;width:100%;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="width:100%;">➕ إضافة</button></div>
+                        ${window._accStackHtml()}` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب (توزيع يدوي)" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
                         <div class="tk-row" style="gap:6px;margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">🚴 كفالة الكابتن ${_capOpen ? '▴' : '▾'}</button><button type="button" class="tk-btn" onclick="window.toggleLateBox()" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر ${_lateOpen ? '▴' : '▾'}</button></div>${_capOpen ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-order');if(d)d.focus();}"><input id="disp-order" type="text" maxlength="30" autocomplete="off" inputmode="text" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" oninput="window._dispO=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
                         <div class="tk-row" style="margin-bottom:6px;"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق *" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addCaptain()"><button onclick="window.addCaptain(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة كفالة</button></div>` : ''}`}
                         ${_k === 'accept' ? _capBlock : ''}
@@ -5450,6 +5469,6 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(40px + env(safe-area-inset-bottom, 0px)) !important;right:8px !important;left:auto !important;z-index:9980;transform:translateZ(0);will-change:transform;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.23-devcard-new-hourly-alert-all</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(40px + env(safe-area-inset-bottom, 0px)) !important;right:8px !important;left:auto !important;z-index:9980;transform:translateZ(0);will-change:transform;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.23-callcenter-accept-stack</div>
 </body>
 </html>
