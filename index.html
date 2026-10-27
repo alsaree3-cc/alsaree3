@@ -2717,7 +2717,13 @@
             try {
                 const rows = await window.loadScoreCard(today.slice(0, 7) + '-01', today, true);
                 const bx = document.getElementById('eom-banner'); if (!bx) return;
-                const ranked = (rows || []).filter(r => r.hasData && r.days > 0);
+                const withData = (rows || []).filter(r => r.hasData && r.days > 0);
+                // أهلية موظف الشهر: لا يكفي يوم أو يومان بدرجة كاملة — يجب أن يكون دوامه 60% على الأقل من أكثر الموظفين دواماً (وبحد أدنى 3 أيام)
+                const _maxDays = withData.reduce((m, r) => Math.max(m, r.days), 0);
+                const _minDays = Math.max(3, Math.ceil(_maxDays * 0.6));
+                let ranked = withData.filter(r => r.days >= _minDays);
+                const _fewData = !ranked.length;   // بداية الشهر: لا أحد يحقق الحد بعد، فنعرض الجميع مع تنبيه
+                if (_fewData) ranked = withData;
                 if (!ranked.length) { bx.innerHTML = '<div style="padding:10px;text-align:center;color:#94a3b8;font-weight:700;font-size:0.85rem;">🏆 موظف الشهر: لا توجد بيانات كافية بعد هذا الشهر</div>'; return; }
                 const medals = ['🥇', '🥈', '🥉'];
                 const top = ranked.slice(0, 3);
@@ -2727,7 +2733,8 @@
                     + '<div style="font-size:2rem;line-height:1;">🏆</div>'
                     + '<div style="flex:1;min-width:200px;"><div style="font-size:0.75rem;font-weight:800;color:#92400e;">موظف الشهر حتى الآن — ' + monthName + ' (من 1 إلى ' + Number(today.slice(8, 10)) + ')</div>'
                     + '<div style="font-size:1.25rem;font-weight:900;color:#78350f;">' + sanitize(w.name) + ' <span style="font-size:0.95rem;color:#16a34a;">' + Math.round(w.total) + '%</span></div>'
-                    + '<div style="font-size:0.72rem;font-weight:700;color:#a16207;">' + w.days + ' يوم دوام' + (w.absent ? ' · ' + w.absent + ' غياب' : '') + ' · يتحدّث تلقائياً</div></div>'
+                    + '<div style="font-size:0.72rem;font-weight:700;color:#a16207;">' + w.days + ' يوم دوام' + (w.absent ? ' · ' + w.absent + ' غياب' : '') + ' · حضور ' + Math.round(w.att || 0) + '% · بريك ' + Math.round(w.brk || 0) + '% · ساعات ' + (w.hrs === null ? '-' : Math.round(w.hrs) + '%') + (w.ord ? ' · مكافأة طلبات +' + (Math.round(w.ord / 100 * SC_WEIGHTS.ord * 10) / 10) : '') + '</div>'
+                    + '<div style="font-size:0.68rem;font-weight:700;color:#b45309;">' + (_fewData ? '⚠️ بداية الشهر: بيانات قليلة، الترتيب غير نهائي' : 'يُحتسب فقط من داوم ' + _minDays + ' أيام فأكثر') + ' · يتحدّث تلقائياً</div></div>'
                     + '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + top.map((r, i) => '<div style="background:#fff;border:1px solid #fde68a;border-radius:12px;padding:6px 12px;font-size:0.8rem;font-weight:800;color:#334155;">' + medals[i] + ' ' + sanitize(r.name) + ' · ' + Math.round(r.total) + '%</div>').join('') + '</div>'
                     + '<div style="display:flex;gap:6px;"><button onclick="window.openScoreCard()" style="background:#fff;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:5px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">التفاصيل</button>'
                     + '<button onclick="window.refreshTopPerformer(true)" style="background:#fff;border:1px solid #cbd5e1;color:#475569;border-radius:10px;padding:5px 10px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">🔄</button></div></div>';
@@ -2837,8 +2844,8 @@
                     let ws = 0, tot = 0;
                     ['att', 'brk', 'tkt', 'hrs'].forEach(c => { if (comps[c] !== null) { ws += SC_WEIGHTS[c]; tot += comps[c] * SC_WEIGHTS[c]; } });
                     const _bonus = (comps.ord !== null) ? comps.ord / 100 * SC_WEIGHTS.ord : 0;
-                    return { k, name: a.name || k, att, brk, tkt, ord, hrs, total: Math.min(100, (ws ? tot / ws : 0) + (ws ? _bonus : 0)), hasData, days: a.days, absent: a.absent, usedAvg: a.days > 0 ? a.usedMin / a.days : 0 };
-                }).sort((p, q) => (q.hasData - p.hasData) || (Math.round(q.total * 10) - Math.round(p.total * 10)) || (p.usedAvg - q.usedAvg));   // تساوي الدرجة: الأقل بريكاً واستراحة يتقدّم
+                    return { k, name: a.name || k, att, brk, tkt, ord, hrs, raw: (ws ? tot / ws : 0) + (ws ? _bonus : 0), total: Math.min(100, (ws ? tot / ws : 0) + (ws ? _bonus : 0)), hasData, days: a.days, absent: a.absent, usedAvg: a.days > 0 ? a.usedMin / a.days : 0 };
+                }).sort((p, q) => (q.hasData - p.hasData) || (Math.round((q.raw || 0) * 10) - Math.round((p.raw || 0) * 10)) || (p.usedAvg - q.usedAvg));   // تساوي الدرجة: الأقل بريكاً واستراحة يتقدّم
                 if (silent) return rows;
                 if (rows.length === 0) { box.style.cssText = 'padding:20px;color:#64748b;font-weight:700;'; box.innerHTML = '<p>لا يوجد موظفون.</p>'; return; }
                 window._scLast = { from, to, rows };
@@ -4628,7 +4635,7 @@
                             window._qp.pending = p; _qpAdminSig = sig;
                             try { render(); } catch (e) {}
                             try { window.refreshLeaveBadge(); } catch (e) {}
-                            if (hadNew) { try { const ac = new (window.AudioContext || window.webkitAudioContext)(), o = ac.createOscillator(), g = ac.createGain(); o.connect(g); g.connect(ac.destination); o.frequency.value = 880; g.gain.value = 0.08; o.start(); o.stop(ac.currentTime + 0.25); } catch (e) {} }
+                            if (hadNew) { try { _a3Play([[0, 880, 0.28]], 'sine', 0.12); } catch (e) {} }
                         }
                     }
                 } else {
@@ -5106,20 +5113,61 @@
             if (late < 0 || late > CHECKIN_REMIND_MAX_LATE_MIN) return null;
             return late;
         }
-        function _ciBeep() {
+        // ===== صوت موحّد: سياق صوت واحد يُفتح بأول لمسة =====
+        // المتصفحات (خصوصاً iOS وChrome للجوال) تمنع أي صوت قبل تفاعل المستخدم. الموظف الذي يدخل بجلسة محفوظة
+        // بدون أي لمسة كان سياق الصوت عنده «suspended» فلا يسمع التنبيه. الحل: نفتحه بأول لمسة، وإن بقي مقفلاً نُظهر زر تفعيل.
+        let _a3Ctx = null;
+        function _a3GetCtx() {
             try {
-                const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-                const ctx = new AC();
-                [0, 0.35, 0.7].forEach(t => {
-                    const o = ctx.createOscillator(), g = ctx.createGain();
-                    o.type = 'sine'; o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
-                    g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
-                    g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + t + 0.03);
-                    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.28);
-                    o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.3);
-                });
-                setTimeout(() => { try { ctx.close(); } catch (e) {} }, 1500);
+                const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+                if (!_a3Ctx || _a3Ctx.state === 'closed') {
+                    _a3Ctx = new AC();
+                    _a3Ctx.onstatechange = () => { if (_a3Ctx && _a3Ctx.state === 'running') _a3HideHint(); };
+                }
+                return _a3Ctx;
+            } catch (e) { return null; }
+        }
+        function _a3HideHint() { const h = document.getElementById('a3-sound-hint'); if (h) h.remove(); }
+        function _a3Hint() {
+            if (!loggedInId || document.getElementById('a3-sound-hint') || !document.body) return;
+            const b = document.createElement('button'); b.id = 'a3-sound-hint'; b.type = 'button'; b.textContent = '🔊 اضغط هنا لتفعيل صوت التنبيهات';
+            b.style.cssText = 'position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:100001;background:#2563eb;color:#fff;border:2px solid #fff;border-radius:999px;padding:8px 18px;font-weight:900;font-size:.9rem;font-family:Cairo,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.35);cursor:pointer;';
+            b.onclick = () => { _a3Unlock(); setTimeout(() => { if (_a3Ctx && _a3Ctx.state === 'running') { _a3HideHint(); _a3Play([[0, 880, 0.25]], 'sine', 0.2); } }, 150); };
+            document.body.appendChild(b);
+        }
+        function _a3Unlock() {
+            const ctx = _a3GetCtx(); if (!ctx) return;
+            try {
+                if (ctx.state !== 'running' && ctx.resume) { const p = ctx.resume(); if (p && p.then) p.then(() => { if (ctx.state === 'running') _a3HideHint(); }).catch(() => {}); }
+                const s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0);   // نغمة صامتة تفتح الصوت على iOS
+                if (ctx.state === 'running') _a3HideHint();
             } catch (e) {}
+        }
+        ['pointerdown', 'touchstart', 'touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, _a3Unlock, { passive: true, capture: true }));
+        document.addEventListener('visibilitychange', () => { if (!document.hidden && _a3Ctx && _a3Ctx.state !== 'running') { try { _a3Ctx.resume(); } catch (e) {} } });
+        // إن بقي الصوت مقفلاً بعد الدخول (جلسة محفوظة بلا لمس) نُظهر زر التفعيل بدل أن يفوت الموظف التنبيه بصمت
+        setInterval(() => { try { if (loggedInId && (!_a3Ctx || _a3Ctx.state !== 'running')) _a3Hint(); else _a3HideHint(); } catch (e) {} }, 4000);
+        // notes: [[بداية بالثواني, تردد, مدة]]
+        function _a3Play(notes, type, vol) {
+            const ctx = _a3GetCtx(); if (!ctx) return;
+            const go = () => {
+                try {
+                    const t0 = ctx.currentTime + 0.02;
+                    notes.forEach(([t, f, d]) => {
+                        const o = ctx.createOscillator(), g = ctx.createGain();
+                        o.type = type; o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+                        g.gain.setValueAtTime(0.0001, t0 + t);
+                        g.gain.exponentialRampToValueAtTime(vol, t0 + t + 0.03);
+                        g.gain.exponentialRampToValueAtTime(0.0001, t0 + t + d - 0.03);
+                        o.start(t0 + t); o.stop(t0 + t + d);
+                    });
+                } catch (e) {}
+            };
+            if (ctx.state === 'running') { go(); return; }
+            try { ctx.resume().then(() => { if (ctx.state === 'running') { _a3HideHint(); go(); } else _a3Hint(); }).catch(() => _a3Hint()); } catch (e) { _a3Hint(); }
+        }
+        function _ciBeep() {
+            _a3Play([[0, 880, 0.3], [0.35, 880, 0.3], [0.7, 880, 0.3]], 'sine', 0.25);
             try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch (e) {}
         }
         // شعار النظام (نفس شعار واجهة تسجيل الدخول) للإشعارات
@@ -5197,20 +5245,7 @@
         function _ccSetAck(h) { _ccMemAck[_ccAckKey()] = h; try { localStorage.setItem(_ccAckKey(), String(h)); } catch (e) {} }
         function _ccBeep() {
             if (!document.getElementById('cc-overlay')) { _ccStopSound(); return; }   // لا صوت بدون نافذة التنبيه
-            try {
-                const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-                if (!_ccCtx) _ccCtx = new AC();
-                if (_ccCtx.state === 'suspended') _ccCtx.resume();
-                const ctx = _ccCtx, t0 = ctx.currentTime;
-                [[0, 880], [0.3, 1175], [0.6, 880], [0.9, 1175]].forEach(([t, f]) => {
-                    const o = ctx.createOscillator(), g = ctx.createGain();
-                    o.type = 'square'; o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
-                    g.gain.setValueAtTime(0.0001, t0 + t);
-                    g.gain.exponentialRampToValueAtTime(0.3, t0 + t + 0.03);
-                    g.gain.exponentialRampToValueAtTime(0.0001, t0 + t + 0.25);
-                    o.start(t0 + t); o.stop(t0 + t + 0.28);
-                });
-            } catch (e) {}
+            _a3Play([[0, 880, 0.28], [0.3, 1175, 0.28], [0.6, 880, 0.28], [0.9, 1175, 0.28]], 'square', 0.3);
             try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch (e) {}
         }
         function _ccStartSound() { if (_ccTimer) return; _ccBeep(); _ccTimer = setInterval(_ccBeep, 2500); _ccFab(true); }
