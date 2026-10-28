@@ -57,6 +57,21 @@
         .tk-dd-item:hover { background:#fffbeb; }
         .tk-dd-item.sel { background:#fef2f2; color:#b91c1c; font-weight:900; }
         .tk-dd-item.other { color:#2563eb; }
+        .act-toggle { width:100%; display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:16px; border:1px solid #e2e8f0; background:#f8fafc; font-family:inherit; font-size:0.85rem; font-weight:900; color:#0f172a; cursor:pointer; direction:rtl; transition:border-color .15s, background .15s; }
+        .act-toggle:hover { border-color:#22c55e; background:#fff; }
+        .act-toggle.on { border-color:#22c55e; background:#fff; margin-bottom:10px; }
+        .act-toggle .act-st { margin-inline-start:auto; padding:2px 10px; border-radius:999px; background:#e2e8f0; color:#475569; font-size:0.72rem; font-weight:800; }
+        .act-toggle .act-ar { color:#64748b; }
+        .ord-tabs { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px; direction:rtl; }
+        .ord-tab { --c:#64748b; position:relative; display:flex; align-items:center; gap:6px; padding:8px 10px; border-radius:12px; border:1px solid #e2e8f0; background:#fff; font-family:inherit; font-size:0.8rem; font-weight:800; color:#334155; cursor:pointer; text-align:right; transition:background .15s, border-color .15s, transform .12s; }
+        .ord-tab:hover { border-color:var(--c); }
+        .ord-tab:active { transform:scale(.97); }
+        .ord-tab .ot-lb { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ord-tab .ot-n { min-width:20px; padding:0 6px; border-radius:999px; background:#f1f5f9; color:#475569; font-size:0.7rem; font-weight:900; text-align:center; line-height:18px; }
+        .ord-tab.on { background:var(--c); border-color:var(--c); color:#fff; box-shadow:0 6px 14px -8px var(--c); }
+        .ord-tab.on .ot-n { background:rgba(255,255,255,.25); color:#fff; }
+        .ord-panel { --c:#64748b; border:1px solid #e2e8f0; border-top:3px solid var(--c); border-radius:14px; padding:8px; margin-bottom:8px; background:#fff; }
+        .ord-panel .op-t { font-weight:900; font-size:0.8rem; color:var(--c); text-align:center; margin-bottom:8px; }
         .tk-stat { text-align:center; font-size:0.72rem; font-weight:800; color:#64748b; margin:-4px 0 12px; }
         .task-btn { background: #ffffff; border: 1px solid #cbd5e1; color: #000000; padding: 12px 8px; border-radius: 14px; font-size: 0.9rem; font-weight: 700; width: 100%; cursor: pointer; transition: all 0.2s; }
         .task-btn:hover { border-color: #22c55e; }
@@ -3247,6 +3262,22 @@
             if (from > to) { const t = from; from = to; to = t; }
             const st = document.getElementById('exp-status');
             const say = (m, bad) => { if (st) { st.textContent = m; st.style.color = bad ? '#b91c1c' : '#475569'; } };
+            if (kind === 'cancel') {   // الطلبات الملغاة: تُقرأ من شيت «الغاء الطلب»
+                if (!CANCEL_SHEET_URL) { say('⚠️ شيت الإلغاء غير مربوط', true); return; }
+                say('⏳ جاري التحميل من شيت الإلغاء...');
+                let rows = null;
+                try {
+                    const res = await fetch(CANCEL_SHEET_URL + '?action=export&secret=' + encodeURIComponent(SHEET_SECRET) + '&from=' + from + '&to=' + to);
+                    const j = JSON.parse(await res.text());
+                    if (j && j.ok && Array.isArray(j.rows)) rows = j.rows; else console.warn('[ExportCancel] bad response', j);
+                } catch (e) { console.warn('[ExportCancel]', e); }
+                if (!rows) { say('⚠️ تعذّر قراءة شيت الإلغاء (حدّث سكربت الشيت وانشره كإصدار جديد).', true); return; }
+                if (!rows.length) { say('لا توجد طلبات ملغاة في هذه الفترة.', true); return; }
+                rows.sort((x, y) => String(x[0] + ' ' + x[1]).localeCompare(String(y[0] + ' ' + y[1])));
+                window._expCsv('cancelled_orders_' + from + '_' + to + '.csv', ['التاريخ', 'الوقت', 'رقم الطلب', 'اسم المطعم', 'سبب الإلغاء', 'الموظف'], rows);
+                say('✅ تم تنزيل ملف الإلغاء (' + rows.length + ' طلب).');
+                return;
+            }
             const dates = window._expDates(from, to);
             say('⏳ جاري التحضير (' + dates.length + ' يوم)...');
             const nm = k => k === '__admin__' ? 'المسؤول' : ((employeesData[k] && employeesData[k].name) || String(k || ''));
@@ -3414,7 +3445,8 @@
                       + '<span style="font-weight:800;">من</span><input id="exp-from" type="date" value="' + sanitize(date) + '" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
                       + '<span style="font-weight:800;">إلى</span><input id="exp-to" type="date" value="' + sanitize(date) + '" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
                       + '<button onclick="window.exportOrders(\'accept\')" style="background:#16a34a;color:#fff;border:none;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;border-radius:10px;padding:7px 14px;">✅ تحميل القبول</button>'
-                      + '<button onclick="window.exportOrders(\'late\')" style="background:#dc2626;color:#fff;border:none;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;border-radius:10px;padding:7px 14px;">⏱️ تحميل التأخير</button></div>'
+                      + '<button onclick="window.exportOrders(\'late\')" style="background:#dc2626;color:#fff;border:none;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;border-radius:10px;padding:7px 14px;">⏱️ تحميل التأخير</button>'
+                      + '<button onclick="window.exportOrders(\'cancel\')" style="background:#ea580c;color:#fff;border:none;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;border-radius:10px;padding:7px 14px;">❌ تحميل الإلغاء</button></div>'
                       + '<div id="exp-status" style="margin-top:6px;font-size:0.78rem;font-weight:700;color:#475569;"></div></div>'
                       + '<details style="margin-bottom:8px;font-size:0.75rem;color:#64748b;font-weight:700;line-height:1.7;"><summary style="cursor:pointer;font-weight:800;">ℹ️ كيف تُحسب المهام</summary>الخصم من تقييم اليوم عند إغلاقه الساعة 7: تأخر القراءة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د = 1، وتأخر الحل أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د أو عدم الحل = 2 (على مهامك 📨 فقط). ومكافأة +1 لكل رسالة واتساب يحلّها الموظف (حتى +10) والتقييم لا يتجاوز 100. حذف أي سجل يُلغي أثره عند إغلاق اليوم.</details>';
                 if (!canEditOrders) {
@@ -3810,12 +3842,12 @@
         window._ld = window._ld || { o: '', r: '', rest: '', open: false, other: false };
         window._syncDD = () => {   // تحديث نص الزر والعنصر المختار دون إعادة رسم
             const btn = document.getElementById('late-dd-btn');
-            if (btn) { const sp = btn.querySelector('span'); if (sp) sp.textContent = window._ld.r || 'اختر سبب التأخير ▾'; btn.classList.toggle('empty', !window._ld.r); btn.classList.toggle('open', !!window._ld.open); const ar = btn.querySelectorAll('span')[1]; if (ar) ar.textContent = window._ld.open ? '▴' : '▾'; }
+            if (btn) { const sp = btn.querySelector('span'); if (sp) sp.textContent = window._ld.r || 'اختر سبب التبليغ ▾'; btn.classList.toggle('empty', !window._ld.r); btn.classList.toggle('open', !!window._ld.open); const ar = btn.querySelectorAll('span')[1]; if (ar) ar.textContent = window._ld.open ? '▴' : '▾'; }
             const list = document.getElementById('late-dd-list'); if (list) list.style.display = window._ld.open ? 'flex' : 'none';
             document.querySelectorAll('#late-dd-list .tk-dd-item[data-r]').forEach(c => c.classList.toggle('sel', !window._ld.other && c.dataset.r === window._ld.r));
             const oth = document.querySelector('#late-dd-list .tk-dd-item.other'); if (oth) oth.classList.toggle('sel', !!window._ld.other);
         };
-        window.toggleAcc = () => { const w = window._ld; const open = !!(w.acc || window._accR || window._accWhy); if (open) { w.acc = false; window._accR = ''; window._accWhy = ''; window._accResp = ''; window._accDelay = ''; } else { w.acc = true; } try { render(); } catch (err) {} };
+        window.toggleAcc = () => { const w = window._ld; const open = !!(w.acc || window._accR || window._accWhy); if (open) { w.acc = false; window._accR = ''; window._accWhy = ''; } else { w.acc = true; } try { render(); } catch (err) {} };
         window.toggleCap = () => { const w = window._ld; const open = !!(w.cap || window._dispR || window._dispD || window._dispO); if (open) { w.cap = false; window._dispR = ''; window._dispD = ''; window._dispO = ''; } else { w.cap = true; } try { render(); } catch (err) {} };
         window.toggleLateBox = () => { const w = window._ld; const open = !!(w.show || w.o || w.r || w.rest || w.other); if (open) { w.show = false; w.o = ''; w.r = ''; w.rest = ''; w.other = false; w.open = false; } else { w.show = true; } try { render(); } catch (err) {} };
         window.toggleLateDD = (ev) => { if (ev) ev.stopPropagation(); window._ld.open = !window._ld.open; window._syncDD(); };
@@ -3846,7 +3878,6 @@
         // ===== تسجيل الطلبات المقبولة (رقم الطلب + اسم المطعم) في شيت "القبول" عبر Apps Script =====
         const ACCEPT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzNN1kxknuwJmqOcFp2h5rko-ADZ7fQWzkOGq9cs3MZyKqx2Zzj1oze26CvC31Jscg/exec';   // ← الصق هنا رابط النشر (ينتهي بـ /exec) الخاص بسكربت شيت القبول
         window._accR = window._accR || ''; window._accWhy = window._accWhy || '';
-        window._accResp = window._accResp || ''; window._accDelay = window._accDelay || ''; window._accEmp = window._accEmp || '';
         const ACCEPT_REASON_REQUIRED = false;   // true = السبب إلزامي عند تسجيل قبول الطلب
         function _sheetEmpName() { return (loggedInId === '__admin__') ? 'المسؤول' : ((employeesData[loggedInId] && employeesData[loggedInId].name) || String(loggedInId || '')); }
         function _postAcceptSheet(payload) {
@@ -3860,7 +3891,7 @@
                 }).catch(function (e) { console.warn('[AcceptSheet]', e); });
             } catch (e) { console.warn('[AcceptSheet]', e); }
         }
-        function sendAcceptToSheet(order, restaurant, reason, info) { info = info || {}; _postAcceptSheet({ type: 'accept', order: order, restaurant: restaurant, reason: reason || '', report_reason: info.why || '', restaurant_reply: info.resp || '', delay: info.delay || '', employee: info.emp || _sheetEmpName() }); }
+        function sendAcceptToSheet(order, restaurant, reason) { _postAcceptSheet({ type: 'accept', order: order, restaurant: restaurant, reason: reason || '', employee: _sheetEmpName() }); }
         function sendAcceptUndoToSheet(order) { _postAcceptSheet({ type: 'accept_undo', order: order }); }
         // التوزيع: رقم الطلب + اسم المطعم + اسم السائق (كفالة السائق من الموظف)
         window._dispR = window._dispR || ''; window._dispD = window._dispD || ''; window._dispO = window._dispO || '';
@@ -3997,6 +4028,77 @@
                     + '<span style="color:#64748b;font-size:0.72rem;direction:ltr;">' + sanitize(x.t) + '</span></div>').join('')
                 + '</div>';
         };
+        // ===== سبب إلغاء الطلب: قائمة مكدّسة (اسم المطعم + رقم الطلب + سبب الإلغاء) لطلبات اليوم، محفوظة محلياً على هذا الجهاز =====
+        // ⬇️ الصق هنا رابط نشر سكربت شيت «الغاء الطلب» (ينتهي بـ /exec)
+        const CANCEL_SHEET_URL = 'https://script.google.com/macros/s/AKfycbw0LIER_kNt8W1OwI_3Rq1hNjO_Qnwq--ifFUAVTu8fdQk6wm8hbq4MI1UVpeiS_s4jrQ/exec';
+        function sendCancelToSheet(order, restaurant, reason) {
+            if (!CANCEL_SHEET_URL) return;
+            try {
+                fetch(CANCEL_SHEET_URL, {
+                    method: 'POST', mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ secret: SHEET_SECRET, order: order, restaurant: restaurant, reason: reason, employee: _sheetEmpName() }),
+                    keepalive: true
+                }).catch(function (e) { console.warn('[CancelSheet]', e); });
+            } catch (e) { console.warn('[CancelSheet]', e); }
+        }
+        window._cnl = window._cnl || { open: false, r: '', o: '', w: '' };
+        window._cnlKey = () => 'a3_cnlstack_' + String(loggedInId) + '_' + new Date().toLocaleDateString('en-CA');
+        window._cnlGet = () => { try { const a = JSON.parse(localStorage.getItem(window._cnlKey()) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+        window._cnlSet = (a) => { try { localStorage.setItem(window._cnlKey(), JSON.stringify(a.slice(0, 100))); } catch (e) {} };
+        window.toggleCnl = () => { const c = window._cnl; const open = !!(c.open || c.r || c.o || c.w); if (open) { c.open = false; c.r = ''; c.o = ''; c.w = ''; } else { c.open = true; } try { render(); } catch (e) {} };
+        window.addCancel = () => {
+            const g = id => { const e = document.getElementById(id); return e ? e.value.trim().replace(/\s+/g, ' ') : ''; };
+            const r = g('cnl-rest').slice(0, 60), o = g('cnl-order').slice(0, 30), w = g('cnl-why').slice(0, 150);
+            const f = id => { const e = document.getElementById(id); if (e) e.focus(); };
+            if (!r) { alert('⚠️ اكتب اسم المطعم أولاً'); f('cnl-rest'); return; }
+            if (!o) { alert('⚠️ اكتب رقم الطلب أولاً'); f('cnl-order'); return; }
+            if (!/^[0-9A-Za-z؀-ۿ#_\-\/]{1,30}$/.test(o)) { alert('⚠️ رقم الطلب غير صالح'); f('cnl-order'); return; }
+            if (!w) { alert('⚠️ اكتب سبب الإلغاء أولاً'); f('cnl-why'); return; }
+            const a = window._cnlGet();
+            a.unshift({ o, r, w, t: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) });
+            window._cnlSet(a);
+            sendCancelToSheet(o, r, w);
+            window._cnl.r = ''; window._cnl.o = ''; window._cnl.w = '';
+            if (navigator.vibrate) navigator.vibrate(30);
+            try { render(); } catch (e) {}
+            try { _tkToast('❌ سُجّل إلغاء الطلب: ' + r + ' — #' + o); } catch (e) {}
+            f('cnl-rest');
+        };
+        window._cnlStackHtml = () => {
+            const a = window._cnlGet().slice(0, 8);
+            if (!a.length) return '';
+            const cols = 'display:grid;grid-template-columns:1.2fr 0.8fr 1.6fr;gap:6px;align-items:center;';
+            return '<div style="margin-bottom:8px;direction:rtl;border:1px solid #fed7aa;border-radius:12px;overflow:hidden;">'
+                + '<div style="' + cols + 'background:#ffedd5;padding:6px 10px;font-weight:900;font-size:0.72rem;color:#9a3412;"><span>اسم المطعم</span><span>رقم الطلب</span><span>سبب الإلغاء</span></div>'
+                + '<div style="max-height:220px;overflow-y:auto;">'
+                + a.map((x, ix) => '<div style="' + cols + 'padding:6px 10px;font-weight:800;font-size:0.78rem;color:#7c2d12;background:' + (ix % 2 ? '#fffaf5' : '#fff') + ';border-top:1px solid #fdeee0;">'
+                    + '<span style="overflow-wrap:anywhere;">' + sanitize(x.r || '—') + '</span>'
+                    + '<span style="direction:ltr;text-align:right;font-weight:900;">#' + sanitize(x.o) + '</span>'
+                    + '<span style="overflow-wrap:anywhere;color:#475569;font-weight:700;">' + sanitize(x.w || '—') + '</span></div>').join('')
+                + '</div></div>';
+        };
+        // ===== الإجراءات (Actions) قابلة للطي — الحالة محفوظة على هذا الجهاز =====
+        window._actOpen = (() => { try { return localStorage.getItem('a3_act_open') === '1'; } catch (e) { return false; } })();
+        window.toggleActions = () => { window._actOpen = !window._actOpen; try { localStorage.setItem('a3_act_open', window._actOpen ? '1' : '0'); } catch (e) {} try { render(); } catch (e) {} };
+        window.ordTab = (t) => { window._ld.tab = (window._ld.tab === t) ? '' : t; if (window._ld.tab === 'late') window._ld.show = true; try { render(); } catch (e) {} const f = { acc: 'acc-rest', cnl: 'cnl-rest', cap: 'disp-rest', late: 'late-rest' }[window._ld.tab]; if (f) { const el = document.getElementById(f); if (el) el.focus(); } };
+        window._cnlFormHtml = () => {
+            const c = window._cnl;
+            return '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" value="' + sanitize(c.r) + '" oninput="window._cnl.r=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-order\');if(n)n.focus();}">'
+                + '<input id="cnl-order" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" value="' + sanitize(c.o) + '" oninput="window._cnl.o=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-why\');if(n)n.focus();}"></div>'
+                + '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-why" type="text" maxlength="150" autocomplete="off" placeholder="سبب إلغاء الطلب *" class="tk-input" style="direction:rtl;" value="' + sanitize(c.w) + '" oninput="window._cnl.w=this.value" onkeydown="if(event.key===\'Enter\')window.addCancel()"></div>'
+                + '<div class="tk-row" style="margin:0;"><button type="button" onclick="window.addCancel()" class="tk-btn" style="width:100%;background:#fff7ed;color:#9a3412;border-color:#fed7aa;">➕ إضافة</button></div>';
+        };
+        window._cnlBlockHtml = () => {
+            const c = window._cnl, open = !!(c.open || c.r || c.o || c.w);
+            return '<div style="margin-bottom:6px;"><button type="button" onclick="window.toggleCnl()" style="display:block;width:100%;font-family:inherit;cursor:pointer;font-weight:900;font-size:0.85rem;color:#9a3412;text-align:center;background:#fff7ed;border:1px solid #fed7aa;border-radius:' + (open ? '12px 12px 0 0' : '12px') + ';padding:7px;">❌ سبب إلغاء الطلب ' + (open ? '▴' : '▾') + '</button>'
+                + (open ? '<div style="border:1px solid #fed7aa;border-top:none;border-radius:0 0 12px 12px;padding:6px;background:#fffaf5;">'
+                    + '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" value="' + sanitize(c.r) + '" oninput="window._cnl.r=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-order\');if(n)n.focus();}">'
+                    + '<input id="cnl-order" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" value="' + sanitize(c.o) + '" oninput="window._cnl.o=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-why\');if(n)n.focus();}"></div>'
+                    + '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-why" type="text" maxlength="150" autocomplete="off" placeholder="سبب إلغاء الطلب *" class="tk-input" style="direction:rtl;" value="' + sanitize(c.w) + '" oninput="window._cnl.w=this.value" onkeydown="if(event.key===\'Enter\')window.addCancel()"></div>'
+                    + '<div class="tk-row"><button type="button" onclick="window.addCancel()" class="tk-btn" style="width:100%;background:#fff7ed;color:#9a3412;border-color:#fed7aa;">➕ إضافة</button></div></div>' : '')
+                + '</div>' + window._cnlStackHtml();
+        };
         window.addOrder = async (b, late) => {
             const baseKind = _ordKind();
             const kind = late ? baseKind + '_late' : baseKind;
@@ -4021,13 +4123,11 @@
                 restName = rn ? rn.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
                 if (!restName) { alert('⚠️ اكتب اسم المطعم أولاً'); if (rn) rn.focus(); return; }
             }
-            let accWhy = '', accInfo = null;
+            let accWhy = '';
             if (!late && baseKind === 'accept') {
-                const _g = id => { const e = document.getElementById(id); return e ? e.value.trim().replace(/\s+/g, ' ') : ''; };
-                const why = _g('acc-why').slice(0, 100), resp = _g('acc-resp').slice(0, 100), delay = _g('acc-delay').slice(0, 30), emp = _g('acc-emp').slice(0, 60);
-                if (!why && ACCEPT_REASON_REQUIRED) { alert('⚠️ اكتب سبب التبليغ أولاً'); const rw = document.getElementById('acc-why'); if (rw) rw.focus(); return; }
-                accInfo = { why, resp, delay, emp };
-                accWhy = [why && ('سبب التبليغ: ' + why), resp && ('رد المطعم: ' + resp), delay && ('مدة التأخير: ' + delay)].filter(Boolean).join(' | ');
+                const rw = document.getElementById('acc-why');
+                accWhy = rw ? rw.value.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
+                if (!accWhy && ACCEPT_REASON_REQUIRED) { alert('⚠️ اكتب السبب أولاً'); if (rw) rw.focus(); return; }
             }
             if (!_checkWriteRate()) return;
             if (b && b.classList) b.classList.add('busy');
@@ -4042,8 +4142,8 @@
                     : '❌ تعذّر التسجيل. حاول مرة أخرى.\n\nالسبب: ' + (error.code ? '[' + error.code + '] ' : '') + _em.slice(0, 200));
                 return;
             }
-            if (late) sendLateToSheet(v, reason.split(' — المطعم: ')[0], lateRest);
-            if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName, accWhy, accInfo); window._accPush(v, restName, accWhy); window._accR = ''; window._accWhy = ''; window._accResp = ''; window._accDelay = ''; ['acc-rest', 'acc-why', 'acc-resp', 'acc-delay'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; }); }
+            if (late) { const _dsel = document.getElementById('late-dur'); const _dur = (_dsel && _dsel.value) || window._ld.dur || ''; sendLateToSheet(v, reason.split(' — المطعم: ')[0] + (_dur ? ' | مدة التأخير: ' + _dur : ''), lateRest); }
+            if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName, accWhy); window._accPush(v, restName, accWhy); window._accR = ''; window._accWhy = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; const _rw = document.getElementById('acc-why'); if (_rw) _rw.value = ''; }
             inp.value = '';
             if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.rest = ''; const _lr2 = document.getElementById('late-rest'); if (_lr2) _lr2.value = ''; window._ld.other = false; window._ld.open = false; window._ld.show = false; }
             if (navigator.vibrate) navigator.vibrate(30);
@@ -4940,8 +5040,9 @@
                     const _todayN = _todaySelf.length, _openToday = _todaySelf.filter(t => !t.solved_at).length;
                     // كفالة الكابتن: تظهر في المهام الثلاث (واتساب / توزيع / قبول)
                     const _capOpenAll = !!(window._ld.cap || window._dispR || window._dispD || window._dispO);
-                    const _capBlock = `<div class="tk-row" style="margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;width:100%;">🚴 كفالة الكابتن ${_capOpenAll ? '▴' : '▾'}</button></div>${_capOpenAll ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-order');if(d)d.focus();}"><input id="disp-order" type="text" maxlength="30" autocomplete="off" inputmode="text" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" oninput="window._dispO=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
-                        <div class="tk-row" style="margin-bottom:6px;"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق *" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addCaptain()"><button onclick="window.addCaptain(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة كفالة</button></div>` : ''}`;
+                    const _capInner = `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-order');if(d)d.focus();}"><input id="disp-order" type="text" maxlength="30" autocomplete="off" inputmode="text" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" oninput="window._dispO=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق *" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addCaptain()"><button onclick="window.addCaptain(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة كفالة</button></div>`;
+                    const _capBlock = `<div class="tk-row" style="margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;width:100%;">🚴 كفالة الكابتن ${_capOpenAll ? '▴' : '▾'}</button></div>${_capOpenAll ? `${_capInner}` : ''}`;
                     if (d.currentTask === 'واتساب') {
                         taskExtra = `<div class="tk-row">
                             <button onclick="window.ticketReceived(this)" class="tk-btn tk-in">📩 وصلني طلب</button>
@@ -4962,29 +5063,45 @@
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
                         const _accOpen = !!(window._ld.acc || window._accR || window._accWhy);
+                        const _lateHtml = `
+                        <div style="background:#fff7f7;border:1px solid #fecaca;border-radius:16px;padding:10px;margin-bottom:8px;">
+                        <div style="font-weight:900;font-size:0.8rem;color:#b91c1c;text-align:center;margin-bottom:8px;">⏱️ تسجيل طلب متأخر</div>
+                        <div style="font-weight:900;font-size:0.78rem;color:#7f1d1d;margin:0 4px 3px;text-align:right;direction:rtl;">اسم المطعم :</div><div class="tk-row" style="margin-bottom:8px;"><input id="late-rest" type="text" maxlength="60" autocomplete="off" placeholder="${_k === 'accept' ? 'اسم المطعم (إجباري)' : 'اسم المطعم (اختياري)'}" value="${sanitize(window._ld.rest || '')}" class="tk-input" style="direction:rtl;" oninput="window._ld.rest=this.value" onkeydown="if(event.key==='Enter'){var o=document.getElementById('late-input');if(o)o.focus();}"></div>
+                        <div style="font-weight:900;font-size:0.78rem;color:#7f1d1d;margin:0 4px 3px;text-align:right;direction:rtl;">رقم الطلب :</div><div class="tk-row" style="margin-bottom:8px;"><input id="late-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="${_latePh}" class="tk-input" value="${sanitize(window._ld.o || '')}" oninput="window._ld.o=this.value" onkeydown="if(event.key==='Enter'){window._ld.open=true;window._syncDD();}"></div>
+                        <div style="font-weight:900;font-size:0.78rem;color:#7f1d1d;margin:0 4px 3px;text-align:right;direction:rtl;">سبب التبليغ :</div><div class="tk-dd" id="late-dd"><button type="button" id="late-dd-btn" class="tk-dd-btn${window._ld.r ? '' : ' empty'}${window._ld.open ? ' open' : ''}" onclick="window.toggleLateDD(event)"><span>${window._ld.r ? sanitize(window._ld.r) : 'اختر سبب التبليغ ▾'}</span><span>${window._ld.open ? '▴' : '▾'}</span></button>
+                        <div class="tk-dd-list" id="late-dd-list" style="display:${window._ld.open ? 'flex' : 'none'};">${_lateReasons[_k].map(r => '<button type="button" class="tk-dd-item' + (window._ld.r === r && !window._ld.other ? ' sel' : '') + '" data-r="' + sanitize(r) + '" onclick="window.pickLateReason(this)">' + sanitize(r) + '</button>').join('')}<button type="button" class="tk-dd-item other${window._ld.other ? ' sel' : ''}" onclick="window.pickLateReason(this, true)">✏️ أخرى (اكتب السبب)</button></div></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="late-reason" type="text" maxlength="100" autocomplete="off" placeholder="اكتب السبب هنا (إجباري)" class="tk-input" style="direction:rtl;${window._ld.other ? '' : 'display:none;'}" value="${window._ld.other ? sanitize(window._ld.r || '') : ''}" oninput="window._ld.r=this.value;window._syncDD()" onkeydown="if(event.key==='Enter')window.addOrder(null, true)"></div>
+                        <div style="font-weight:900;font-size:0.78rem;color:#7f1d1d;margin:0 4px 3px;text-align:right;direction:rtl;">مدة التأخير :</div><div class="tk-row" style="margin-bottom:8px;"><select id="late-dur" class="tk-input" style="direction:rtl;text-align:right;flex:1;" onchange="window._ld.dur=this.value">${(window._LATE_DURS || []).map((x, ix) => '<option value="' + x + '"' + ((window._ld.dur ? window._ld.dur === x : ix === 2) ? ' selected' : '') + '>' + x + '</option>').join('')}</select></div>
+                        <div class="tk-row" style="gap:6px;margin:0;"><button type="button" onclick="window.addOrder(this, true)" class="tk-btn" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;padding:10px;">⏱️ تسجيل متأخر</button><button type="button" onclick="window.waLateReport()" class="tk-btn tk-wa" style="padding:10px;">💬 إبلاغ واتساب</button></div>
+                        </div>
+                        `;
                         taskExtra = `${_k === 'accept' ? `<div style="margin-bottom:6px;"><button type="button" onclick="window.toggleAcc()" style="display:block;width:100%;font-family:inherit;cursor:pointer;font-weight:900;font-size:0.85rem;color:#166534;text-align:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:${_accOpen ? '12px 12px 0 0' : '12px'};padding:7px;">📞 قبول طلب كول سنتر ${_accOpen ? '▴' : '▾'}</button>${_accOpen ? `<div style="border:1px solid #bbf7d0;border-top:none;border-radius:0 0 12px 12px;padding:6px;background:#f7fef9;">
                         <div class="tk-row" style="margin-bottom:6px;"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-input');if(d&&!d.value.trim()){d.focus();}else{window.addOrder();}}"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{var w=document.getElementById('acc-why');if(w&&!w.value.trim()){w.focus();}else{window.addOrder();}}}"></div>
-                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-why" type="text" maxlength="100" autocomplete="off" placeholder="سبب التبليغ${ACCEPT_REASON_REQUIRED ? ' *' : ''}" class="tk-input" style="direction:rtl;" oninput="window._accWhy=this.value" onkeydown="if(event.key==='Enter'){var n=document.getElementById('acc-resp');if(n)n.focus();}"></div>
-                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-resp" type="text" maxlength="100" autocomplete="off" placeholder="رد المطعم" class="tk-input" style="direction:rtl;" oninput="window._accResp=this.value" onkeydown="if(event.key==='Enter'){var n=document.getElementById('acc-delay');if(n)n.focus();}"></div>
-                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-delay" type="text" maxlength="30" autocomplete="off" placeholder="مدة التأخير" class="tk-input" style="direction:rtl;flex:0 0 42%;" oninput="window._accDelay=this.value" onkeydown="if(event.key==='Enter'){var n=document.getElementById('acc-emp');if(n)n.focus();}"><input id="acc-emp" type="text" maxlength="60" autocomplete="off" placeholder="اسم الموظف" value="${sanitize(window._accEmp || _sheetEmpName())}" class="tk-input" style="direction:rtl;" oninput="window._accEmp=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-why" type="text" maxlength="100" autocomplete="off" placeholder="السبب${ACCEPT_REASON_REQUIRED ? ' *' : ''}" class="tk-input" style="direction:rtl;" oninput="window._accWhy=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"></div>
                         <div class="tk-row"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="width:100%;">➕ إضافة</button></div></div>` : ''}</div>
-                        ${window._accStackHtml()}` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب (توزيع يدوي)" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
+                        ${window._accStackHtml()}
+                        ${window._cnlBlockHtml()}` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب (توزيع يدوي)" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
                         <div class="tk-row" style="gap:6px;margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">🚴 كفالة الكابتن ${_capOpen ? '▴' : '▾'}</button><button type="button" class="tk-btn" onclick="window.toggleLateBox()" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر ${_lateOpen ? '▴' : '▾'}</button></div>${_capOpen ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-order');if(d)d.focus();}"><input id="disp-order" type="text" maxlength="30" autocomplete="off" inputmode="text" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" oninput="window._dispO=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
                         <div class="tk-row" style="margin-bottom:6px;"><input id="disp-driver" type="text" maxlength="60" autocomplete="off" placeholder="اسم السائق *" class="tk-input" style="direction:rtl;" oninput="window._dispD=this.value" onkeydown="if(event.key==='Enter')window.addCaptain()"><button onclick="window.addCaptain(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة كفالة</button></div>` : ''}`}
                         ${_k === 'accept' ? _capBlock : ''}
                         <div class="tk-stat" style="margin:0 0 6px;">اليوم: ${_dn} ${_k === 'accept' ? 'مقبول' : 'موزّع'} · ${_ln} ${_lateTx}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>
                         ${_k === 'accept' ? `<button type="button" class="tk-btn tk-late-t" onclick="window.toggleLateBox()" style="width:100%;margin-bottom:6px;background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ ${_lateOpen ? 'إخفاء الطلب المتأخر ▴' : 'تسجيل طلب متأخر ▾'}</button>` : ''}
-                        ${_lateOpen ? `
-                        <div style="background:#fff7f7;border:1px solid #fecaca;border-radius:16px;padding:10px;margin-bottom:8px;">
-                        <div style="font-weight:900;font-size:0.8rem;color:#b91c1c;text-align:center;margin-bottom:8px;">⏱️ تسجيل طلب متأخر</div>
-                        <div class="tk-row" style="gap:6px;margin-bottom:6px;"><input id="late-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="${_latePh}" class="tk-input" style="flex:1;" value="${sanitize(window._ld.o || '')}" oninput="window._ld.o=this.value" onkeydown="if(event.key===\'Enter\'){var r=document.getElementById(\'late-rest\');if(r)r.focus();}"><input id="late-rest" type="text" maxlength="60" autocomplete="off" placeholder="${_k === 'accept' ? 'اسم المطعم (إجباري)' : 'اسم المطعم (اختياري)'}" value="${sanitize(window._ld.rest || '')}" class="tk-input" style="direction:rtl;flex:1.5;" oninput="window._ld.rest=this.value" onkeydown="if(event.key==='Enter')window.addOrder(null, true)"></div>
-                        <div class="tk-dd" id="late-dd"><button type="button" id="late-dd-btn" class="tk-dd-btn${window._ld.r ? '' : ' empty'}${window._ld.open ? ' open' : ''}" onclick="window.toggleLateDD(event)"><span>${window._ld.r ? sanitize(window._ld.r) : 'اختر سبب التأخير ▾'}</span><span>${window._ld.open ? '▴' : '▾'}</span></button>
-                        <div class="tk-dd-list" id="late-dd-list" style="display:${window._ld.open ? 'flex' : 'none'};">${_lateReasons[_k].map(r => '<button type="button" class="tk-dd-item' + (window._ld.r === r && !window._ld.other ? ' sel' : '') + '" data-r="' + sanitize(r) + '" onclick="window.pickLateReason(this)">' + sanitize(r) + '</button>').join('')}<button type="button" class="tk-dd-item other${window._ld.other ? ' sel' : ''}" onclick="window.pickLateReason(this, true)">✏️ أخرى (اكتب السبب)</button></div></div>
-                        <div class="tk-row" style="margin-bottom:6px;"><input id="late-reason" type="text" maxlength="100" autocomplete="off" placeholder="اكتب السبب هنا (إجباري)" class="tk-input" style="direction:rtl;${window._ld.other ? '' : 'display:none;'}" value="${window._ld.other ? sanitize(window._ld.r || '') : ''}" oninput="window._ld.r=this.value;window._syncDD()" onkeydown="if(event.key==='Enter')window.addOrder(null, true)"></div>
-                        <div class="tk-row" style="margin-bottom:8px;"><select id="late-dur" class="tk-input" style="direction:rtl;text-align:right;flex:1;" onchange="window._ld.dur=this.value">${(window._LATE_DURS || []).map((x, ix) => '<option value="' + x + '"' + ((window._ld.dur ? window._ld.dur === x : ix === 2) ? ' selected' : '') + '>' + x + '</option>').join('')}</select></div>
-                        <div class="tk-row" style="gap:6px;margin:0;"><button type="button" onclick="window.addOrder(this, true)" class="tk-btn" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;padding:10px;">⏱️ تسجيل متأخر</button><button type="button" onclick="window.waLateReport()" class="tk-btn tk-wa" style="padding:10px;">💬 إبلاغ واتساب</button></div>
-                        </div>
-                        ` : ''}`;
+                        ${_lateOpen ? _lateHtml : ''}`;
+                        if (_k === 'accept') {
+                            const _tab = window._ld.tab || '';
+                            const _cn = window._cnlGet().length;
+                            const _tb = (t, ic, lb, n, c) => '<button type="button" class="ord-tab' + (_tab === t ? ' on' : '') + '" style="--c:' + c + ';" onclick="window.ordTab(\'' + t + '\')"><span class="ot-ic">' + ic + '</span><span class="ot-lb">' + lb + '</span>' + (n ? '<span class="ot-n">' + n + '</span>' : '') + '</button>';
+                            let _panel = '';
+                            if (_tab === 'acc') _panel = `<div class="ord-panel" style="--c:#16a34a;"><div class="op-t">📞 قبول طلب كول سنتر</div>` + `                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-input');if(d&&!d.value.trim()){d.focus();}else{window.addOrder();}}"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{var w=document.getElementById('acc-why');if(w&&!w.value.trim()){w.focus();}else{window.addOrder();}}}"></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-why" type="text" maxlength="100" autocomplete="off" placeholder="السبب${ACCEPT_REASON_REQUIRED ? ' *' : ''}" class="tk-input" style="direction:rtl;" oninput="window._accWhy=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"></div>
+                        <div class="tk-row"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="width:100%;">➕ إضافة</button></div>` + `</div>` + window._accStackHtml();
+                            else if (_tab === 'cnl') _panel = '<div class="ord-panel" style="--c:#ea580c;"><div class="op-t">❌ سبب إلغاء الطلب</div>' + window._cnlFormHtml() + '</div>' + window._cnlStackHtml();
+                            else if (_tab === 'cap') _panel = `<div class="ord-panel" style="--c:#2563eb;"><div class="op-t">🚴 كفالة الكابتن</div>${_capInner}</div>`;
+                            else if (_tab === 'late') _panel = _lateHtml;
+                            taskExtra = `<div class="tk-stat" style="margin:0 0 8px;">اليوم: ${_dn} مقبول · ${_ln} ${_lateTx}${_cn ? ' · ' + _cn + ' ملغي' : ''}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>
+                        <div class="ord-tabs">${_tb('acc', '📞', 'قبول طلب', _dn, '#16a34a')}${_tb('cnl', '❌', 'إلغاء طلب', _cn, '#ea580c')}${_tb('cap', '🚴', 'كفالة الكابتن', 0, '#2563eb')}${_tb('late', '⏱️', 'طلب متأخر', _ln, '#dc2626')}</div>
+                        ${_panel}`;
+                        }
                     }
                 }
                 const waBox = (i === loggedInId && !isAdmin) ? `
@@ -4998,15 +5115,15 @@
                         </div>
                         ${taskExtra}
                         ${waBox}
-                        <div class="block mb-2 text-xs font-bold text-black text-right pr-1">الإجراءات (Actions):</div>
-                        <div class="grid grid-cols-2 gap-3">
-                            ${(d.status === 'بريك' || d.status === 'راحة') ? `<button onclick="window.updateStatus('${escId}', 'حضور')" class="col-span-2 py-3 rounded-2xl bg-green-500 hover:bg-green-600 text-white font-black text-base">✅ إنهاء ${d.status === 'بريك' ? 'البريك' : 'الراحة'} والعودة للعمل</button>` : ''}
+                        ${(d.status === 'بريك' || d.status === 'راحة') ? `<button onclick="window.updateStatus('${escId}', 'حضور')" class="w-full mb-2 py-3 rounded-2xl bg-green-500 hover:bg-green-600 text-white font-black text-base">✅ إنهاء ${d.status === 'بريك' ? 'البريك' : 'الراحة'} والعودة للعمل</button>` : ''}
+                        <button type="button" class="act-toggle${window._actOpen ? ' on' : ''}" onclick="window.toggleActions()"><span>⚙️ الإجراءات (Actions)</span><span class="act-st">${sanitize(currentStatusDisplay)}</span><span class="act-ar">${window._actOpen ? '▴' : '▾'}</span></button>
+                        ${window._actOpen ? `<div class="grid grid-cols-2 gap-3 act-body">
                             <button onclick="window.updateStatus('${escId}', 'بريك')" class="btn-opt ${d.status === 'بريك' ? 'bg-red-200 border-red-500 font-black' : ''} text-black">Break</button>
                             <button onclick="window.updateStatus('${escId}', 'راحة')" class="btn-opt ${d.status === 'راحة' ? 'bg-orange-200 border-orange-400 font-black' : ''} text-black">Rest (20m)</button>
                             <button onclick="window.updateStatus('${escId}', 'حضور')" class="btn-opt ${d.status === 'حضور' ? 'bg-green-200 border-green-500 font-black' : ''} text-black">Check-In</button>
                             <button onclick="window.updateStatus('${escId}', 'أوف')" class="btn-opt ${d.status === 'أوف' ? 'bg-blue-200 border-blue-500 font-black' : ''} text-black">OFF Day</button>
                             <button onclick="window.updateStatus('${escId}', 'خارج العمل')" class="btn-opt hover:bg-red-100 text-black col-span-2">Check-Out</button>
-                        </div>` : `
+                        </div>` : ''}` : `
                         <div class="mt-4 text-center py-4 rounded-2xl bg-gray-50 border border-gray-200">
                             <span class="text-gray-400 text-sm font-bold">🔒 للعرض فقط</span>
                         </div>`;
@@ -5031,14 +5148,14 @@
                     </div>`;
             }
             const _di = document.getElementById('disp-input'), _dv = _di ? _di.value : '', _df = !!_di && document.activeElement === _di;
-            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'acc-why', 'acc-resp', 'acc-delay', 'acc-emp', 'disp-rest', 'disp-order', 'disp-driver'].indexOf(_ae.id) !== -1) ? _ae.id : null;
+            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'acc-why', 'cnl-rest', 'cnl-order', 'cnl-why', 'disp-rest', 'disp-order', 'disp-driver'].indexOf(_ae.id) !== -1) ? _ae.id : null;
             const _aeSel = _aeId ? [_ae.selectionStart, _ae.selectionEnd] : null;
             document.getElementById('app').innerHTML = h;
             if (_dv || _df) {
                 const _nx = document.getElementById('disp-input');
                 if (_nx) { _nx.value = _dv; if (_df) { _nx.focus(); try { _nx.setSelectionRange(_dv.length, _dv.length); } catch (e) {} } }
             }
-            { const _ar = document.getElementById('acc-rest'); if (_ar && window._accR) _ar.value = window._accR; const _aw = document.getElementById('acc-why'); if (_aw && window._accWhy) _aw.value = window._accWhy; const _ap = document.getElementById('acc-resp'); if (_ap && window._accResp) _ap.value = window._accResp; const _ad = document.getElementById('acc-delay'); if (_ad && window._accDelay) _ad.value = window._accDelay; }
+            { const _ar = document.getElementById('acc-rest'); if (_ar && window._accR) _ar.value = window._accR; const _aw = document.getElementById('acc-why'); if (_aw && window._accWhy) _aw.value = window._accWhy; }
             { const _dr = document.getElementById('disp-rest'), _dd = document.getElementById('disp-driver'); if (_dr && window._dispR) _dr.value = window._dispR; if (_dd && window._dispD) _dd.value = window._dispD; const _do = document.getElementById('disp-order'); if (_do && window._dispO) _do.value = window._dispO; }
             // حقول الطلب المتأخر: استرجاع المسودة والتركيز بعد إعادة الرسم
             { const _li = document.getElementById('late-input'), _lr = document.getElementById('late-reason');
