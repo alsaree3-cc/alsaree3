@@ -3224,6 +3224,82 @@
             el.parentElement.querySelectorAll('[data-q]').forEach(r => { r.style.display = (!q || r.getAttribute('data-q').includes(q)) ? 'flex' : 'none'; });
         };
 
+        // ----- تصدير الطلبات المقبولة / المتأخرة إلى ملف CSV (يُفتح في Excel) من لوحة المسؤول بدون فتح الشيت -----
+        window._expDates = (from, to) => {
+            const out = [];
+            for (let d = new Date(from + 'T12:00:00'), e = new Date(to + 'T12:00:00'); d <= e && out.length < 93; d.setDate(d.getDate() + 1))
+                out.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
+            return out;
+        };
+        window._expCsv = (fileName, head, rows) => {
+            const esc = v => { v = String(v == null ? '' : v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+            const csv = '\uFEFF' + [head].concat(rows).map(r => r.map(esc).join(',')).join('\r\n');
+            const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+            const a = document.createElement('a'); a.href = url; a.download = fileName; document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 3000);
+        };
+        window.exportOrders = async (kind) => {
+            if (loggedInId !== '__admin__') return;
+            const g = id => (document.getElementById(id) || {}).value || '';
+            const re = /^\d{4}-\d{2}-\d{2}$/;
+            let from = g('exp-from'), to = g('exp-to');
+            if (!re.test(from) || !re.test(to)) { alert('⚠️ اختر التاريخ (من / إلى)'); return; }
+            if (from > to) { const t = from; from = to; to = t; }
+            const st = document.getElementById('exp-status');
+            const say = (m, bad) => { if (st) { st.textContent = m; st.style.color = bad ? '#b91c1c' : '#475569'; } };
+            const dates = window._expDates(from, to);
+            say('⏳ جاري التحضير (' + dates.length + ' يوم)...');
+            const nm = k => k === '__admin__' ? 'المسؤول' : ((employeesData[k] && employeesData[k].name) || String(k || ''));
+            const tmf = ts => ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+            const day = {};
+            for (let i = 0; i < dates.length; i += 6) {
+                await Promise.all(dates.slice(i, i + 6).map(async ds => {
+                    try {
+                        let r = await supabaseClient.rpc('alsaree3_orders_admin', { p_date: ds });
+                        if (r.error) r = await supabaseClient.rpc('alsaree3_dispatch_admin', { p_date: ds });
+                        day[ds] = (r && r.data) || [];
+                    } catch (e) { day[ds] = []; }
+                }));
+            }
+            const bySort = (a, b) => String(a[0]).localeCompare(String(b[0])) || String(a[a.length - 1]).localeCompare(String(b[b.length - 1]));
+            if (kind === 'late') {
+                const KL = { accept_late: 'متأخر في التجهيز', dispatch_late: 'متأخر في الوصول' };
+                const rows = [];
+                dates.forEach(ds => (day[ds] || []).forEach(o => {
+                    const kd = o.kind || 'dispatch';
+                    if (!kd.endsWith('_late')) return;
+                    const parts = String(o.reason || '').split(' — المطعم: ');
+                    rows.push([ds, nm(o.employee_key), KL[kd] || kd, String(o.order_no), parts[1] || '', parts[0] || '', tmf(o.created_at)]);
+                }));
+                if (!rows.length) { say('لا توجد طلبات متأخرة في هذه الفترة.', true); return; }
+                rows.sort(bySort);
+                window._expCsv('late_orders_' + from + '_' + to + '.csv', ['التاريخ', 'الموظف', 'النوع', 'رقم الطلب', 'اسم المطعم', 'السبب', 'الوقت'], rows);
+                say('✅ تم تنزيل ملف التأخير (' + rows.length + ' طلب).');
+                return;
+            }
+            // القبول: رقم الطلب + المطعم + السبب من شيت القبول، والموظف والوقت من السيرفر
+            const who = {};
+            dates.forEach(ds => (day[ds] || []).forEach(o => { if ((o.kind || 'dispatch') === 'accept' && o.order_no != null) who[ds + '|' + String(o.order_no)] = [nm(o.employee_key), tmf(o.created_at)]; }));
+            let sheetRows = null;
+            if (typeof ACCEPT_SHEET_URL !== 'undefined' && ACCEPT_SHEET_URL) {
+                try {
+                    const res = await fetch(ACCEPT_SHEET_URL + '?action=export&secret=' + encodeURIComponent(SHEET_SECRET) + '&from=' + from + '&to=' + to);
+                    const j = JSON.parse(await res.text());
+                    if (j && j.ok && Array.isArray(j.rows)) sheetRows = j.rows;
+                } catch (e) { console.warn('[ExportAccept]', e); }
+            }
+            let rows, note = '';
+            if (sheetRows) {
+                rows = sheetRows.map(r => { const w = who[r[2] + '|' + r[0]] || ['', '']; return [r[2], String(r[0]), r[1], r[3], w[0], w[1]]; });
+            } else {
+                rows = []; dates.forEach(ds => (day[ds] || []).forEach(o => { if ((o.kind || 'dispatch') === 'accept' && o.order_no != null) rows.push([ds, String(o.order_no), '', '', nm(o.employee_key), tmf(o.created_at)]); }));
+                note = ' ⚠️ لم يُجلب اسم المطعم والسبب (حدّث سكربت الشيت ثم انشره كنسخة جديدة).';
+            }
+            if (!rows.length) { say('لا توجد طلبات مقبولة في هذه الفترة.', true); return; }
+            rows.sort(bySort);
+            window._expCsv('accepted_orders_' + from + '_' + to + '.csv', ['التاريخ', 'رقم الطلب', 'اسم المطعم', 'السبب', 'الموظف', 'الوقت'], rows);
+            say('✅ تم تنزيل ملف القبول (' + rows.length + ' طلب).' + note, !!note);
+        };
         // ----- بحث برقم الطلب: يعرض هل الطلب موجود + السبب المكتوب (يبحث في آخر N يوم) -----
         window._ordSearchCache = window._ordSearchCache || {};
         window._tkSearchCache = window._tkSearchCache || {};
@@ -3331,6 +3407,14 @@
                       + '<select id="osr-days" onchange="window.searchOrderNo()" style="border:1px solid #cbd5e1;border-radius:10px;padding:7px 8px;font-weight:700;font-family:Cairo,sans-serif;"><option value="7">آخر 7 أيام</option><option value="30" selected>آخر 30 يوم</option><option value="90">آخر 90 يوم</option></select>'
                       + '<button onclick="window.searchOrderNo(true)" style="background:#f59e0b;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;">بحث</button></div>'
                       + '<div id="osr-result" style="margin-top:6px;"></div></div>'
+                      + '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:16px;padding:10px 12px;margin-bottom:12px;">'
+                      + '<div style="font-weight:900;color:#166534;margin-bottom:6px;font-size:0.9rem;">📥 تنزيل ملف (يُفتح في Excel)</div>'
+                      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
+                      + '<span style="font-weight:800;">من</span><input id="exp-from" type="date" value="' + sanitize(date) + '" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
+                      + '<span style="font-weight:800;">إلى</span><input id="exp-to" type="date" value="' + sanitize(date) + '" style="border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;">'
+                      + '<button onclick="window.exportOrders(\'accept\')" style="background:#16a34a;color:#fff;border:none;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;border-radius:10px;padding:7px 14px;">✅ تحميل القبول</button>'
+                      + '<button onclick="window.exportOrders(\'late\')" style="background:#dc2626;color:#fff;border:none;font-weight:900;cursor:pointer;font-family:Cairo,sans-serif;border-radius:10px;padding:7px 14px;">⏱️ تحميل التأخير</button></div>'
+                      + '<div id="exp-status" style="margin-top:6px;font-size:0.78rem;font-weight:700;color:#475569;"></div></div>'
                       + '<details style="margin-bottom:8px;font-size:0.75rem;color:#64748b;font-weight:700;line-height:1.7;"><summary style="cursor:pointer;font-weight:800;">ℹ️ كيف تُحسب المهام</summary>الخصم من تقييم اليوم عند إغلاقه الساعة 7: تأخر القراءة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د = 1، وتأخر الحل أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د أو عدم الحل = 2 (على مهامك 📨 فقط). ومكافأة +1 لكل رسالة واتساب يحلّها الموظف (حتى +10) والتقييم لا يتجاوز 100. حذف أي سجل يُلغي أثره عند إغلاق اليوم.</details>';
                 if (!canEditOrders) {
                     h += '<div style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:12px;padding:8px 12px;margin-bottom:10px;font-weight:800;font-size:0.85rem;">⚠️ أزرار التعديل والحذف للطلبات اليدوية غير مفعّلة — شغّل ملف admin_tools.sql في Supabase ثم اضغط تحديث.</div>';
