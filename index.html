@@ -3286,6 +3286,7 @@
                     const res = await fetch(ACCEPT_SHEET_URL + '?action=export&secret=' + encodeURIComponent(SHEET_SECRET) + '&from=' + from + '&to=' + to);
                     const j = JSON.parse(await res.text());
                     if (j && j.ok && Array.isArray(j.rows)) sheetRows = j.rows;
+                    if (!sheetRows) console.warn('[ExportAccept] bad response', j);
                 } catch (e) { console.warn('[ExportAccept]', e); }
             }
             let rows, note = '';
@@ -3295,7 +3296,7 @@
                 rows = []; dates.forEach(ds => (day[ds] || []).forEach(o => { if ((o.kind || 'dispatch') === 'accept' && o.order_no != null) rows.push([ds, String(o.order_no), '', '', nm(o.employee_key), tmf(o.created_at)]); }));
                 note = ' ⚠️ لم يُجلب اسم المطعم والسبب (حدّث سكربت الشيت ثم انشره كنسخة جديدة).';
             }
-            if (!rows.length) { say('لا توجد طلبات مقبولة في هذه الفترة.', true); return; }
+            if (!rows.length) { say(sheetRows ? 'الشيت لا يحوي طلبات قبول في هذه الفترة.' : '⚠️ تعذّر قراءة الشيت (تأكد من نشر السكربت كإصدار جديد) ولا توجد سجلات قبول في النظام لهذه الفترة.', true); return; }
             rows.sort(bySort);
             window._expCsv('accepted_orders_' + from + '_' + to + '.csv', ['التاريخ', 'رقم الطلب', 'اسم المطعم', 'السبب', 'الموظف', 'الوقت'], rows);
             say('✅ تم تنزيل ملف القبول (' + rows.length + ' طلب).' + note, !!note);
