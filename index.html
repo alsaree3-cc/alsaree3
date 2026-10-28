@@ -5208,7 +5208,7 @@
                         <div class="emp-brand">${_qpCardBtn(i, isAdmin)}<div class="adm-logo"></div><div><div class="adm-brand-t">Alsaree3</div><div class="adm-brand-s">Employee</div></div></div>
                         ${(isAdmin && window._qp.pending[i]) ? _qpAdminBanner(window._qp.pending[i]) : ''}
                         <div class="emp-head">
-                            <div class="emp-avatar">${sanitize(Array.from(String(d.name || '?'))[0])}</div>
+                            ${_empAvatarHtml(i, d)}
                             <div class="emp-id">
                                 <div class="emp-name" dir="auto">${myBadge}${sanitize(d.name)}</div>
                                 <span class="status-pill"><i></i>${sanitize(currentStatusDisplay)}</span>
@@ -6114,6 +6114,127 @@
     const start = () => { mo.observe(document.body, { childList: true, subtree: true }); apply(document.body); };
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
 })();
+</script>
+
+<!-- ===== صور الموظفين الشخصية — الصق هذا البلوك كامل قبل </body> مباشرة ===== -->
+<style>
+    .emp-avatar { position: relative; overflow: visible; }
+    .emp-avatar.emp-av-btn { border: none; padding: 0; cursor: pointer; font-family: inherit; }
+    .emp-avatar.has-photo { padding: 3px; }                       /* لون الحالة يصير إطار حول الصورة */
+    .emp-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 15px; display: block; background: #fff; }
+    .emp-avatar .emp-av-cam { position: absolute; right: -6px; bottom: -6px; width: 22px; height: 22px; border-radius: 50%;
+        display: grid; place-items: center; font-size: .7rem; background: #fff; border: 1px solid #cbd5e1;
+        box-shadow: 0 2px 6px rgba(15,23,42,.18); opacity: .85; transition: transform .15s, opacity .15s; }
+    .emp-avatar.emp-av-btn:hover .emp-av-cam { opacity: 1; transform: scale(1.12); }
+</style>
+<script>
+    // employee_key -> data:image/jpeg;base64,...
+    window._empPhotos = {};
+    const _EP_OK = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+    const _EP_KEY = /^[A-Za-z0-9_.-]{1,64}$/;
+
+    // يُستدعى من render() بدل الحرف الأول
+    function _empAvatarHtml(id, d) {
+        const p = window._empPhotos[id];
+        const hasPhoto = !!(p && _EP_OK.test(p));
+        const inner = hasPhoto ? '<img src="' + p + '" alt="" loading="lazy">' : sanitize(Array.from(String((d && d.name) || '?'))[0]);
+        const canEdit = (loggedInId === '__admin__' || loggedInId === id) && _EP_KEY.test(String(id));
+        const cls = 'emp-avatar' + (hasPhoto ? ' has-photo' : '');
+        if (!canEdit) return '<div class="' + cls + '">' + inner + '</div>';
+        return '<button type="button" class="' + cls + ' emp-av-btn" title="الصورة الشخصية" onclick="window.openEmpPhoto(\'' + id + '\')">'
+            + inner + '<span class="emp-av-cam">📷</span></button>';
+    }
+
+    async function loadEmpPhotos() {
+        if (!loggedInId) return;
+        try {
+            const { data, error } = await supabaseClient.from('alsaree3_emp_photos').select('employee_key, photo');
+            if (error) { console.warn('[EmpPhotos]', error.message); return; }
+            const m = {};
+            (data || []).forEach(r => { if (_EP_OK.test(String(r.photo || ''))) m[r.employee_key] = r.photo; });
+            const changed = JSON.stringify(m) !== JSON.stringify(window._empPhotos);
+            window._empPhotos = m;
+            if (changed) try { render(); } catch (e) {}
+        } catch (e) { console.warn('[EmpPhotos]', e); }
+    }
+
+    // تحميل عند الدخول، تنظيف عند الخروج، وتحديث كل دقيقتين (حتى تظهر صور الزملاء)
+    let _epUser = null;
+    setInterval(() => {
+        if (loggedInId !== _epUser) {
+            _epUser = loggedInId;
+            window._empPhotos = {};
+            if (loggedInId) loadEmpPhotos();
+        }
+    }, 1500);
+    setInterval(() => { if (loggedInId) loadEmpPhotos(); }, 120000);
+
+    // قص مربع من الوسط + تصغير إلى 256×256 + ضغط JPEG
+    function _epCompress(file) {
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                const s = Math.min(img.naturalWidth, img.naturalHeight);
+                const c = document.createElement('canvas'); c.width = c.height = 256;
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 256, 256);
+                ctx.drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, 256, 256);
+                URL.revokeObjectURL(url);
+                resolve(c.toDataURL('image/jpeg', 0.82));
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+            img.src = url;
+        });
+    }
+
+    window.openEmpPhoto = (id) => {
+        if (!_EP_KEY.test(String(id)) || !(loggedInId === '__admin__' || loggedInId === id)) return;
+        const d = employeesData[id] || {};
+        const p = window._empPhotos[id];
+        const preview = (p && _EP_OK.test(p))
+            ? '<img src="' + p + '" alt="" style="width:120px;height:120px;border-radius:28px;object-fit:cover;margin:0 auto 14px;display:block;box-shadow:0 8px 20px rgba(15,23,42,.18);">'
+            : '<div style="width:120px;height:120px;border-radius:28px;margin:0 auto 14px;display:grid;place-items:center;font-size:2.6rem;font-weight:900;color:#fff;background:linear-gradient(135deg,#64748b,#94a3b8);">' + sanitize(Array.from(String(d.name || '?'))[0]) + '</div>';
+        const btn = 'border:none;border-radius:14px;padding:11px 16px;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;';
+        _modal('emp-photo-overlay', '📷 الصورة الشخصية — ' + sanitize(d.name || id), '<div style="text-align:center;">' + preview
+            + '<input id="ep-file" type="file" accept="image/*" style="display:none">'
+            + '<div style="display:grid;gap:8px;">'
+            + '<button id="ep-pick" style="' + btn + 'background:#22c55e;color:#fff;">📷 اختيار صورة / تصوير</button>'
+            + (p ? '<button id="ep-del" style="' + btn + 'background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;">🗑️ حذف الصورة</button>' : '')
+            + '</div><div id="ep-msg" style="font-size:.85rem;font-weight:800;margin-top:10px;min-height:1.2em;"></div></div>', 360);
+        const msg = document.getElementById('ep-msg'), inp = document.getElementById('ep-file');
+        document.getElementById('ep-pick').onclick = () => inp.click();
+        inp.onchange = async () => {
+            const f = inp.files && inp.files[0]; if (!f) return;
+            if (!/^image\//.test(f.type)) { msg.style.color = '#b91c1c'; msg.textContent = '⚠️ الملف لازم يكون صورة'; return; }
+            if (f.size > 15 * 1024 * 1024) { msg.style.color = '#b91c1c'; msg.textContent = '⚠️ الصورة كبيرة جداً (أكثر من 15MB)'; return; }
+            if (!_checkWriteRate()) return;
+            msg.style.color = '#64748b'; msg.textContent = '⏳ جاري الرفع...';
+            try {
+                const photo = await _epCompress(f);
+                const { error } = await supabaseClient.from('alsaree3_emp_photos')
+                    .upsert({ employee_key: id, photo, updated_at: new Date().toISOString() }, { onConflict: 'employee_key' });
+                if (error) throw error;
+                window._empPhotos[id] = photo;
+                render();
+                document.getElementById('emp-photo-overlay').remove();
+            } catch (e) {
+                console.error('[EmpPhoto]', e);
+                msg.style.color = '#b91c1c';
+                msg.textContent = '❌ تعذّر رفع الصورة' + (e && e.message ? ' (' + e.message + ')' : '');
+            }
+        };
+        const del = document.getElementById('ep-del');
+        if (del) del.onclick = async () => {
+            if (!confirm('حذف الصورة الشخصية؟')) return;
+            if (!_checkWriteRate()) return;
+            const { error } = await supabaseClient.from('alsaree3_emp_photos').delete().eq('employee_key', id);
+            if (error) { msg.style.color = '#b91c1c'; msg.textContent = '❌ تعذّر الحذف'; return; }
+            delete window._empPhotos[id];
+            render();
+            document.getElementById('emp-photo-overlay').remove();
+        };
+    };
 </script>
 
 </html>
