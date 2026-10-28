@@ -3730,7 +3730,7 @@
             document.querySelectorAll('#late-dd-list .tk-dd-item[data-r]').forEach(c => c.classList.toggle('sel', !window._ld.other && c.dataset.r === window._ld.r));
             const oth = document.querySelector('#late-dd-list .tk-dd-item.other'); if (oth) oth.classList.toggle('sel', !!window._ld.other);
         };
-        window.toggleAcc = () => { const w = window._ld; const open = !!(w.acc || window._accR); if (open) { w.acc = false; window._accR = ''; } else { w.acc = true; } try { render(); } catch (err) {} };
+        window.toggleAcc = () => { const w = window._ld; const open = !!(w.acc || window._accR || window._accWhy); if (open) { w.acc = false; window._accR = ''; window._accWhy = ''; } else { w.acc = true; } try { render(); } catch (err) {} };
         window.toggleCap = () => { const w = window._ld; const open = !!(w.cap || window._dispR || window._dispD || window._dispO); if (open) { w.cap = false; window._dispR = ''; window._dispD = ''; window._dispO = ''; } else { w.cap = true; } try { render(); } catch (err) {} };
         window.toggleLateBox = () => { const w = window._ld; const open = !!(w.show || w.o || w.r || w.rest || w.other); if (open) { w.show = false; w.o = ''; w.r = ''; w.rest = ''; w.other = false; w.open = false; } else { w.show = true; } try { render(); } catch (err) {} };
         window.toggleLateDD = (ev) => { if (ev) ev.stopPropagation(); window._ld.open = !window._ld.open; window._syncDD(); };
@@ -3760,7 +3760,8 @@
         }
         // ===== تسجيل الطلبات المقبولة (رقم الطلب + اسم المطعم) في شيت "القبول" عبر Apps Script =====
         const ACCEPT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzNN1kxknuwJmqOcFp2h5rko-ADZ7fQWzkOGq9cs3MZyKqx2Zzj1oze26CvC31Jscg/exec';   // ← الصق هنا رابط النشر (ينتهي بـ /exec) الخاص بسكربت شيت القبول
-        window._accR = window._accR || '';
+        window._accR = window._accR || ''; window._accWhy = window._accWhy || '';
+        const ACCEPT_REASON_REQUIRED = false;   // true = السبب إلزامي عند تسجيل قبول الطلب
         function _sheetEmpName() { return (loggedInId === '__admin__') ? 'المسؤول' : ((employeesData[loggedInId] && employeesData[loggedInId].name) || String(loggedInId || '')); }
         function _postAcceptSheet(payload) {
             if (!ACCEPT_SHEET_URL) return;
@@ -3773,7 +3774,7 @@
                 }).catch(function (e) { console.warn('[AcceptSheet]', e); });
             } catch (e) { console.warn('[AcceptSheet]', e); }
         }
-        function sendAcceptToSheet(order, restaurant) { _postAcceptSheet({ type: 'accept', order: order, restaurant: restaurant, employee: _sheetEmpName() }); }
+        function sendAcceptToSheet(order, restaurant, reason) { _postAcceptSheet({ type: 'accept', order: order, restaurant: restaurant, reason: reason || '', employee: _sheetEmpName() }); }
         function sendAcceptUndoToSheet(order) { _postAcceptSheet({ type: 'accept_undo', order: order }); }
         // التوزيع: رقم الطلب + اسم المطعم + اسم السائق (كفالة السائق من الموظف)
         window._dispR = window._dispR || ''; window._dispD = window._dispD || ''; window._dispO = window._dispO || '';
@@ -3898,7 +3899,7 @@
         window._accKey = () => 'a3_accstack_' + String(loggedInId) + '_' + new Date().toLocaleDateString('en-CA');
         window._accGet = () => { try { const a = JSON.parse(localStorage.getItem(window._accKey()) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
         window._accSet = (a) => { try { localStorage.setItem(window._accKey(), JSON.stringify(a.slice(0, 100))); } catch (e) {} };
-        window._accPush = (o, r) => { const a = window._accGet(); a.unshift({ o: String(o), r: String(r || ''), t: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) }); window._accSet(a); };
+        window._accPush = (o, r, why) => { const a = window._accGet(); a.unshift({ o: String(o), r: String(r || ''), w: String(why || ''), t: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) }); window._accSet(a); };
         window._accPop = (o) => { const a = window._accGet(); const i = a.findIndex(x => x.o === String(o)); if (i !== -1) { a.splice(i, 1); window._accSet(a); } };
         window._accStackHtml = () => {
             const a = window._accGet().slice(0, 8);
@@ -3906,7 +3907,7 @@
             return '<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px;max-height:220px;overflow-y:auto;direction:rtl;">'
                 + a.map(x => '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:6px 10px;font-weight:800;font-size:0.8rem;color:#14532d;">'
                     + '<span style="direction:ltr;font-weight:900;">#' + sanitize(x.o) + '</span>'
-                    + '<span style="flex:1;text-align:right;">' + sanitize(x.r) + '</span>'
+                    + '<span style="flex:1;text-align:right;">' + sanitize(x.r) + (x.w ? '<span style="display:block;font-weight:700;font-size:0.72rem;color:#475569;">📝 ' + sanitize(x.w) + '</span>' : '') + '</span>'
                     + '<span style="color:#64748b;font-size:0.72rem;direction:ltr;">' + sanitize(x.t) + '</span></div>').join('')
                 + '</div>';
         };
@@ -3934,6 +3935,12 @@
                 restName = rn ? rn.value.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
                 if (!restName) { alert('⚠️ اكتب اسم المطعم أولاً'); if (rn) rn.focus(); return; }
             }
+            let accWhy = '';
+            if (!late && baseKind === 'accept') {
+                const rw = document.getElementById('acc-why');
+                accWhy = rw ? rw.value.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
+                if (!accWhy && ACCEPT_REASON_REQUIRED) { alert('⚠️ اكتب السبب أولاً'); if (rw) rw.focus(); return; }
+            }
             if (!_checkWriteRate()) return;
             if (b && b.classList) b.classList.add('busy');
             const { error } = await supabaseClient.rpc('alsaree3_dispatch_add', late ? { p_order: v, p_kind: kind, p_reason: reason } : { p_order: v, p_kind: kind });
@@ -3948,7 +3955,7 @@
                 return;
             }
             if (late) sendLateToSheet(v, reason.split(' — المطعم: ')[0], lateRest);
-            if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName); window._accPush(v, restName); window._accR = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; }
+            if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName, accWhy); window._accPush(v, restName, accWhy); window._accR = ''; window._accWhy = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; const _rw = document.getElementById('acc-why'); if (_rw) _rw.value = ''; }
             inp.value = '';
             if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.rest = ''; const _lr2 = document.getElementById('late-rest'); if (_lr2) _lr2.value = ''; window._ld.other = false; window._ld.open = false; window._ld.show = false; }
             if (navigator.vibrate) navigator.vibrate(30);
@@ -4866,9 +4873,10 @@
                         const _lateOpen = !!(window._ld.show || window._ld.o || window._ld.r || window._ld.rest || window._ld.other);
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
-                        const _accOpen = !!(window._ld.acc || window._accR);
+                        const _accOpen = !!(window._ld.acc || window._accR || window._accWhy);
                         taskExtra = `${_k === 'accept' ? `<div style="margin-bottom:6px;"><button type="button" onclick="window.toggleAcc()" style="display:block;width:100%;font-family:inherit;cursor:pointer;font-weight:900;font-size:0.85rem;color:#166534;text-align:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:${_accOpen ? '12px 12px 0 0' : '12px'};padding:7px;">📞 قبول طلب كول سنتر ${_accOpen ? '▴' : '▾'}</button>${_accOpen ? `<div style="border:1px solid #bbf7d0;border-top:none;border-radius:0 0 12px 12px;padding:6px;background:#f7fef9;">
-                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-input');if(d&&!d.value.trim()){d.focus();}else{window.addOrder();}}"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{window.addOrder();}}"></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-input');if(d&&!d.value.trim()){d.focus();}else{window.addOrder();}}"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{var w=document.getElementById('acc-why');if(w&&!w.value.trim()){w.focus();}else{window.addOrder();}}}"></div>
+                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-why" type="text" maxlength="100" autocomplete="off" placeholder="السبب${ACCEPT_REASON_REQUIRED ? ' *' : ''}" class="tk-input" style="direction:rtl;" oninput="window._accWhy=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"></div>
                         <div class="tk-row"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="width:100%;">➕ إضافة</button></div></div>` : ''}</div>
                         ${window._accStackHtml()}` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب (توزيع يدوي)" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
                         <div class="tk-row" style="gap:6px;margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">🚴 كفالة الكابتن ${_capOpen ? '▴' : '▾'}</button><button type="button" class="tk-btn" onclick="window.toggleLateBox()" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر ${_lateOpen ? '▴' : '▾'}</button></div>${_capOpen ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-order');if(d)d.focus();}"><input id="disp-order" type="text" maxlength="30" autocomplete="off" inputmode="text" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" oninput="window._dispO=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
@@ -4933,14 +4941,14 @@
                     </div>`;
             }
             const _di = document.getElementById('disp-input'), _dv = _di ? _di.value : '', _df = !!_di && document.activeElement === _di;
-            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'disp-rest', 'disp-order', 'disp-driver'].indexOf(_ae.id) !== -1) ? _ae.id : null;
+            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'acc-why', 'disp-rest', 'disp-order', 'disp-driver'].indexOf(_ae.id) !== -1) ? _ae.id : null;
             const _aeSel = _aeId ? [_ae.selectionStart, _ae.selectionEnd] : null;
             document.getElementById('app').innerHTML = h;
             if (_dv || _df) {
                 const _nx = document.getElementById('disp-input');
                 if (_nx) { _nx.value = _dv; if (_df) { _nx.focus(); try { _nx.setSelectionRange(_dv.length, _dv.length); } catch (e) {} } }
             }
-            { const _ar = document.getElementById('acc-rest'); if (_ar && window._accR) _ar.value = window._accR; }
+            { const _ar = document.getElementById('acc-rest'); if (_ar && window._accR) _ar.value = window._accR; const _aw = document.getElementById('acc-why'); if (_aw && window._accWhy) _aw.value = window._accWhy; }
             { const _dr = document.getElementById('disp-rest'), _dd = document.getElementById('disp-driver'); if (_dr && window._dispR) _dr.value = window._dispR; if (_dd && window._dispD) _dd.value = window._dispD; const _do = document.getElementById('disp-order'); if (_do && window._dispO) _do.value = window._dispO; }
             // حقول الطلب المتأخر: استرجاع المسودة والتركيز بعد إعادة الرسم
             { const _li = document.getElementById('late-input'), _lr = document.getElementById('late-reason');
