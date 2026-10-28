@@ -5709,5 +5709,116 @@
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
 <div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(40px + env(safe-area-inset-bottom, 0px)) !important;right:8px !important;left:auto !important;z-index:9980;transform:translateZ(0);will-change:transform;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.23-callcenter-accept-stack</div>
-</body>
+</body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
+     الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
+     لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
+<script>
+(function () {
+
+    // 1) الخروج من هذا الجهاز فقط (كان signOut ينهي جلسات المستخدم في كل الأجهزة)
+    try {
+        const _origSignOut = supabaseClient.auth.signOut.bind(supabaseClient.auth);
+        supabaseClient.auth.signOut = (opts) => _origSignOut(Object.assign({ scope: 'local' }, opts || {}));
+    } catch (e) { console.warn('[Fix1]', e); }
+
+    // 2) إغلاق كل النوافذ المنبثقة عند الخروج والقفل (كانت نافذة كلمات المرور تبقى مفتوحة على الشاشة المشتركة)
+    const _closeAllOverlays = () => document.querySelectorAll('[id$="-overlay"]').forEach(el => el.remove());
+    const _origPerformLogout = _performLogout;
+    _performLogout = async function () {
+        _closeAllOverlays();
+        await _origPerformLogout.apply(this, arguments);
+        _closeAllOverlays();
+    };
+    const _origLockAdmin = window.lockAdmin;
+    window.lockAdmin = function () {
+        _closeAllOverlays();
+        return _origLockAdmin.apply(this, arguments);
+    };
+
+    // 3) ثغرة التوقيت: إذا انتهت مهلة الدخول (25 ثانية) ثم ردّ السيرفر متأخراً، كان التطبيق يُفتح رغم ظهور رسالة الفشل
+    let _lateLoginWatch = null;
+    const _origDoLogin = window.doLogin;
+    window.doLogin = async function () {
+        if (_lateLoginWatch) { clearInterval(_lateLoginWatch); _lateLoginWatch = null; }
+        const t0 = Date.now();
+        await _origDoLogin.apply(this, arguments);
+        const stillOnLogin = document.getElementById('login-screen').style.display !== 'none';
+        const timedOut = Date.now() - t0 >= 24000;
+        if (stillOnLogin && timedOut) {
+            const started = Date.now();
+            _lateLoginWatch = setInterval(() => {
+                if (loggedInId) { clearInterval(_lateLoginWatch); _lateLoginWatch = null; _performLogout(); }
+                else if (Date.now() - started > 60000) { clearInterval(_lateLoginWatch); _lateLoginWatch = null; }
+            }, 300);
+        }
+    };
+
+    // 4) حد الراحة كان رقماً ثابتاً (20) داخل حساب التقييم — الآن يتبع الإعداد REST_SCORE_ALLOW_MIN
+    checkAndApplyRatings = function () {
+        let now = Date.now();
+        for (let i in employeesData) {
+            let d = employeesData[i];
+            if (!d.startTime || d.status === 'أوف') continue;
+            if (isOffDay(i, getTodayDateString()) || onLeaveDay(i, getTodayDateString())) { employeesData[i].rating = 100; continue; }
+            let currentHourIndex = Math.floor((now - d.startTime) / 3600000);
+            let curR = (d.status === 'راحة' && d.lastActionTime) ? Math.floor((now - d.lastActionTime) / 60000) : 0;
+            let totalR = (d.totalRestMinutes || 0) + curR;
+            let totalViolations = 0;
+            let hourlyBreaks = d.hourlyBreaks || {};
+            for (let h = 0; h <= currentHourIndex; h++) {
+                totalViolations += breakViolations(breakSecInHour(d, i, h, now));
+            }
+            const _permM = permMinutesToday(i);
+            const _restAllow = REST_SCORE_ALLOW_MIN + _permM;
+            if (totalR > _restAllow) totalViolations += Math.floor((totalR - _restAllow) / 60) + 1;
+            let groupPen = hourlyBreaks.groupPenalty || 0;
+            const _lwp = lateWithPerm(i, d);
+            let latePen = _lwp !== null ? _lwp : ((Number(hourlyBreaks.latePenalty) || 0) || lateFallbackPenalty(i, d));
+            employeesData[i].rating = Math.max(0, Math.min(100, 100 - (totalViolations * VIOLATION_POINTS) - groupPen - latePen
+                - breakUsagePenalty(d, now, i) - restUsagePenalty(d, now, i) + ordersBonus(i)));
+        }
+        try { applyMonthlyRatings(); } catch (e) {}
+    };
+
+    // 5) يوم الأوف الأسبوعي لا يُخصم من رصيد الإجازة، والإجازة الممتدة بين سنتين تُحسب لكل سنة أيامها فقط
+    _leaveUsedDays = function (rows, key, year) {
+        return (rows || [])
+            .filter(r => r.employee_key === key && r.kind === 'day' && r.status === 'approved')
+            .reduce((s, r) => s + _expandDates(r.start_date, r.days)
+                .filter(ds => ds.startsWith(year) && !isOffDay(key, ds)).length, 0);
+    };
+
+    // 6) منع الموظف من طلب إجازة أكبر من رصيده المتبقي
+    const _origSubmitLeave = window.submitLeaveRequest;
+    window.submitLeaveRequest = async function () {
+        try {
+            const kindEl = document.getElementById('lv-kind');
+            if (kindEl && kindEl.value === 'day' && loggedInId && loggedInId !== '__admin__') {
+                const days = parseInt(document.getElementById('lv-days').value, 10) || 0;
+                const date = document.getElementById('lv-date').value;
+                if (/^\d{4}-\d{2}-\d{2}$/.test(date) && days > 0) {
+                    await _loadLeaveAdj();
+                    const { data, error } = await supabaseClient.from('alsaree3_leave_requests')
+                        .select('employee_key,kind,status,start_date,days').eq('employee_key', loggedInId);
+                    if (!error) {
+                        const year = date.slice(0, 4);
+                        const left = ANNUAL_LEAVE_DAYS - _leaveUsedTotal(data, loggedInId, year);
+                        const need = _expandDates(date, days).filter(ds => !isOffDay(loggedInId, ds)).length;
+                        if (need > left) {
+                            const msg = document.getElementById('lv-msg');
+                            msg.style.color = '';
+                            msg.textContent = '⚠️ رصيدك المتبقي ' + Math.max(0, left) + ' يوم، والطلب يحتاج ' + need + ' يوم';
+                            return;
+                        }
+                    }
+                }
+            }
+        } catch (e) { console.warn('[Fix6]', e); }
+        return _origSubmitLeave.apply(this, arguments);
+    };
+
+    console.log('[Alsaree3] fixes v6.5.1 loaded');
+})();
+</script>
+
 </html>
