@@ -375,6 +375,7 @@
         .emp-stats { gap: 10px; margin-bottom: 18px; }
         .stat-tile { padding: 11px 8px; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; min-height: 72px; }
         .stat-tile span { font-size: .74rem; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .stat-tile { min-width: 0; } .stat-tile b { overflow: hidden; text-overflow: ellipsis; }
         .stat-tile b { font-size: 1.02rem; line-height: 1.3; white-space: nowrap; font-variant-numeric: tabular-nums; }
         .stat-tile b .st-sub { display: block; font-size: .74rem; font-weight: 800; color: #94a3b8; margin-top: 2px; }
         html.a3-dark .stat-tile b .st-sub { color: #7c8ba3; }
@@ -783,11 +784,12 @@
                     ]);
                     if (o.error) return;
                     (o.data || []).forEach(r => { if (String(r.kind || '').endsWith('_late')) return; cnt[r.employee_key] = (cnt[r.employee_key] || 0) + 1; });
-                    if (!t.error) (t.data || []).forEach(r => { if (r.kind === 'accept') cnt[r.employee_key] = (cnt[r.employee_key] || 0) + 1; });
+                    if (!t.error) (t.data || []).forEach(r => { if (r.kind === 'accept' || (r.kind === 'self' && r.solved_at)) cnt[r.employee_key] = (cnt[r.employee_key] || 0) + 1; });   // التكتات المضافة تحسب بالمكافأة
                 } else {
                     const [a, b] = await Promise.all(['accept', 'dispatch'].map(k => supabaseClient.rpc('alsaree3_dispatch_my_today', { p_kind: k })));
                     if (a.error || b.error) return;
-                    cnt[loggedInId] = (a.data || []).length + (b.data || []).length;
+                    const _tkToday = (typeof _tkData !== 'undefined' ? _tkData : []).filter(x => x.kind === 'self' && x.solved_at && _ymd(new Date(x.created_at)) === today).length;
+                    cnt[loggedInId] = (a.data || []).length + (b.data || []).length + _tkToday;
                 }
                 _ordCountToday = cnt; _ordCountDate = today; _ordCountAt = Date.now();
                 try { checkAndApplyRatings(); } catch (e) {}
@@ -3813,7 +3815,7 @@
                         const rd = isSelf ? '<span style="color:#64748b;">وصلت ' + _tm(t.created_at) + '</span>' : (t.read_at ? ('✅ ' + _tm(t.read_at) + ' (بعد ' + _minsBetween(t.created_at, t.read_at) + ' د)') : '<span style="color:#dc2626;">لم يقرأ</span>');
                         const sv = t.solved_at ? ('✅ ' + _tm(t.solved_at) + ' (بعد ' + _minsBetween(t.created_at, t.solved_at) + ' د)') : '<span style="color:#dc2626;">لم يُحل</span>';
                         h += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:5px 8px;font-weight:900;">' + _nm(t.employee_key) + '</td>'
-                           + '<td style="padding:5px 8px;">' + (isSelf ? '📩 رسالة وصلت للموظف' : '📨 ' + sanitize(t.body)) + '</td><td style="padding:5px 8px;">' + _tm(t.created_at) + '</td>'
+                           + '<td style="padding:5px 8px;">' + (isSelf ? (t.body ? '🎫 تكت رقم <b style="direction:ltr;display:inline-block;">#' + sanitize(t.body) + '</b>' : '📩 رسالة وصلت للموظف') : '📨 ' + sanitize(t.body)) + '</td><td style="padding:5px 8px;">' + _tm(t.created_at) + '</td>'
                            + '<td style="padding:5px 8px;">' + rd + '</td><td style="padding:5px 8px;">' + sv + '</td>'
                            + '<td style="padding:5px 8px;font-weight:900;color:' + (pen ? '#dc2626' : '#16a34a') + ';">' + (pen ? '−' + pen : '0') + '</td>'
                            + '<td style="padding:5px 8px;white-space:nowrap;">' + (isSelf ? '' : _edtB('window.adminEditTicket(' + Number(t.id) + ')')) + _delB('window.adminDelTicket(' + Number(t.id) + ')') + '</td></tr>';
@@ -3870,19 +3872,23 @@
                         <select id="aao-kind" class="login-select" onchange="window.aaoKindChange()">
                             <option value="accept">✅ قبول</option><option value="dispatch">🚴 توزيع</option>
                             <option value="accept_late">⏱️ متأخر في التجهيز (قبول)</option><option value="dispatch_late">⏱️ متأخر في الوصول (توزيع)</option>
+                            <option value="cancel">❌ إلغاء طلب</option>
                         </select></label>
                     <label style="font-weight:700;">رقم الطلب<input id="aao-order" class="login-select" style="direction:ltr;text-align:left;" maxlength="30" inputmode="numeric" autocomplete="off"></label>
                     <label id="aao-rest-wrap" style="font-weight:700;">اسم المطعم<input id="aao-rest" class="login-select" maxlength="60" autocomplete="off"></label>
-                    <label id="aao-reason-wrap" style="font-weight:700;display:none;">سبب التأخير<input id="aao-reason" class="login-select" maxlength="100" autocomplete="off"></label>
-                    <label style="font-weight:700;">التاريخ<input id="aao-date" type="date" class="login-select" value="${sanitize(date)}"></label>
+                    <label id="aao-reason-wrap" style="font-weight:700;display:none;"><span id="aao-reason-lb">سبب التأخير</span><input id="aao-reason" class="login-select" maxlength="150" autocomplete="off"></label>
+                    <label id="aao-date-wrap" style="font-weight:700;">التاريخ<input id="aao-date" type="date" class="login-select" value="${sanitize(date)}"></label>
                     <div id="aao-msg" class="error-msg"></div>
                     <button id="aao-go" class="login-btn" onclick="window.submitAdminAddOrder()">إضافة</button>
                 </div>`, 480);
         };
         window.aaoKindChange = () => {
-            const k = document.getElementById('aao-kind').value, late = k.endsWith('_late');
-            document.getElementById('aao-reason-wrap').style.display = late ? '' : 'none';
+            const k = document.getElementById('aao-kind').value, late = k.endsWith('_late'), cnl = k === 'cancel';
+            document.getElementById('aao-reason-wrap').style.display = (late || cnl) ? '' : 'none';
+            document.getElementById('aao-reason-lb').textContent = cnl ? 'سبب الإلغاء' : 'سبب التأخير';
             document.getElementById('aao-rest-wrap').style.display = (k === 'dispatch') ? 'none' : '';
+            document.getElementById('aao-date-wrap').style.display = cnl ? 'none' : '';
+            const go = document.getElementById('aao-go'); if (go) go.textContent = cnl ? 'تسجيل الإلغاء' : 'إضافة';
         };
         window.submitAdminAddOrder = async () => {
             if (loggedInId !== '__admin__') return;
@@ -3893,6 +3899,23 @@
             if (!emp || (emp !== '__admin__' && !employeesData[emp])) { msg.textContent = '⚠️ اختر الموظف'; return; }
             if (!/^[0-9A-Za-z\u0600-\u06FF#_\-\/]{1,30}$/.test(order)) { msg.textContent = '⚠️ رقم الطلب غير صالح'; return; }
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { msg.textContent = '⚠️ اختر التاريخ'; return; }
+            if (kind === 'cancel') {
+                const why = reason.replace(/\s+/g, ' ').slice(0, 150);
+                if (!rest) { msg.textContent = '⚠️ اكتب اسم المطعم'; return; }
+                if (!why) { msg.textContent = '⚠️ اكتب سبب الإلغاء'; return; }
+                if (!CANCEL_SHEET_URL) { msg.textContent = '❌ رابط شيت الإلغاء غير مضبوط'; return; }
+                if (!_checkWriteRate()) return;
+                btn.disabled = true; msg.textContent = '';
+                const nmC = emp === '__admin__' ? 'المسؤول' : (employeesData[emp].name || emp);
+                try {
+                    await fetch(CANCEL_SHEET_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ secret: SHEET_SECRET, order: order, restaurant: rest, reason: why, employee: nmC + ' (أضافه المسؤول)' }), keepalive: true });
+                } catch (e) { console.warn('[AdminCancel]', e); btn.disabled = false; msg.textContent = '❌ تعذّر الإرسال، تحقق من الإنترنت'; return; }
+                btn.disabled = false;
+                g('aao-overlay').remove();
+                try { _tkToast('❌ سُجّل إلغاء الطلب #' + order + ' — ' + nmC); } catch (e) {}
+                return;
+            }
             if (base === 'accept' && !rest) { msg.textContent = '⚠️ اكتب اسم المطعم'; return; }
             if (late) {
                 if (!reason) { msg.textContent = '⚠️ اكتب سبب التأخير'; return; }
@@ -3948,7 +3971,7 @@
             const open = mine.filter(t => !t.solved_at).length, done = mine.length - open;
             return '<div style="font-size:.75rem;font-weight:900;margin-bottom:4px;">'
                  + (open ? '<span style="color:#dc2626;">📩 ' + open + ' مفتوحة</span> ' : '')
-                 + (done ? '<span style="color:#16a34a;">✅ ' + done + ' حُلّت</span>' : '') + '</div>';
+                 + (done ? '<span style="color:#16a34a;">🎫 ' + done + ' تكت</span>' : '') + '</div>';
         }
         async function pollAdminTickets() {
             if (loggedInId !== '__admin__') return;
@@ -4037,6 +4060,31 @@
             if (error) { console.error('[SelfTicket]', error); alert('\u274c \u062a\u0639\u0630\u0651\u0631 \u0627\u0644\u062a\u0633\u062c\u064a\u0644. \u062d\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649.'); return; }
             await pollMyTickets();
             _tkToast('\U0001f4e9 \u0633\u064f\u062c\u0651\u0644 \u0637\u0644\u0628 \u062c\u062f\u064a\u062f', async () => {
+                const { error: e2 } = await supabaseClient.rpc('alsaree3_ticket_self_undo');
+                if (e2) { console.error('[SelfUndo]', e2); return false; }
+                await pollMyTickets(); return true;
+            });
+        };
+        window._tkNo = '';
+        window.ticketAdd = async (b) => {
+            const inp = document.getElementById('tk-no');
+            const no = String((inp && inp.value) || window._tkNo || '').trim().replace(/^#/, '');
+            if (!no) { if (inp) { inp.focus(); inp.style.borderColor = '#dc2626'; setTimeout(() => { inp.style.borderColor = ''; }, 1200); } return; }
+            if (!/^[A-Za-z0-9٠-٩-]{1,30}$/.test(no)) { alert('⚠️ رقم التكت لازم يكون أرقام/حروف إنكليزية فقط'); return; }
+            if (!_checkWriteRate()) return;
+            if (b) b.classList.add('busy'); if (navigator.vibrate) navigator.vibrate(30);
+            const { error } = await supabaseClient.rpc('alsaree3_ticket_self_add', { p_no: no });
+            if (b) b.classList.remove('busy');
+            if (error) {
+                console.error('[TicketAdd]', error);
+                const m = String(error.message || '');
+                alert(m.startsWith('[A3]') ? '⚠️ ' + m.slice(4) : (/function|does not exist|schema cache/i.test(m) ? '⚠️ لازم تشغّل ملف ticket_number.sql في Supabase أولاً' : '❌ تعذّر التسجيل. حاول مرة أخرى.'));
+                return;
+            }
+            window._tkNo = ''; if (inp) inp.value = '';
+            await pollMyTickets();
+            try { refreshOrderCounts(true); } catch (e) {}
+            _tkToast('✅ تمت إضافة التكت #' + no, async () => {
                 const { error: e2 } = await supabaseClient.rpc('alsaree3_ticket_self_undo');
                 if (e2) { console.error('[SelfUndo]', e2); return false; }
                 await pollMyTickets(); return true;
@@ -5327,10 +5375,10 @@
                     const _capBlock = `<div class="tk-row" style="margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;width:100%;">🚴 كفالة الكابتن ${_capOpenAll ? '▴' : '▾'}</button></div>${_capOpenAll ? `${_capInner}` : ''}`;
                     if (d.currentTask === 'واتساب') {
                         taskExtra = `<div class="tk-row">
-                            <button onclick="window.ticketReceived(this)" class="tk-btn tk-in">📩 وصلني طلب</button>
-                            <button onclick="window.ticketSolved(this)" ${_openN ? '' : 'disabled'} class="tk-btn tk-ok">✅ تم الحل${_openN ? ' <span class="tk-badge">' + _openN + '</span>' : ''}</button>
+                            <input id="tk-no" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم التكت" class="tk-input" value="${sanitize(window._tkNo || '')}" oninput="window._tkNo=this.value" onkeydown="if(event.key==='Enter')window.ticketAdd(document.getElementById('tk-add-btn'))">
+                            <button id="tk-add-btn" onclick="window.ticketAdd(this)" class="tk-btn tk-ok">✅ تم الإضافة</button>
                         </div>
-                        <div class="tk-stat">\u0627\u0644\u064a\u0648\u0645: ${_todayN} \u0648\u0635\u0644 \u00b7 ${_todayN - _openToday} \u0627\u0646\u062d\u0644</div>
+                        <div class="tk-stat">اليوم: ${_todayN} تكت${_openToday ? ' · ' + _openToday + ' مفتوح' : ''}</div>
                         ${_capBlock}`;
                     } else if (d.currentTask === 'توزيع' || d.currentTask === 'قبول') {
                         const _k = d.currentTask === 'قبول' ? 'accept' : 'dispatch';
@@ -6251,7 +6299,7 @@
         ['WhatsApp', 'واتساب'], ['Dispatcher', 'توزيع'], ['Accept', 'قبول'], ['Accepting', 'قبول'],
         ['Current Task:', 'المهمة الحالية:', 'المهمة الحالية (Current Task):'], ['Actions', 'الإجراءات', 'الإجراءات (Actions)'], ['Actions:', 'الإجراءات:', 'الإجراءات (Actions):'],
         ['Rest (20m)', 'راحة (20 د)'], ['Check-In', 'تسجيل الحضور'], ['OFF Day', 'يوم أوف'], ['Check-Out', 'تسجيل الانصراف'],
-        ['Customers WhatsApp', 'واتساب الزبائن'], ['Got a request', 'وصلني طلب'], ['Solved', 'تم الحل'],
+        ['Customers WhatsApp', 'واتساب الزبائن'], ['Got a request', 'وصلني طلب'], ['Solved', 'تم الحل'], ['Ticket no.', 'رقم التكت'], ['Added', 'تم الإضافة'],
         // أدوات الطلبات
         ['Accept Order', 'قبول طلب'], ['Cancel Order', 'إلغاء طلب'], ['Captain Guarantee', 'كفالة الكابتن'], ['Late Order', 'طلب متأخر'],
         ['Call Center Order Accept', 'قبول طلب كول سنتر'], ['Order Cancellation Reason', 'سبب إلغاء الطلب'], ['Log Late Order', 'تسجيل طلب متأخر'],
