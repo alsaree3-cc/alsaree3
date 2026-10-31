@@ -6731,7 +6731,7 @@
             const now = new Date();
             const due = (c.month === ym(now) && isLastDay(now)) || (c.month === prevYm() && now.getDate() <= 2);
             if (!due) return;
-            const key = 'a3_cel_' + c.month + '_' + now.getDate() + '_' + String(loggedInId);
+            const key = 'a3_cel_' + c.month + '_' + now.getDate() + '_' + String(c.employee_key) + '_' + String(loggedInId);   // إذا تغيّر النجم يطلع الاحتفال من جديد
             try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) {}
             setTimeout(() => window.showChampion(false), 1200);
         }
@@ -6875,9 +6875,16 @@
             if (loggedInId !== '__admin__') return;
             const today = getTodayDateString();
             const rows = await window.loadScoreCard(today.slice(0, 7) + '-01', today, true).catch(() => null);
-            const ranked = (rows || []).filter(r => r.hasData && r.days > 0);
+            // نفس شروط «موظف الشهر» بلوحة المسؤول: دوام 60% على الأقل من أكثر موظف دواماً (وبحد أدنى 3 أيام)
+            const withData = (rows || []).filter(r => r.hasData && r.days > 0);
+            const maxDays = withData.reduce((m, r) => Math.max(m, r.days), 0);
+            const minDays = Math.max(3, Math.ceil(maxDays * 0.6));
+            let ranked = withData.filter(r => r.days >= minDays);
+            if (!ranked.length) ranked = withData;
+            ranked.sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0));
             if (!ranked.length) { alert('⚠️ ماكو بيانات كافية لهذا الشهر'); return; }
             const w = ranked[0];
+            if (!confirm('🏆 نجم الشهر: ' + w.name + ' (' + Math.round(w.total) + '%)\n\nنطلّع الاحتفال للكل؟')) return;
             const ok = await window._saveChampion(w, today, true);
             if (ok === false) return;
             try { Object.keys(localStorage).filter(k => k.startsWith('a3_cel_')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
