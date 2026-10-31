@@ -6700,6 +6700,7 @@
                 if (loggedInId !== '__admin__' || !w || !w.k) return false;
                 const rec = { id: 1, employee_key: String(w.k), name: String(w.name || w.k), month: String(today).slice(0, 7), total: Math.round(Number(w.total) || 0), updated_at: new Date().toISOString() };
                 const c = window._champ;
+                if (!force) { let man = null; try { man = localStorage.getItem('a3_champ_manual_' + rec.month); } catch (e) {} if (man) return true; }   // المسؤول اختار بنفسه: لا نغيّره تلقائياً
                 if (!force && c && c.employee_key === rec.employee_key && c.month === rec.month && Math.round(Number(c.total)) === rec.total) return true;
                 const { error } = await supabaseClient.from('alsaree3_champion').upsert(rec, { onConflict: 'id' });
                 if (error) {
@@ -6871,23 +6872,43 @@
         setInterval(() => { if (loggedInId && window._isFestDay() && window._reloadChampion) window._reloadChampion(); }, 60000);
 
         // زر للمسؤول: «🎉 احتفل الآن» — يثبّت المتصدّر الحالي ويطلّع الاحتفال للكل
+        // زر للمسؤول: «🎉 احتفل الآن» — يطلّع قائمة بالترتيب، وإنت تختار نجم الشهر بنفسك
         window.celebrateNow = async () => {
             if (loggedInId !== '__admin__') return;
             const today = getTodayDateString();
+            _modal('champ-pick-overlay', '🏆 اختار نجم الشهر', '<div style="text-align:center;color:#94a3b8;font-weight:700;padding:16px;">⏳ جاري الحساب...</div>', 440);
             const rows = await window.loadScoreCard(today.slice(0, 7) + '-01', today, true).catch(() => null);
-            // نفس شروط «موظف الشهر» بلوحة المسؤول: دوام 60% على الأقل من أكثر موظف دواماً (وبحد أدنى 3 أيام)
+            const body = document.getElementById('champ-pick-overlay-body'); if (!body) return;
             const withData = (rows || []).filter(r => r.hasData && r.days > 0);
             const maxDays = withData.reduce((m, r) => Math.max(m, r.days), 0);
             const minDays = Math.max(3, Math.ceil(maxDays * 0.6));
-            let ranked = withData.filter(r => r.days >= minDays);
-            if (!ranked.length) ranked = withData;
-            ranked.sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0));
-            if (!ranked.length) { alert('⚠️ ماكو بيانات كافية لهذا الشهر'); return; }
-            const w = ranked[0];
-            if (!confirm('🏆 نجم الشهر: ' + w.name + ' (' + Math.round(w.total) + '%)\n\nنطلّع الاحتفال للكل؟')) return;
-            const ok = await window._saveChampion(w, today, true);
+            // نفس ترتيب بطاقة «موظف الشهر»: المؤهلين أولاً بنفس ترتيبهم، وبعدين الباقين
+            const list = withData.filter(r => r.days >= minDays).concat(withData.filter(r => r.days < minDays));
+            const allKeys = Object.keys(employeesData).filter(k => k !== '__admin__');
+            allKeys.forEach(k => { if (!list.some(r => r.k === k)) list.push({ k, name: (employeesData[k] && employeesData[k].name) || k, total: null, days: 0 }); });
+            window._champPickList = list;
+            const cur = window._champ && window._champ.employee_key;
+            body.innerHTML = '<p style="font-size:.85rem;font-weight:700;color:#64748b;margin:0 0 10px;">اضغط على اسم الفائز، وراح يطلع الاحتفال والتاج إله عند كل الموظفين.</p>'
+                + list.map((r, i) => {
+                    const ok = r.days >= minDays;
+                    return '<button type="button" onclick="window._pickChampion(' + i + ')" style="width:100%;display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:10px 14px;border-radius:14px;cursor:pointer;font-family:Cairo,sans-serif;text-align:right;'
+                        + 'border:2px solid ' + (r.k === cur ? '#f59e0b' : '#e2e8f0') + ';background:' + (r.k === cur ? '#fffbeb' : '#fff') + ';">'
+                        + '<span style="font-size:1.2rem;">' + (i === 0 && ok ? '🥇' : i === 1 && ok ? '🥈' : i === 2 && ok ? '🥉' : '👤') + '</span>'
+                        + '<span style="flex:1;font-weight:900;color:#0f172a;" dir="auto">' + sanitize(r.name) + (r.k === cur ? ' <small style="color:#b45309;">(الحالي)</small>' : '') + '</span>'
+                        + '<span style="font-size:.78rem;font-weight:800;color:#64748b;white-space:nowrap;">' + (r.total == null ? 'بدون بيانات' : Math.round(r.total) + '% · ' + r.days + ' يوم' + (ok ? '' : ' ⚠️')) + '</span></button>';
+                }).join('')
+                + '<p style="font-size:.72rem;font-weight:700;color:#94a3b8;margin:6px 0 0;">⚠️ = أيام دوامه أقل من ' + minDays + ' (شرط موظف الشهر)</p>';
+        };
+        window._pickChampion = async (i) => {
+            const r = (window._champPickList || [])[i]; if (!r) return;
+            if (!confirm('🏆 نجم الشهر: ' + r.name + '\n\nنطلّع الاحتفال للكل؟')) return;
+            const today = getTodayDateString();
+            const ok = await window._saveChampion({ k: r.k, name: r.name, total: r.total == null ? 0 : r.total }, today, true);
             if (ok === false) return;
+            try { localStorage.setItem('a3_champ_manual_' + today.slice(0, 7), r.k); } catch (e) {}
             try { Object.keys(localStorage).filter(k => k.startsWith('a3_cel_')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+            const o = document.getElementById('champ-pick-overlay'); if (o) o.remove();
+            try { window.refreshTopPerformer(true); } catch (e) {}
             window.showChampion(true);
         };
     })();
