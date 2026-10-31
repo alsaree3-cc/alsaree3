@@ -376,6 +376,8 @@
         .stat-tile { padding: 11px 8px; border-radius: 16px; display: flex; flex-direction: column; justify-content: center; min-height: 72px; }
         .stat-tile span { font-size: .74rem; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .stat-tile { min-width: 0; } .stat-tile b { overflow: hidden; text-overflow: ellipsis; }
+        .card-box { container-type: inline-size; }
+        @container (max-width: 330px) { .emp-stats { gap: 6px; } .stat-tile { padding: 9px 4px; min-height: 64px; } .stat-tile span { font-size: .64rem; } .stat-tile b { font-size: .84rem; white-space: normal; overflow: visible; line-height: 1.25; } .stat-tile b .st-sub { font-size: .66rem; } }
         .stat-tile b { font-size: 1.02rem; line-height: 1.3; white-space: nowrap; font-variant-numeric: tabular-nums; }
         .stat-tile b .st-sub { display: block; font-size: .74rem; font-weight: 800; color: #94a3b8; margin-top: 2px; }
         html.a3-dark .stat-tile b .st-sub { color: #7c8ba3; }
@@ -3010,13 +3012,13 @@
         let _eomBusy = false;
         window.refreshTopPerformer = async (force) => {
             if (loggedInId !== '__admin__' || _eomBusy) return;
-            const box = document.getElementById('eom-banner'); if (!box) return;
+            const box = document.getElementById('eom-banner');
             _eomBusy = true;
             const today = getTodayDateString();
-            if (force) box.innerHTML = '<div style="padding:10px;text-align:center;color:#94a3b8;font-weight:700;font-size:0.85rem;">⏳ جاري حساب موظف الشهر...</div>';
+            if (force && box) box.innerHTML = '<div style="padding:10px;text-align:center;color:#94a3b8;font-weight:700;font-size:0.85rem;">⏳ جاري حساب موظف الشهر...</div>';
             try {
                 const rows = await window.loadScoreCard(today.slice(0, 7) + '-01', today, true);
-                const bx = document.getElementById('eom-banner'); if (!bx) return;
+                const bx = document.getElementById('eom-banner') || document.createElement('div');   // بدون اللوحة: نحسب ونحفظ نجم الشهر بس
                 const withData = (rows || []).filter(r => r.hasData && r.days > 0);
                 // أهلية موظف الشهر: لا يكفي يوم أو يومان بدرجة كاملة — يجب أن يكون دوامه 60% على الأقل من أكثر الموظفين دواماً (وبحد أدنى 3 أيام)
                 const _maxDays = withData.reduce((m, r) => Math.max(m, r.days), 0);
@@ -3028,6 +3030,7 @@
                 const medals = ['🥇', '🥈', '🥉'];
                 const top = ranked.slice(0, 3);
                 const w = top[0];
+                if (!_fewData && window._saveChampion) window._saveChampion(w, today);
                 const monthName = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'][Number(today.slice(5, 7)) - 1];
                 bx.innerHTML = '<div style="border:1px solid #fcd34d;background:linear-gradient(135deg,#fffbeb,#fef3c7);border-radius:18px;padding:12px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:14px;">'
                     + '<div style="font-size:2rem;line-height:1;">🏆</div>'
@@ -3038,11 +3041,12 @@
                     + '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + top.map((r, i) => '<div style="background:#fff;border:1px solid #fde68a;border-radius:12px;padding:6px 12px;font-size:0.8rem;font-weight:800;color:#334155;">' + medals[i] + ' ' + sanitize(r.name) + ' · ' + Math.round(r.total) + '%</div>').join('') + '</div>'
                     + '<div style="display:flex;gap:6px;"><button onclick="window.openScoreCard()" style="background:#fff;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:5px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">التفاصيل</button>'
                     + '<button onclick="window.openEmpEval()" style="background:#fff;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:5px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">📈 النواقص</button>'
+                    + '<button onclick="window.celebrateNow()" style="background:linear-gradient(135deg,#fde68a,#fbbf24);border:1px solid #f59e0b;color:#78350f;border-radius:10px;padding:5px 12px;font-family:Cairo,sans-serif;font-weight:900;font-size:0.78rem;cursor:pointer;">🎉 احتفل الآن</button>'
                     + '<button onclick="window.refreshTopPerformer(true)" style="background:#fff;border:1px solid #cbd5e1;color:#475569;border-radius:10px;padding:5px 10px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">🔄</button></div></div>';
             } catch (e) { console.warn('[TopPerformer]', e); }
             finally { _eomBusy = false; }
         };
-        setInterval(() => { if (loggedInId === '__admin__' && document.getElementById('eom-banner')) window.refreshTopPerformer(false); }, 600000);
+        setInterval(() => { if (loggedInId === '__admin__') window.refreshTopPerformer(false); }, 600000);
 
         // ===== تقييم أسبوعي / شهري + ما ينقص كل موظف ليصير موظف الشهر (للمسؤول) =====
         function _evWeekStart(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 1) % 7)); return x; }   // الأسبوع يبدأ السبت
@@ -5588,9 +5592,10 @@
                             <span class="text-gray-400 text-sm font-bold">🔒 للعرض فقط</span>
                         </div>`;
 
-                h += `<div class="card-box ${stateClass} ${myCard}">
+                h += `<div class="card-box ${stateClass} ${myCard} ${window._champCls ? window._champCls(i) : ''}">
                         <div class="emp-brand">${_qpCardBtn(i, isAdmin)}<div class="adm-logo"></div><div><div class="adm-brand-t">Alsaree3</div><div class="adm-brand-s">Employee</div></div></div>
                         ${(isAdmin && window._qp.pending[i]) ? _qpAdminBanner(window._qp.pending[i]) : ''}
+                        ${window._champTag ? window._champTag(i) : ''}
                         <div class="emp-head">
                             ${_empAvatarHtml(i, d)}
                             <div class="emp-id">
@@ -6521,7 +6526,7 @@
     function _empAvatarHtml(id, d) {
         const p = window._empPhotos[id];
         const hasPhoto = !!(p && _EP_OK.test(p));
-        const inner = hasPhoto ? '<img src="' + p + '" alt="" loading="lazy">' : sanitize(Array.from(String((d && d.name) || '?'))[0]);
+        const inner = (hasPhoto ? '<img src="' + p + '" alt="" loading="lazy">' : sanitize(Array.from(String((d && d.name) || '?'))[0])) + ((window._isChamp && window._isChamp(id)) ? '<span class="a3-crown">👑</span>' : '');
         const canEdit = (loggedInId === '__admin__' || loggedInId === id) && _EP_KEY.test(String(id));
         const cls = 'emp-avatar' + (hasPhoto ? ' has-photo' : '');
         if (!canEdit) return '<div class="' + cls + '">' + inner + '</div>';
@@ -6619,6 +6624,266 @@
             document.getElementById('emp-photo-overlay').remove();
         };
     };
+</script>
+
+<!-- ===== نجم الشهر: تاج على بطاقة المتصدّر + احتفال بآخر يوم بالشهر ===== -->
+<style>
+    /* بطاقة المتصدّر */
+    .card-box.a3-champ { border:2px solid #f59e0b !important; box-shadow:0 0 0 4px rgba(245,158,11,.18), 0 18px 40px -16px rgba(180,83,9,.45) !important; }
+    .card-box.a3-champ::after { content:''; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+        background:linear-gradient(115deg,transparent 42%,rgba(255,240,190,.32) 48%,transparent 54%); background-size:250% 100%; animation:a3Shine 5s ease-in-out infinite; z-index:1; }
+    @keyframes a3Shine { 0%,55% { background-position:130% 0; } 100% { background-position:-120% 0; } }
+    .a3-champ-tag { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px; font-size:.72rem; font-weight:900; white-space:nowrap; cursor:pointer;
+        color:#78350f; background:linear-gradient(135deg,#fde68a,#fbbf24); border:1px solid #f59e0b; box-shadow:0 3px 8px -3px rgba(180,83,9,.6); font-family:'Cairo',sans-serif; }
+    .a3-champ-row { display:flex; justify-content:center; margin:-8px 0 12px; }
+    .emp-avatar .a3-crown { position:absolute; left:50%; top:-17px; transform:translateX(-50%) rotate(-8deg); font-size:1.25rem; line-height:1; filter:drop-shadow(0 2px 2px rgba(0,0,0,.25)); animation:a3Crown 2.6s ease-in-out infinite; pointer-events:none; }
+    @keyframes a3Crown { 0%,100% { transform:translateX(-50%) rotate(-8deg) translateY(0); } 50% { transform:translateX(-50%) rotate(6deg) translateY(-3px); } }
+    .a3-champ .emp-avatar { box-shadow:0 0 0 3px #fbbf24, 0 6px 16px -4px rgba(180,83,9,.6) !important; }
+
+    /* شاشة الاحتفال */
+    #a3-celebrate { position:fixed; inset:0; z-index:10050; display:flex; align-items:center; justify-content:center; padding:16px;
+        background:radial-gradient(ellipse at center, rgba(16,61,66,.55), rgba(2,6,23,.78)); animation:a3Fade .4s ease both; font-family:'Cairo',sans-serif; }
+    #a3-celebrate canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+    @keyframes a3Fade { from { opacity:0; } to { opacity:1; } }
+    .a3-cel-card { position:relative; width:min(380px,92vw); padding:34px 24px 22px; border-radius:28px; text-align:center; direction:rtl; color:#fff;
+        background:linear-gradient(160deg,#134e4a 0%,#0b2f33 60%,#081f22 100%); border:2px solid #fbbf24;
+        box-shadow:0 0 0 6px rgba(251,191,36,.18), 0 30px 70px -10px rgba(0,0,0,.6); animation:a3Pop .7s cubic-bezier(.2,1.4,.4,1) .15s both; overflow:hidden; }
+    .a3-cel-card::before { content:''; position:absolute; inset:-40%; background:conic-gradient(from 0deg, transparent, rgba(251,191,36,.16), transparent 30%); animation:a3Spin 7s linear infinite; }
+    .a3-cel-card > * { position:relative; }
+    @keyframes a3Pop { from { opacity:0; transform:scale(.6) translateY(30px); } to { opacity:1; transform:none; } }
+    @keyframes a3Spin { to { transform:rotate(360deg); } }
+    .a3-cel-trophy { font-size:2.6rem; line-height:1; margin-bottom:6px; animation:a3Bounce 1.6s ease-in-out infinite; }
+    @keyframes a3Bounce { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-6px); } }
+    .a3-cel-kicker { font-size:.8rem; font-weight:800; letter-spacing:.5px; color:#fde68a; }
+    .a3-cel-photo { position:relative; width:118px; height:118px; margin:22px auto 12px; border-radius:50%; padding:4px;
+        background:conic-gradient(#fde68a,#f59e0b,#fbbf24,#fff7d6,#f59e0b,#fde68a); box-shadow:0 0 30px rgba(251,191,36,.55); }
+    .a3-cel-photo > img, .a3-cel-photo > div { width:100%; height:100%; border-radius:50%; object-fit:cover; display:grid; place-items:center; background:#0f766e; font-size:2.8rem; font-weight:900; border:3px solid #0b2f33; }
+    .a3-cel-photo .a3-crown { position:absolute; left:50%; top:-30px; transform:translateX(-50%) rotate(-8deg); font-size:2.3rem; animation:a3Crown 2.6s ease-in-out infinite; }
+    .a3-cel-name { font-size:1.9rem; font-weight:900; line-height:1.2; background:linear-gradient(90deg,#fde68a,#fff,#fbbf24); -webkit-background-clip:text; background-clip:text; color:transparent; }
+    .a3-cel-sub { margin-top:4px; font-size:.95rem; font-weight:800; color:#d1fae5; }
+    .a3-cel-score { display:inline-flex; align-items:center; gap:6px; margin-top:12px; padding:6px 16px; border-radius:999px; background:rgba(251,191,36,.15); border:1px solid rgba(251,191,36,.5); color:#fde68a; font-weight:900; }
+    .a3-cel-msg { margin-top:14px; font-size:.86rem; font-weight:700; color:#a7f3d0; line-height:1.7; }
+    .a3-cel-btn { margin-top:18px; width:100%; padding:12px; border:none; border-radius:16px; cursor:pointer; font-family:inherit; font-weight:900; font-size:1rem;
+        color:#0b2f33; background:linear-gradient(135deg,#fde68a,#fbbf24); box-shadow:0 8px 20px -8px rgba(251,191,36,.8); }
+    .a3-cel-btn:active { transform:scale(.98); }
+    @media (prefers-reduced-motion: reduce) { .a3-cel-card, .a3-cel-card::before, .a3-cel-trophy, .a3-crown, .card-box.a3-champ::after { animation:none !important; } }
+</style>
+<script>
+    (function () {
+        const MONTHS = ['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
+        window._champ = null;   // { employee_key, name, month, total }
+        const ym = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        const monthLabel = m => { const p = String(m || '').split('-'); return MONTHS[(Number(p[1]) || 1) - 1] + ' ' + (p[0] || ''); };
+        const isLastDay = d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n.getDate() === 1; };
+        const prevYm = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return ym(d); };
+
+        // هل نعرض التاج؟ المتصدّر الحالي طول الشهر، ونجم الشهر الماضي أول أسبوع من الشهر الجديد
+        window._champActive = () => {
+            const c = window._champ; if (!c || !c.employee_key) return null;
+            const now = new Date();
+            if (c.month === ym(now)) return c;
+            if (c.month === prevYm() && now.getDate() <= 7) return c;
+            return null;
+        };
+        window._isChamp = id => { const c = window._champActive(); return !!(c && c.employee_key === id); };
+        window._champCls = id => window._isChamp(id) ? 'a3-champ' : '';
+        window._champTag = id => {
+            const c = window._champActive(); if (!c || c.employee_key !== id) return '';
+            const final = c.month !== ym(new Date()) || isLastDay(new Date());
+            return '<div class="a3-champ-row"><span class="a3-champ-tag" onclick="window.showChampion(true)" title="اضغط للاحتفال">🏆 ' + (final ? 'نجم شهر ' : 'الأول هذا الشهر · ') + sanitize(final ? monthLabel(c.month) : (Math.round(Number(c.total) || 0) + '%')) + '</span></div>';
+        };
+
+        // جهاز المسؤول: يحفظ المتصدّر بالسيرفر (لما البيانات تكفي)
+        let _champWarned = false;
+        window._saveChampion = async (w, today, force) => {
+            try {
+                if (loggedInId !== '__admin__' || !w || !w.k) return false;
+                const rec = { id: 1, employee_key: String(w.k), name: String(w.name || w.k), month: String(today).slice(0, 7), total: Math.round(Number(w.total) || 0), updated_at: new Date().toISOString() };
+                const c = window._champ;
+                if (!force && c && c.employee_key === rec.employee_key && c.month === rec.month && Math.round(Number(c.total)) === rec.total) return true;
+                const { error } = await supabaseClient.from('alsaree3_champion').upsert(rec, { onConflict: 'id' });
+                if (error) {
+                    console.warn('[Champion] save', error.message);
+                    if (force || !_champWarned) { _champWarned = true; alert('⚠️ ما انحفظ نجم الشهر بالسيرفر.\nتأكد إنك شغّلت ملف champion.sql بـ Supabase.\n\n(' + String(error.message || '').slice(0, 120) + ')'); }
+                    return false;
+                }
+                window._champ = rec; try { render(); } catch (e) {}
+                return true;
+            } catch (e) { console.warn('[Champion]', e); return false; }
+        };
+
+        window._reloadChampion = () => loadChampion();
+        async function loadChampion() {
+            if (!loggedInId) return;
+            try {
+                const { data, error } = await supabaseClient.from('alsaree3_champion').select('employee_key,name,month,total').eq('id', 1).maybeSingle();
+                if (error) { console.warn('[Champion]', error.message); return; }
+                const changed = JSON.stringify(data || null) !== JSON.stringify(window._champ);
+                window._champ = data || null;
+                if (changed) { try { render(); } catch (e) {} }
+                maybeCelebrate();
+            } catch (e) { console.warn('[Champion]', e); }
+        }
+
+        // الاحتفال: آخر يوم بالشهر (المتصدّر الحالي) + أول يومين بالشهر الجديد (نجم الشهر الماضي) — مرة باليوم لكل جهاز
+        function maybeCelebrate() {
+            const c = window._champActive(); if (!c) return;
+            const now = new Date();
+            const due = (c.month === ym(now) && isLastDay(now)) || (c.month === prevYm() && now.getDate() <= 2);
+            if (!due) return;
+            const key = 'a3_cel_' + c.month + '_' + now.getDate() + '_' + String(loggedInId);
+            try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) {}
+            setTimeout(() => window.showChampion(false), 1200);
+        }
+
+        window.showChampion = (manual) => {
+            const c = window._champActive() || (manual ? window._champ : null); if (!c) return;
+            const old = document.getElementById('a3-celebrate'); if (old) old.remove();
+            const nm = (employeesData[c.employee_key] && employeesData[c.employee_key].name) || c.name || c.employee_key;
+            const ph = window._empPhotos && window._empPhotos[c.employee_key];
+            const okPh = ph && /^data:image\/(jpeg|png|webp);base64,/.test(ph);
+            const isMe = loggedInId === c.employee_key;
+            const final = c.month !== ym(new Date());
+            const o = document.createElement('div'); o.id = 'a3-celebrate';
+            o.innerHTML = '<canvas></canvas><div class="a3-cel-card">'
+                + '<div class="a3-cel-trophy">🏆</div>'
+                + '<div class="a3-cel-kicker">' + (final ? 'نجم الشهر' : 'متصدّر الشهر') + ' · ' + sanitize(monthLabel(c.month)) + '</div>'
+                + '<div class="a3-cel-photo"><span class="a3-crown">👑</span>' + (okPh ? '<img alt="" src="' + ph + '">' : '<div>' + sanitize(Array.from(String(nm || '?'))[0]) + '</div>') + '</div>'
+                + '<div class="a3-cel-name" dir="auto">' + sanitize(nm) + '</div>'
+                + '<div class="a3-cel-sub">' + (isMe ? '🎉 مبروووك! إنت نجم الشهر' : '🎉 ألف مبروك لنجم الشهر') + '</div>'
+                + (c.total ? '<div class="a3-cel-score">⭐ التقييم الشهري ' + Math.round(Number(c.total)) + '%</div>' : '')
+                + '<div class="a3-cel-msg">' + (isMe ? 'شغلك وتعبك كان واضح طول الشهر 💚<br>استمر بنفس الروح!' : 'شكراً على الشغل الحلو والالتزام طول الشهر 💚<br>الشهر الجاي فرصتك تكون إنت النجم!') + '</div>'
+                + '<button class="a3-cel-btn" type="button">' + (isMe ? 'شكراً 🥳' : 'مبروك! 👏') + '</button></div>';
+            document.body.appendChild(o);
+            const close = () => { o.style.transition = 'opacity .35s'; o.style.opacity = '0'; setTimeout(() => o.remove(), 360); };
+            o.querySelector('.a3-cel-btn').onclick = close;
+            o.addEventListener('click', e => { if (e.target === o) close(); });
+            if (!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) confetti(o.querySelector('canvas'));
+        };
+
+        function confetti(cv) {
+            const ctx = cv.getContext('2d'); if (!ctx) return;
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            const fit = () => { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; };
+            fit(); addEventListener('resize', fit);
+            const cols = ['#fbbf24', '#fde68a', '#22c55e', '#d6fd26', '#f43f5e', '#60a5fa', '#ffffff', '#f97316'];
+            const P = [];
+            const burst = (n, x) => { for (let i = 0; i < n; i++) P.push({ x: x * cv.width, y: -20 * dpr - Math.random() * cv.height * .3, vx: (Math.random() - .5) * 4 * dpr, vy: (2 + Math.random() * 3) * dpr,
+                w: (6 + Math.random() * 6) * dpr, h: (8 + Math.random() * 10) * dpr, r: Math.random() * 6, vr: (Math.random() - .5) * .3, c: cols[i % cols.length], round: Math.random() < .25 }); };
+            burst(140, .5); setTimeout(() => { burst(70, .2); burst(70, .8); }, 700);
+            const t0 = performance.now();
+            (function tick(t) {
+                if (!cv.isConnected) return;
+                ctx.clearRect(0, 0, cv.width, cv.height);
+                P.forEach(p => {
+                    p.vy += .05 * dpr; p.vx *= .99; p.x += p.vx + Math.sin((t + p.r * 300) / 400) * .6 * dpr; p.y += p.vy; p.r += p.vr;
+                    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c;
+                    if (p.round) { ctx.beginPath(); ctx.arc(0, 0, p.w / 2, 0, Math.PI * 2); ctx.fill(); }
+                    else ctx.fillRect(-p.w / 2, -p.h / 2 * Math.abs(Math.cos(p.r * 2)), p.w, p.h * Math.abs(Math.cos(p.r * 2)) + 1);
+                    ctx.restore();
+                });
+                for (let i = P.length - 1; i >= 0; i--) if (P[i].y > cv.height + 40 * dpr) P.splice(i, 1);
+                if (P.length && t - t0 < 9000) requestAnimationFrame(tick); else ctx.clearRect(0, 0, cv.width, cv.height);
+            })(t0);
+        }
+
+        // تشغيل: عند الدخول، وكل 5 دقايق. والمسؤول يحسب المتصدّر حتى لو اللوحة مقفلة
+        let who = null;
+        setInterval(() => {
+            if (loggedInId !== who) {
+                who = loggedInId; window._champ = null;
+                if (loggedInId) {
+                    setTimeout(loadChampion, 1500);
+                    if (loggedInId === '__admin__') setTimeout(() => { try { window.refreshTopPerformer(false); } catch (e) {} }, 6000);
+                }
+            }
+        }, 1000);
+        setInterval(() => { if (loggedInId) loadChampion(); }, 300000);
+    })();
+</script>
+
+<!-- ===== المشهد يحتفل بآخر يوم بالشهر + زر «احتفل الآن» للمسؤول ===== -->
+<style>
+    .dlv-road.a3-fest { height:calc(196px * var(--s)); }
+    .dlv-road.a3-fest .dlv-stage { height:196px; }
+    .a3-fest-layer { position:absolute; inset:0; pointer-events:none; z-index:6; }
+    .a3-bunting { position:absolute; left:120px; top:6px; width:470px; height:40px; overflow:visible; }
+    .a3-bunting .flag { transform-box:fill-box; transform-origin:50% 0; animation:a3Flag 2.4s ease-in-out infinite; }
+    .a3-bunting .flag:nth-child(odd) { animation-delay:-1.2s; }
+    @keyframes a3Flag { 0%,100% { transform:rotate(-5deg); } 50% { transform:rotate(5deg); } }
+    .a3-banner { position:absolute; left:50%; top:44px; transform:translateX(-62%); white-space:nowrap; direction:rtl; padding:6px 18px; border-radius:14px;
+        font:900 16px/1.3 Cairo,sans-serif; color:#78350f; background:linear-gradient(135deg,#fef3c7,#fbbf24); border:2px solid #b45309;
+        box-shadow:0 8px 18px -6px rgba(180,83,9,.55); animation:a3Swing 3s ease-in-out infinite; transform-origin:50% -20px; }
+    .a3-banner::before, .a3-banner::after { content:''; position:absolute; top:-30px; width:2px; height:30px; background:#78350f; }
+    .a3-banner::before { right:22px; } .a3-banner::after { left:22px; }
+    @keyframes a3Swing { 0%,100% { transform:translateX(-62%) rotate(-2deg); } 50% { transform:translateX(-62%) rotate(2deg); } }
+    .a3-balloon { position:absolute; bottom:146px; z-index:2; width:22px; height:28px; border-radius:50% 50% 48% 48%; animation:a3Float 4s ease-in-out infinite; }
+    .a3-balloon::before { content:''; position:absolute; left:5px; top:5px; width:6px; height:8px; border-radius:50%; background:rgba(255,255,255,.55); }
+    .a3-balloon::after { content:''; position:absolute; left:50%; top:100%; width:1px; height:34px; background:rgba(51,65,85,.6); }
+    @keyframes a3Float { 0%,100% { transform:translateY(0) rotate(-4deg); } 50% { transform:translateY(-10px) rotate(4deg); } }
+    .a3-spark { position:absolute; width:8px; height:8px; border-radius:2px; animation:a3Fall linear infinite; opacity:.9; }
+    @keyframes a3Fall { from { transform:translateY(-20px) rotate(0); } to { transform:translateY(220px) rotate(540deg); } }
+    /* السايق والزبون يرقصون وقت الاحتفال */
+    .dlv-road.a3-fest .dlv-bob { animation:dlvBob .3s ease-in-out infinite alternate, a3Hop 1.6s ease-in-out infinite; }
+    @keyframes a3Hop { 0%,70%,100% { translate:0 0; } 80% { translate:0 -6px; } 90% { translate:0 0; } }
+    @media (prefers-reduced-motion: reduce) { .a3-fest-layer * { animation:none !important; } }
+</style>
+<script>
+    (function () {
+        const MONTHS = ['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
+        const isLastDay = d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n.getDate() === 1; };
+        // أيام الاحتفال: آخر يوم بالشهر + أول يومين بالشهر الجديد
+        window._isFestDay = () => { const d = new Date(); return isLastDay(d) || d.getDate() <= 2; };
+
+        function festHtml() {
+            const c = window._champActive ? window._champActive() : null;
+            const nm = c ? ((employeesData[c.employee_key] && employeesData[c.employee_key].name) || c.name || '') : '';
+            const d = new Date(); const mIdx = isLastDay(d) ? d.getMonth() : (d.getMonth() + 11) % 12;
+            const text = nm ? '🏆 مبروك ' + sanitize(nm) + ' — نجم شهر ' + MONTHS[mIdx] + ' 🎉' : '🎉 ختام شهر ' + MONTHS[mIdx] + ' — شكراً للجميع 💚';
+            const cols = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#d6fd26'];
+            let flags = '';
+            for (let i = 0; i < 16; i++) { const x = 8 + i * 29; flags += '<path class="flag" d="M' + x + ' ' + (10 + Math.sin(i / 15 * Math.PI) * 12) + ' l11 0 l-5.5 14 z" fill="' + cols[i % cols.length] + '" stroke="rgba(0,0,0,.15)" stroke-width=".6"/>'; }
+            const rope = '<path d="M0 8 Q235 40 470 8" fill="none" stroke="#475569" stroke-width="1.4"/>';
+            let balloons = '';
+            [[612, '#ef4444', 0], [636, '#f59e0b', -.8], [660, '#22c55e', -1.6], [686, '#3b82f6', -.4], [710, '#a855f7', -2.2]].forEach(([x, c, dl]) => {
+                balloons += '<div class="a3-balloon" style="left:' + x + 'px;background:radial-gradient(circle at 35% 30%,#fff8,' + c + ' 45%);animation-delay:' + dl + 's"></div>';
+            });
+            let sparks = '';
+            for (let i = 0; i < 22; i++) sparks += '<span class="a3-spark" style="left:' + (20 + Math.random() * 720) + 'px;top:' + (-30 - Math.random() * 60) + 'px;background:' + cols[i % cols.length] + ';animation-duration:' + (3 + Math.random() * 3).toFixed(1) + 's;animation-delay:-' + (Math.random() * 5).toFixed(1) + 's"></span>';
+            return '<svg class="a3-bunting" viewBox="0 0 470 40">' + rope + flags + '</svg><div class="a3-banner">' + text + '</div>' + balloons + sparks;
+        }
+        function applyFest() {
+            const road = document.querySelector('.dlv-road'), stage = road && road.querySelector('.dlv-stage');
+            if (!stage) return;
+            const on = !!loggedInId && window._isFestDay();
+            let layer = stage.querySelector('.a3-fest-layer');
+            road.classList.toggle('a3-fest', on);
+            if (!on) { if (layer) layer.remove(); return; }
+            const html = festHtml();
+            const sig = html.replace(/<span class="a3-spark"[^>]*><\/span>/g, '');
+            if (layer && layer.dataset.sig === sig) return;
+            if (!layer) { layer = document.createElement('div'); layer.className = 'a3-fest-layer'; stage.appendChild(layer); }
+            layer.innerHTML = html; layer.dataset.sig = sig;
+        }
+        setInterval(applyFest, 3000); setTimeout(applyFest, 800);
+
+        // بأيام الاحتفال نحدّث نجم الشهر كل دقيقة (حتى يوصل للموظفين بسرعة)
+        setInterval(() => { if (loggedInId && window._isFestDay() && window._reloadChampion) window._reloadChampion(); }, 60000);
+
+        // زر للمسؤول: «🎉 احتفل الآن» — يثبّت المتصدّر الحالي ويطلّع الاحتفال للكل
+        window.celebrateNow = async () => {
+            if (loggedInId !== '__admin__') return;
+            const today = getTodayDateString();
+            const rows = await window.loadScoreCard(today.slice(0, 7) + '-01', today, true).catch(() => null);
+            const ranked = (rows || []).filter(r => r.hasData && r.days > 0);
+            if (!ranked.length) { alert('⚠️ ماكو بيانات كافية لهذا الشهر'); return; }
+            const w = ranked[0];
+            const ok = await window._saveChampion(w, today, true);
+            if (ok === false) return;
+            try { Object.keys(localStorage).filter(k => k.startsWith('a3_cel_')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+            window.showChampion(true);
+        };
+    })();
 </script>
 
 </html>
