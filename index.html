@@ -4768,39 +4768,40 @@
         if (!document.getElementById('qr-style')) {
             const st = document.createElement('style'); st.id = 'qr-style';
             st.textContent = `
-            .qr-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:8px;}
-            .qr-chip{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:7px 2px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;font:800 .66rem Cairo,sans-serif;color:#334155;cursor:pointer;line-height:1.15;transition:.12s;}
-            .qr-chip span{font-size:1.05rem;line-height:1;}
-            .qr-chip:hover{border-color:#16a34a;}
-            .qr-chip.on{background:#16a34a;border-color:#16a34a;color:#fff;box-shadow:0 6px 14px -8px #16a34a;}
-            .qr-msg{position:relative;background:#e7fbe9;border:1px solid #bbf7d0;border-radius:14px 14px 4px 14px;padding:2px;margin-bottom:8px;}
-            .qr-msg textarea{width:100%;box-sizing:border-box;display:block;border:0;background:transparent;resize:none;direction:rtl;text-align:right;font:700 .8rem/1.7 Cairo,sans-serif;color:#0f2e31;padding:8px 10px 8px 34px;outline:none;min-height:165px;}
-            .qr-copy{position:absolute;top:6px;left:6px;width:26px;height:26px;border-radius:8px;border:1px solid #bbf7d0;background:#fff;cursor:pointer;font-size:.8rem;display:flex;align-items:center;justify-content:center;}
-            .qr-copy:hover{border-color:#16a34a;}
-            .qr-send{width:100%;border:0;border-radius:12px;padding:11px;background:#16a34a;color:#fff;font:900 .88rem Cairo,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 18px -10px #16a34a;}
+            .qr-row{display:flex;gap:4px;overflow-x:auto;padding-bottom:3px;margin-bottom:6px;direction:rtl;scrollbar-width:thin;}
+            .qr-pill{flex:none;border:1px solid #e2e8f0;background:#fff;color:#334155;border-radius:999px;padding:4px 9px;font:800 .7rem Cairo,sans-serif;cursor:pointer;white-space:nowrap;}
+            .qr-pill:hover{border-color:#16a34a;}
+            .qr-pill.on{background:#16a34a;border-color:#16a34a;color:#fff;}
+            .qr-ta{width:100%;box-sizing:border-box;display:block;margin-bottom:6px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:10px;resize:vertical;direction:rtl;text-align:right;font:700 .76rem/1.6 Cairo,sans-serif;color:#0f2e31;padding:6px 8px;outline:none;}
+            .qr-send{flex:1;border:0;border-radius:10px;padding:8px;background:#16a34a;color:#fff;font:900 .82rem Cairo,sans-serif;cursor:pointer;}
             .qr-send:hover{filter:brightness(1.05);}
-            .qr-foot{display:flex;justify-content:space-between;align-items:center;margin-top:7px;font-size:.68rem;font-weight:800;color:#64748b;}
-            .qr-foot label{display:flex;align-items:center;gap:5px;cursor:pointer;}
+            .qr-ico{flex:none;width:34px;border:1px solid #e2e8f0;background:#fff;border-radius:10px;cursor:pointer;font-size:.8rem;}
+            .qr-ico.on{background:#f0fdf4;border-color:#16a34a;}
+            .qr-foot{display:flex;justify-content:space-between;align-items:center;margin-top:5px;font-size:.64rem;font-weight:800;color:#94a3b8;}
+            .qr-foot label{display:flex;align-items:center;gap:4px;cursor:pointer;}
             `;
             document.head.appendChild(st);
         }
         window._qrCopy = (btn) => {
             const txt = String(window._qr.txt || '');
             const ok = () => { if (btn) { btn.textContent = '✅'; setTimeout(() => { if (btn.isConnected) btn.textContent = '📋'; }, 1500); } };
+            if (!window._qr.edited) window._qr.txt = _qrBuild();
             try { navigator.clipboard.writeText(txt).then(ok).catch(() => { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); ok(); }); } catch (e) {}
         };
         window._qrPanel = () => {
             const q = window._qr; if (!q.txt) q.txt = _qrBuild();
             const n = _qrLog().length;
             const ph = _qrPhone(q.ph), okPh = !q.ph || /^\d{10,15}$/.test(ph);
-            const chips = QR_TPL.map(t => '<button type="button" class="qr-chip' + (q.k === t.k ? ' on' : '') + '" onclick="window._qrPick(\'' + t.k + '\')"><span>' + t.ic + '</span>' + t.lb + '</button>').join('');
-            return '<div class="ord-panel" style="--c:#16a34a;"><div class="op-t">💬 رد واتساب سريع</div>'
-                + '<div class="tk-row" style="margin-bottom:8px;"><input id="qr-ph" type="tel" inputmode="tel" maxlength="20" autocomplete="off" placeholder="📱 رقم الزبون 07XX…" class="tk-input" style="direction:ltr;text-align:right;' + (okPh ? '' : 'border-color:#dc2626;') + '" value="' + sanitize(q.ph) + '" oninput="window._qr.ph=this.value">'
-                + '<input id="qr-o" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="# رقم الطلب" class="tk-input" style="flex:0 0 38%;" value="' + sanitize(q.o) + '" oninput="window._qrOrder(this.value)"></div>'
-                + '<div class="qr-grid">' + chips + '</div>'
-                + '<div class="qr-msg"><button type="button" class="qr-copy" title="نسخ الرسالة" onclick="window._qrCopy(this)">📋</button><textarea id="qr-txt" rows="5" oninput="window._qr.txt=this.value;window._qr.edited=true">' + sanitize(q.txt) + '</textarea></div>'
-                + '<button type="button" class="qr-send" onclick="window.qrSend(this)">💬 فتح المحادثة بواتساب</button>'
-                + '<div class="qr-foot"><label><input type="checkbox" ' + (q.solve ? 'checked' : '') + ' onchange="window._qr.solve=this.checked"> تنحسب رسالة انحلّت</label><span>اليوم: ' + n + ' رد</span></div>'
+            const chips = QR_TPL.map(t => '<button type="button" class="qr-pill' + (q.k === t.k ? ' on' : '') + '" onclick="window._qrPick(\'' + t.k + '\')">' + t.ic + ' ' + t.lb + '</button>').join('');
+            return '<div class="ord-panel" style="--c:#16a34a;padding:7px;">'
+                + '<div class="tk-row" style="margin-bottom:6px;"><input id="qr-ph" type="tel" inputmode="tel" maxlength="20" autocomplete="off" placeholder="📱 رقم الزبون" class="tk-input" style="direction:ltr;text-align:right;' + (okPh ? '' : 'border-color:#dc2626;') + '" value="' + sanitize(q.ph) + '" oninput="window._qr.ph=this.value" onkeydown="if(event.key===\'Enter\')window.qrSend()">'
+                + '<input id="qr-o" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="# الطلب" class="tk-input" style="flex:0 0 34%;" value="' + sanitize(q.o) + '" oninput="window._qrOrder(this.value)" onkeydown="if(event.key===\'Enter\')window.qrSend()"></div>'
+                + '<div class="qr-row">' + chips + '</div>'
+                + (q.showTxt ? '<textarea id="qr-txt" rows="4" class="qr-ta" oninput="window._qr.txt=this.value;window._qr.edited=true">' + sanitize(q.txt) + '</textarea>' : '')
+                + '<div class="tk-row" style="margin:0;gap:5px;"><button type="button" class="qr-send" onclick="window.qrSend(this)">💬 إرسال بواتساب</button>'
+                + '<button type="button" class="qr-ico' + (q.showTxt ? ' on' : '') + '" title="عرض / تعديل الرسالة" onclick="window._qr.showTxt=!window._qr.showTxt;try{render()}catch(e){}">✏️</button>'
+                + '<button type="button" class="qr-ico" title="نسخ الرسالة" onclick="window._qrCopy(this)">📋</button></div>'
+                + '<div class="qr-foot"><label><input type="checkbox" ' + (q.solve ? 'checked' : '') + ' onchange="window._qr.solve=this.checked"> تنحسب انحلّت</label><span>اليوم ' + n + '</span></div>'
                 + '</div>';
         };
         window.qrSend = async (b) => {
@@ -4828,7 +4829,7 @@
                 } catch (e) { console.warn('[QrSolve]', e); }
                 finally { if (b && b.classList) b.classList.remove('busy'); }
             }
-            window._qr = { open: true, ph: '', o: '', k: q.k, txt: '', edited: false, solve: q.solve };
+            window._qr = { open: true, ph: '', o: '', k: q.k, txt: '', edited: false, solve: q.solve, showTxt: q.showTxt };
             window._qr.txt = _qrBuild();
             try { render(); } catch (e) {}
             _tkToast(mobile ? '💬 انفتح واتساب — اضغط إرسال' : '💻 انفتح تطبيق واتساب — اضغط إرسال');
@@ -7263,8 +7264,7 @@
             detail('كل السجلات', '📋 كل السجلات المتأخرة', srt(items), CL.brand, ['shift', 'ds', 'tm', 'order', 'cat', 'rest', 'why', 'mins', 'emp']);
             return wb;
         }
-        let _exjsP = null;
-        function _loadExcelJS() { if (!_exjsP) _exjsP = _loadScript('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js').catch(e => { _exjsP = null; throw e; }); return _exjsP; }
+        // (نستخدم _loadExcelJS الموجودة أصلاً: ترجّع مكتبة ExcelJS نفسها)
         window.exportRestStatsXlsx = async () => {
             const D = window._rsLast; if (!D) return;
             const xb = document.getElementById('rs-xl'); const lb = xb ? xb.innerHTML : '';
