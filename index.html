@@ -4737,8 +4737,102 @@
         const _X80_REASONS = ['تأخير التجهيز من المطعم', 'لا يوجد سائق متاح', 'السائق تأخر في الوصول', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'مشكلة في النظام'];
         const _DRV_REASONS = ['عطل في السيارة / الدراجة', 'السائق تعرّض لحادث', 'السائق لا يرد', 'السائق انسحب من الطلب', 'السائق بعيد عن المطعم', 'السائق لديه طلبات كثيرة'];
         const _dl = (id, arr) => '<datalist id="' + id + '">' + arr.map(x => '<option value="' + sanitize(x) + '"></option>').join('') + '</datalist>';
-        window._x80Toggle = () => { window._x80.open = !window._x80.open; if (window._x80.open) window._drv.open = false; try { render(); } catch (e) {} const f = document.getElementById('x80-order'); if (f) f.focus(); };
+        window._x80Toggle = () => { window._x80.open = !window._x80.open; if (window._x80.open) { window._drv.open = false; if (window._qr) window._qr.open = false; } try { render(); } catch (e) {} const f = document.getElementById('x80-order'); if (f) f.focus(); };
         window._drvToggle = () => { window._drv.open = !window._drv.open; if (window._drv.open) window._x80.open = false; try { render(); } catch (e) {} const f = document.getElementById('drv-order'); if (f) f.focus(); };
+        // ===== ردود واتساب سريعة (مجانية ورسمية عبر روابط واتساب): رسالة جاهزة تنفتح بمحادثة الزبون من رقم الشركة =====
+        const QR_TPL = [
+            { k: 'late', ic: '⏱️', lb: 'تأخير', tx: 'مرحباً 🌹\nنعتذر منك على تأخير طلبك{o}. تابعنا الطلب ويا المطعم والسائق، وراح يوصلك بأقرب وقت.\nشكراً لصبرك 🙏' },
+            { k: 'way', ic: '🛵', lb: 'بالطريق', tx: 'مرحباً 🌹\nطلبك{o} طلع ويا السائق وهو بالطريق إلك. نتمنى إلك وجبة طيبة 😋' },
+            { k: 'num', ic: '🔢', lb: 'رقم الطلب', tx: 'مرحباً 🌹\nحتى نتابع وياك بسرعة، ممكن تدزلنا رقم الطلب؟' },
+            { k: 'cnl', ic: '❌', lb: 'إلغاء', tx: 'مرحباً 🌹\nتم إلغاء طلبك{o} حسب طلبك ✅\nإذا تحتاج أي شي ثاني إحنا بالخدمة.' },
+            { k: 'rej', ic: '🚫', lb: 'المطعم رفض', tx: 'مرحباً 🌹\nنعتذر منك، المطعم ما كدر يجهّز طلبك{o} هسه. تحب نساعدك تطلب من مطعم ثاني؟' },
+            { k: 'drv', ic: '🔄', lb: 'تبديل سائق', tx: 'مرحباً 🌹\nحصل ظرف ويا السائق، وحوّلنا طلبك{o} لسائق ثاني حتى يوصلك بأسرع وقت. نعتذر عن التأخير 🙏' },
+            { k: 'thx', ic: '💚', lb: 'شكر', tx: 'شكراً لتواصلك ويا السريع 💚\nنتمنى إلك وجبة طيبة، وإحنا بالخدمة دائماً.' }
+        ];
+        window._qr = window._qr || { open: false, ph: '', o: '', k: 'late', txt: '', edited: false, solve: true };
+        const _qrSig = () => { const n = (employeesData[loggedInId] && employeesData[loggedInId].name) || ''; return '\n\n— ' + (n ? n + ' · ' : '') + 'فريق السريع'; };
+        const _qrBuild = () => { const t = QR_TPL.find(x => x.k === window._qr.k) || QR_TPL[0]; const o = String(window._qr.o || '').trim(); return t.tx.replace('{o}', o ? ' رقم ' + o : '') + _qrSig(); };
+        function _qrPhone(v) {   // أرقام عراقية: 0770… / 770… / +964… / 00964… ← 964770…
+            let d = String(v || '').replace(/[٠-٩]/g, c => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/\D/g, '');
+            if (d.startsWith('00')) d = d.slice(2);
+            if (d.startsWith('9640')) d = '964' + d.slice(4);
+            if (d.startsWith('0')) d = '964' + d.slice(1);
+            else if (/^7\d{9}$/.test(d)) d = '964' + d;
+            return d;
+        }
+        const _qrKey = () => 'a3_qr_' + loggedInId + '_' + getTodayDateString();
+        const _qrLog = () => { try { return JSON.parse(localStorage.getItem(_qrKey()) || '[]'); } catch (e) { return []; } };
+        window._qrToggle = () => { const q = window._qr; q.open = !q.open; if (q.open) { window._x80.open = false; window._drv.open = false; if (!q.txt) q.txt = _qrBuild(); } try { render(); } catch (e) {} const f = document.getElementById('qr-ph'); if (f && q.open) f.focus(); };
+        window._qrPick = (k) => { const q = window._qr; q.k = k; q.txt = _qrBuild(); q.edited = false; try { render(); } catch (e) {} };
+        window._qrOrder = (v) => { const q = window._qr; q.o = v; if (!q.edited) { q.txt = _qrBuild(); const ta = document.getElementById('qr-txt'); if (ta) ta.value = q.txt; } };
+        if (!document.getElementById('qr-style')) {
+            const st = document.createElement('style'); st.id = 'qr-style';
+            st.textContent = `
+            .qr-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:8px;}
+            .qr-chip{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:7px 2px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;font:800 .66rem Cairo,sans-serif;color:#334155;cursor:pointer;line-height:1.15;transition:.12s;}
+            .qr-chip span{font-size:1.05rem;line-height:1;}
+            .qr-chip:hover{border-color:#16a34a;}
+            .qr-chip.on{background:#16a34a;border-color:#16a34a;color:#fff;box-shadow:0 6px 14px -8px #16a34a;}
+            .qr-msg{position:relative;background:#e7fbe9;border:1px solid #bbf7d0;border-radius:14px 14px 4px 14px;padding:2px;margin-bottom:8px;}
+            .qr-msg textarea{width:100%;box-sizing:border-box;display:block;border:0;background:transparent;resize:none;direction:rtl;text-align:right;font:700 .8rem/1.7 Cairo,sans-serif;color:#0f2e31;padding:8px 10px 8px 34px;outline:none;min-height:165px;}
+            .qr-copy{position:absolute;top:6px;left:6px;width:26px;height:26px;border-radius:8px;border:1px solid #bbf7d0;background:#fff;cursor:pointer;font-size:.8rem;display:flex;align-items:center;justify-content:center;}
+            .qr-copy:hover{border-color:#16a34a;}
+            .qr-send{width:100%;border:0;border-radius:12px;padding:11px;background:#16a34a;color:#fff;font:900 .88rem Cairo,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 18px -10px #16a34a;}
+            .qr-send:hover{filter:brightness(1.05);}
+            .qr-foot{display:flex;justify-content:space-between;align-items:center;margin-top:7px;font-size:.68rem;font-weight:800;color:#64748b;}
+            .qr-foot label{display:flex;align-items:center;gap:5px;cursor:pointer;}
+            `;
+            document.head.appendChild(st);
+        }
+        window._qrCopy = (btn) => {
+            const txt = String(window._qr.txt || '');
+            const ok = () => { if (btn) { btn.textContent = '✅'; setTimeout(() => { if (btn.isConnected) btn.textContent = '📋'; }, 1500); } };
+            try { navigator.clipboard.writeText(txt).then(ok).catch(() => { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); ok(); }); } catch (e) {}
+        };
+        window._qrPanel = () => {
+            const q = window._qr; if (!q.txt) q.txt = _qrBuild();
+            const n = _qrLog().length;
+            const ph = _qrPhone(q.ph), okPh = !q.ph || /^\d{10,15}$/.test(ph);
+            const chips = QR_TPL.map(t => '<button type="button" class="qr-chip' + (q.k === t.k ? ' on' : '') + '" onclick="window._qrPick(\'' + t.k + '\')"><span>' + t.ic + '</span>' + t.lb + '</button>').join('');
+            return '<div class="ord-panel" style="--c:#16a34a;"><div class="op-t">💬 رد واتساب سريع</div>'
+                + '<div class="tk-row" style="margin-bottom:8px;"><input id="qr-ph" type="tel" inputmode="tel" maxlength="20" autocomplete="off" placeholder="📱 رقم الزبون 07XX…" class="tk-input" style="direction:ltr;text-align:right;' + (okPh ? '' : 'border-color:#dc2626;') + '" value="' + sanitize(q.ph) + '" oninput="window._qr.ph=this.value">'
+                + '<input id="qr-o" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="# رقم الطلب" class="tk-input" style="flex:0 0 38%;" value="' + sanitize(q.o) + '" oninput="window._qrOrder(this.value)"></div>'
+                + '<div class="qr-grid">' + chips + '</div>'
+                + '<div class="qr-msg"><button type="button" class="qr-copy" title="نسخ الرسالة" onclick="window._qrCopy(this)">📋</button><textarea id="qr-txt" rows="5" oninput="window._qr.txt=this.value;window._qr.edited=true">' + sanitize(q.txt) + '</textarea></div>'
+                + '<button type="button" class="qr-send" onclick="window.qrSend(this)">💬 فتح المحادثة بواتساب</button>'
+                + '<div class="qr-foot"><label><input type="checkbox" ' + (q.solve ? 'checked' : '') + ' onchange="window._qr.solve=this.checked"> تنحسب رسالة انحلّت</label><span>اليوم: ' + n + ' رد</span></div>'
+                + '</div>';
+        };
+        window.qrSend = async (b) => {
+            const q = window._qr, txt = String(q.txt || '').trim();
+            if (!txt) { alert('⚠️ اكتب الرسالة أولاً'); return; }
+            const ph = _qrPhone(q.ph);
+            if (!ph) { alert('⚠️ اكتب رقم الزبون أولاً'); const e = document.getElementById('qr-ph'); if (e) e.focus(); return; }
+            if (!/^\d{10,15}$/.test(ph)) { alert('⚠️ رقم الزبون مو صحيح. اكتبه مثل 07701234567'); const e = document.getElementById('qr-ph'); if (e) e.focus(); return; }
+            const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent), enc = encodeURIComponent(txt);
+            // الحاسبة: تطبيق واتساب للحاسبة مباشرة (بدون واتساب ويب) · الموبايل: تطبيق واتساب
+            const a = document.createElement('a');
+            a.href = mobile ? 'https://wa.me/' + ph + '?text=' + enc : 'whatsapp://send?phone=' + ph + '&text=' + enc;
+            if (mobile) { a.target = '_blank'; a.rel = 'noopener'; }
+            document.body.appendChild(a); a.click(); a.remove();
+            try { const L = _qrLog(); const t = QR_TPL.find(x => x.k === q.k) || {}; L.push({ t: _bgdHm(Date.now()), ph, o: String(q.o || '').trim(), lb: t.lb || '' }); localStorage.setItem(_qrKey(), JSON.stringify(L.slice(-200))); } catch (e) {}
+            if (q.solve && _checkWriteRate()) {
+                try {
+                    if (b && b.classList) b.classList.add('busy');
+                    let open = (_tkData || []).filter(t => t.kind === 'self' && !t.solved_at).sort((x, y) => new Date(x.created_at) - new Date(y.created_at));
+                    if (!open.length) {
+                        const { error } = await supabaseClient.rpc('alsaree3_ticket_self_create');
+                        if (!error) { await pollMyTickets(); open = (_tkData || []).filter(t => t.kind === 'self' && !t.solved_at).sort((x, y) => new Date(y.created_at) - new Date(x.created_at)); }
+                    }
+                    if (open.length) { const { error } = await supabaseClient.rpc('alsaree3_ticket_mark', { p_id: open[0].id, p_what: 'solved' }); if (error) console.warn('[QrSolve]', error); await pollMyTickets(); }
+                } catch (e) { console.warn('[QrSolve]', e); }
+                finally { if (b && b.classList) b.classList.remove('busy'); }
+            }
+            window._qr = { open: true, ph: '', o: '', k: q.k, txt: '', edited: false, solve: q.solve };
+            window._qr.txt = _qrBuild();
+            try { render(); } catch (e) {}
+            _tkToast(mobile ? '💬 انفتح واتساب — اضغط إرسال' : '💻 انفتح تطبيق واتساب — اضغط إرسال');
+        };
         window._x80Panel = () => {
             const s = window._x80;
             return '<div class="ord-panel" style="--c:#be123c;"><div class="op-t">🚨 طلب متأخر أكثر من 80 دقيقة</div>'
@@ -4755,10 +4849,12 @@
                 + '<div class="tk-row" style="margin:0;"><button type="button" onclick="window.addDrv(this)" class="tk-btn" style="width:100%;background:#7c3aed;color:#fff;border-color:#7c3aed;">🔄 تسجيل الاستبدال</button></div></div>';
         };
         // أزرار صغيرة بنفس شكل تبويبات الطلبات — الفورم يظهر بس لما تضغط
-        window._extraTabs = (isDispatch) => {
+        window._extraTabs = (task) => {
+            const isDispatch = task === 'توزيع' || task === true, isWa = task === 'واتساب';
             const t = (ic, lb, on, c, fn) => '<button type="button" class="ord-tab' + (on ? ' on' : '') + '" style="--c:' + c + ';" onclick="' + fn + '"><span class="ot-ic">' + ic + '</span><span class="ot-lb">' + lb + '</span><span style="font-size:.7rem;opacity:.7;">' + (on ? '▴' : '▾') + '</span></button>';
-            let h = '<div class="ord-tabs" style="margin-top:6px;">' + t('🚨', 'متأخر +80 دقيقة', window._x80.open, '#be123c', 'window._x80Toggle()')
+            let h = '<div class="ord-tabs" style="margin-top:6px;">' + (isWa ? t('💬', 'رد واتساب سريع', window._qr.open, '#16a34a', 'window._qrToggle()') : '') + t('🚨', 'متأخر +80 دقيقة', window._x80.open, '#be123c', 'window._x80Toggle()')
                 + (isDispatch ? t('🔄', 'استبدال سائق', window._drv.open, '#7c3aed', 'window._drvToggle()') : '') + '</div>';
+            if (isWa && window._qr.open) h += window._qrPanel();
             if (window._x80.open) h += window._x80Panel();
             if (isDispatch && window._drv.open) h += window._drvPanel();
             return h;
@@ -6009,7 +6105,7 @@
                     }
                 }
                 if (i === loggedInId && !isAdmin) {
-                    if (d.currentTask !== 'قبول') taskExtra += window._extraTabs(d.currentTask === 'توزيع');
+                    if (d.currentTask !== 'قبول') taskExtra += window._extraTabs(d.currentTask);
                 }
                 const waBox = (i === loggedInId && !isAdmin) ? `
                         <div class="mb-3 flex gap-2"><button onclick="window.openWA()" class="tk-btn tk-wa tk-small">💬 واتساب الزبائن</button></div>` : '';
@@ -6056,7 +6152,7 @@
                     </div>`;
             }
             const _di = document.getElementById('disp-input'), _dv = _di ? _di.value : '', _df = !!_di && document.activeElement === _di;
-            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'acc-why', 'cnl-rest', 'cnl-order', 'cnl-why', 'disp-rest', 'disp-order', 'disp-driver', 'x80-rest', 'x80-order', 'x80-why', 'drv-order', 'drv-why', 'drv-name'].indexOf(_ae.id) !== -1) ? _ae.id : null;
+            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'acc-why', 'cnl-rest', 'cnl-order', 'cnl-why', 'disp-rest', 'disp-order', 'disp-driver', 'x80-rest', 'x80-order', 'x80-why', 'drv-order', 'drv-why', 'drv-name', 'qr-ph', 'qr-o', 'qr-txt'].indexOf(_ae.id) !== -1) ? _ae.id : null;
             const _aeSel = _aeId ? [_ae.selectionStart, _ae.selectionEnd] : null;
             document.getElementById('app').innerHTML = h;
             if (_dv || _df) {
