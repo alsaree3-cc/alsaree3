@@ -202,6 +202,20 @@
         .ord-tab .ot-n { min-width:20px; padding:0 6px; border-radius:999px; background:#f1f5f9; color:#475569; font-size:0.7rem; font-weight:900; text-align:center; line-height:18px; }
         .ord-tab.on { background:var(--c); border-color:var(--c); color:#fff; box-shadow:0 6px 14px -8px var(--c); }
         .ord-tab.on .ot-n { background:rgba(255,255,255,.25); color:#fff; }
+        .ord-hub { width:100%; display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:14px; border:1px solid #e2e8f0; background:linear-gradient(180deg,#fff,#f8fafc); font-family:inherit; font-weight:900; font-size:0.85rem; color:#0f2e31; cursor:pointer; margin-bottom:6px; direction:rtl; transition:box-shadow .15s, border-color .15s; }
+        .ord-hub:hover { border-color:#103d42; box-shadow:0 4px 14px -8px rgba(16,61,66,.5); }
+        .ord-hub .oh-ic { width:30px; height:30px; border-radius:10px; background:#103d42; color:#d6fd26; display:flex; align-items:center; justify-content:center; font-size:1rem; flex:none; }
+        .ord-hub .oh-sub { margin-inline-start:auto; font-size:0.7rem; font-weight:800; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ord-hub .oh-chv { font-size:0.75rem; color:#94a3b8; transition:transform .2s; }
+        .ord-hub.open { border-color:#103d42; }
+        .ord-hub.open .oh-chv { transform:rotate(180deg); }
+        .ord-icons { grid-template-columns:repeat(5,1fr); gap:5px; }
+        .ord-icons .ord-tab { flex-direction:column; justify-content:center; padding:8px 2px 6px; gap:3px; text-align:center; font-size:0.66rem; line-height:1.15; }
+        .ord-icons .ord-tab .ot-ic { font-size:1.15rem; line-height:1; }
+        .ord-icons .ord-tab .ot-lb { flex:none; white-space:normal; }
+        .ord-icons .ord-tab .ot-n { position:absolute; top:-6px; left:-4px; min-width:18px; line-height:16px; padding:0 5px; background:var(--c); color:#fff; box-shadow:0 0 0 2px #fff; }
+        .ord-icons .ord-tab.on .ot-n { background:#fff; color:var(--c); }
+        html.a3-dark .ord-hub { background:#0f182a; color:#e5e7eb; border-color:#2c3b57; }
         .ord-panel { --c:#64748b; border:1px solid #e2e8f0; border-top:3px solid var(--c); border-radius:14px; padding:8px; margin-bottom:8px; background:#fff; }
         .ord-panel .op-t { font-weight:900; font-size:0.8rem; color:var(--c); text-align:center; margin-bottom:8px; }
         .tk-stat { text-align:center; font-size:0.72rem; font-weight:800; color:#64748b; margin:-4px 0 12px; }
@@ -4637,7 +4651,8 @@
         // ===== الإجراءات (Actions) قابلة للطي — الحالة محفوظة على هذا الجهاز =====
         window._actOpen = (() => { try { return localStorage.getItem('a3_act_open') === '1'; } catch (e) { return false; } })();
         window.toggleActions = () => { window._actOpen = !window._actOpen; try { localStorage.setItem('a3_act_open', window._actOpen ? '1' : '0'); } catch (e) {} try { render(); } catch (e) {} };
-        window.ordTab = (t) => { window._ld.tab = (window._ld.tab === t) ? '' : t; if (window._ld.tab === 'late') window._ld.show = true; try { render(); } catch (e) {} const f = { acc: 'acc-rest', cnl: 'cnl-rest', cap: 'disp-rest', late: 'late-rest' }[window._ld.tab]; if (f) { const el = document.getElementById(f); if (el) el.focus(); } };
+        window.ordHub = () => { const w = window._ld; if (w.hub || w.tab) { w.hub = false; w.tab = ''; w.show = false; } else w.hub = true; try { render(); } catch (e) {} };
+        window.ordTab = (t) => { window._ld.hub = true; window._ld.tab = (window._ld.tab === t) ? '' : t; if (window._ld.tab === 'late') window._ld.show = true; try { render(); } catch (e) {} const f = { acc: 'acc-rest', cnl: 'cnl-rest', cap: 'disp-rest', late: 'late-rest' }[window._ld.tab]; if (f) { const el = document.getElementById(f); if (el) el.focus(); } };
         window._cnlFormHtml = () => {
             const c = window._cnl;
             return '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" value="' + sanitize(c.r) + '" oninput="window._cnl.r=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-order\');if(n)n.focus();}">'
@@ -4666,26 +4681,31 @@
         const _X80_REASONS = ['تأخير التجهيز من المطعم', 'لا يوجد سائق متاح', 'السائق تأخر في الوصول', 'ازدحام مروري', 'الزبون لا يرد', 'عنوان غير واضح', 'مشكلة في النظام'];
         const _DRV_REASONS = ['عطل في السيارة / الدراجة', 'السائق تعرّض لحادث', 'السائق لا يرد', 'السائق انسحب من الطلب', 'السائق بعيد عن المطعم', 'السائق لديه طلبات كثيرة'];
         const _dl = (id, arr) => '<datalist id="' + id + '">' + arr.map(x => '<option value="' + sanitize(x) + '"></option>').join('') + '</datalist>';
-        window._x80Toggle = () => { window._x80.open = !window._x80.open; try { render(); } catch (e) {} };
-        window._drvToggle = () => { window._drv.open = !window._drv.open; try { render(); } catch (e) {} };
-        window._x80Html = () => {
+        window._x80Toggle = () => { window._x80.open = !window._x80.open; if (window._x80.open) window._drv.open = false; try { render(); } catch (e) {} const f = document.getElementById('x80-order'); if (f) f.focus(); };
+        window._drvToggle = () => { window._drv.open = !window._drv.open; if (window._drv.open) window._x80.open = false; try { render(); } catch (e) {} const f = document.getElementById('drv-order'); if (f) f.focus(); };
+        window._x80Panel = () => {
             const s = window._x80;
-            let h = '<div style="margin-top:6px;"><button type="button" class="tk-btn" onclick="window._x80Toggle()" style="width:100%;background:#7f1d1d;color:#fff;border-color:#7f1d1d;">🚨 طلب متأخر أكثر من 80 دقيقة ' + (s.open ? '▴' : '▾') + '</button>';
-            if (s.open) h += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-top:none;border-radius:0 0 12px 12px;padding:8px;">'
+            return '<div class="ord-panel" style="--c:#be123c;"><div class="op-t">🚨 طلب متأخر أكثر من 80 دقيقة</div>'
                 + '<div class="tk-row" style="margin-bottom:6px;"><input id="x80-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم (اختياري)" class="tk-input" style="direction:rtl;" value="' + sanitize(s.rest) + '" oninput="window._x80.rest=this.value">'
                 + '<input id="x80-order" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" value="' + sanitize(s.o) + '" oninput="window._x80.o=this.value"></div>'
                 + '<div class="tk-row" style="margin-bottom:6px;"><input id="x80-why" type="text" list="x80-list" maxlength="80" autocomplete="off" placeholder="سبب التأخير * (اختر أو اكتب)" class="tk-input" style="direction:rtl;" value="' + sanitize(s.w) + '" oninput="window._x80.w=this.value" onkeydown="if(event.key===\'Enter\')window.addX80()">' + _dl('x80-list', _X80_REASONS) + '</div>'
-                + '<div class="tk-row" style="margin:0;"><button type="button" onclick="window.addX80(this)" class="tk-btn" style="width:100%;background:#dc2626;color:#fff;border-color:#dc2626;">🚨 تسجيل الطلب</button></div></div>';
-            return h + '</div>';
+                + '<div class="tk-row" style="margin:0;"><button type="button" onclick="window.addX80(this)" class="tk-btn" style="width:100%;background:#be123c;color:#fff;border-color:#be123c;">🚨 تسجيل الطلب</button></div></div>';
         };
-        window._drvHtml = () => {
+        window._drvPanel = () => {
             const s = window._drv;
-            let h = '<div style="margin-top:6px;"><button type="button" class="tk-btn" onclick="window._drvToggle()" style="width:100%;background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe;">🔄 استبدال سائق ' + (s.open ? '▴' : '▾') + '</button>';
-            if (s.open) h += '<div style="background:#faf5ff;border:1px solid #ddd6fe;border-top:none;border-radius:0 0 12px 12px;padding:8px;">'
+            return '<div class="ord-panel" style="--c:#7c3aed;"><div class="op-t">🔄 استبدال سائق</div>'
                 + '<div class="tk-row" style="margin-bottom:6px;"><input id="drv-order" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" value="' + sanitize(s.o) + '" oninput="window._drv.o=this.value"></div>'
                 + '<div class="tk-row" style="margin-bottom:6px;"><input id="drv-why" type="text" list="drv-list" maxlength="80" autocomplete="off" placeholder="سبب الاستبدال * (اختر أو اكتب)" class="tk-input" style="direction:rtl;" value="' + sanitize(s.w) + '" oninput="window._drv.w=this.value" onkeydown="if(event.key===\'Enter\')window.addDrv()">' + _dl('drv-list', _DRV_REASONS) + '</div>'
                 + '<div class="tk-row" style="margin:0;"><button type="button" onclick="window.addDrv(this)" class="tk-btn" style="width:100%;background:#7c3aed;color:#fff;border-color:#7c3aed;">🔄 تسجيل الاستبدال</button></div></div>';
-            return h + '</div>';
+        };
+        // أزرار صغيرة بنفس شكل تبويبات الطلبات — الفورم يظهر بس لما تضغط
+        window._extraTabs = (isDispatch) => {
+            const t = (ic, lb, on, c, fn) => '<button type="button" class="ord-tab' + (on ? ' on' : '') + '" style="--c:' + c + ';" onclick="' + fn + '"><span class="ot-ic">' + ic + '</span><span class="ot-lb">' + lb + '</span><span style="font-size:.7rem;opacity:.7;">' + (on ? '▴' : '▾') + '</span></button>';
+            let h = '<div class="ord-tabs" style="margin-top:6px;">' + t('🚨', 'متأخر +80 دقيقة', window._x80.open, '#be123c', 'window._x80Toggle()')
+                + (isDispatch ? t('🔄', 'استبدال سائق', window._drv.open, '#7c3aed', 'window._drvToggle()') : '') + '</div>';
+            if (window._x80.open) h += window._x80Panel();
+            if (isDispatch && window._drv.open) h += window._drvPanel();
+            return h;
         };
         // يحاول نوع «متأخر» المناسب لمهمة الموظف، وإن كان الرقم مسجّلاً بنفس النوع يجرّب النوع الآخر
         async function _addTagged(order, reason, prefer) {
@@ -4730,7 +4750,7 @@
             if (!w) { alert('⚠️ اكتب سبب التأخير أولاً'); const e = document.getElementById('x80-why'); if (e) e.focus(); return; }
             await _submitTagged(b, o, TAG_X80 + w + (rest ? ' — المطعم: ' + rest : ''), '🚨 سُجّل الطلب المتأخر +80 د ', () => {
                 try { sendLateToSheet(o, 'متأخر أكثر من 80 دقيقة: ' + w, rest); } catch (e) {}
-                window._x80 = { open: false, rest: '', o: '', w: '' };
+                window._x80 = { open: false, rest: '', o: '', w: '' }; if (window._ld && window._ld.tab === 'x80') window._ld.tab = '';
             });
         };
         window.addDrv = async (b) => {
@@ -5353,41 +5373,82 @@
             return _pdfLibsPromise;
         }
 
+        if (!document.getElementById('rr-style')) {
+            const st = document.createElement('style'); st.id = 'rr-style';
+            st.textContent = `
+            .rr{font-family:Cairo,sans-serif;color:#0f2e31;}
+            .rr-hero{background:linear-gradient(135deg,#103d42,#1f6f6a);border-radius:18px;padding:14px 16px;color:#cfe5e3;display:flex;gap:12px;align-items:center;margin-bottom:14px;}
+            .rr-hero .ic{width:44px;height:44px;border-radius:13px;background:#d6fd26;color:#103d42;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex:none;}
+            .rr-hero b{display:block;color:#fff;font-size:1rem;font-weight:900;}
+            .rr-hero small{font-size:.74rem;font-weight:700;}
+            .rr-lbl{font-size:.75rem;font-weight:900;color:#64748b;margin:0 2px 6px;}
+            .rr-seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px;}
+            .rr-seg button{border:1px solid #e2e8f0;background:#fff;border-radius:12px;padding:9px 4px;font:800 .78rem Cairo,sans-serif;color:#334155;cursor:pointer;transition:.15s;}
+            .rr-seg button:hover{border-color:#103d42;}
+            .rr-seg button.on{background:#103d42;border-color:#103d42;color:#d6fd26;box-shadow:0 6px 14px -8px #103d42;}
+            .rr-dates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+            .rr-dates label{display:block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:8px 12px;font-size:.72rem;font-weight:900;color:#64748b;}
+            .rr-dates input{display:block;width:100%;border:0;background:transparent;font:800 .95rem Cairo,sans-serif;color:#0f2e31;margin-top:2px;outline:none;}
+            .rr-info{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#ecfccb;border:1px solid #d9f99d;color:#365314;border-radius:12px;padding:8px 12px;font-size:.78rem;font-weight:800;margin-bottom:10px;}
+            .rr-note{font-size:.72rem;color:#94a3b8;font-weight:700;margin-bottom:12px;}
+            .rr-go{width:100%;border:0;border-radius:14px;padding:13px;font:900 1rem Cairo,sans-serif;background:#103d42;color:#d6fd26;cursor:pointer;box-shadow:0 10px 22px -12px #103d42;transition:.15s;display:flex;align-items:center;justify-content:center;gap:8px;}
+            .rr-go:hover{transform:translateY(-1px);}
+            .rr-go:disabled{opacity:.6;cursor:wait;transform:none;}
+            .rr-msg{min-height:20px;text-align:center;font-size:.82rem;font-weight:800;margin-top:10px;}
+            `;
+            document.head.appendChild(st);
+        }
         window.downloadPDF = async () => {
             if (loggedInId !== '__admin__') { alert("🔒 هذه العملية متاحة للمسؤول فقط!"); return; }
             if (!(await askAdminPin('Enter admin password to download the report'))) return;
             const today = getTodayDateString();
-            const first = today.slice(0, 8) + '01';
-            const pbtn = 'background:#f1f5f9;border:1px solid #cbd5e1;border-radius:10px;padding:6px 12px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;';
             _modal('report-range-overlay', '📄 تحميل التقرير', `
-                <div style="display:grid;gap:10px;">
-                    <label style="font-weight:700;">من تاريخ <input type="date" id="rr-from" value="${first}" class="login-select"></label>
-                    <label style="font-weight:700;">إلى تاريخ <input type="date" id="rr-to" value="${today}" class="login-select"></label>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                        <button style="${pbtn}" onclick="window._rrPreset('month')">من بداية الشهر حتى اليوم</button>
-                        <button style="${pbtn}" onclick="window._rrPreset('last')">الشهر الماضي</button>
-                        <button style="${pbtn}" onclick="window._rrPreset('today')">اليوم فقط</button>
+                <div class="rr">
+                    <div class="rr-hero"><div class="ic">📊</div><div><b>تقرير الحضور والأداء</b><small>ملف PDF مرتب: ملخص، ترتيب الموظفين، وسجل يومي</small></div></div>
+                    <div class="rr-lbl">الفترة</div>
+                    <div class="rr-seg" id="rr-seg">
+                        <button data-k="today" onclick="window._rrPreset('today')">اليوم</button>
+                        <button data-k="week" onclick="window._rrPreset('week')">هذا الأسبوع</button>
+                        <button data-k="month" onclick="window._rrPreset('month')">هذا الشهر</button>
+                        <button data-k="last" onclick="window._rrPreset('last')">الشهر الماضي</button>
                     </div>
-                    <div style="font-size:0.8rem;color:#64748b;font-weight:700;">ملاحظة: بيانات اليوم الحالي تدخل التقرير بعد "إنهاء اليوم وحفظ التقرير".</div>
-                    <div id="rr-msg" class="error-msg"></div>
-                    <button id="rr-go" class="login-btn" onclick="window.generateRangePDF()">⬇️ تحميل PDF</button>
-                </div>`, 520);
+                    <div class="rr-dates">
+                        <label>من<input type="date" id="rr-from" onchange="window._rrSync()"></label>
+                        <label>إلى<input type="date" id="rr-to" onchange="window._rrSync()"></label>
+                    </div>
+                    <div class="rr-info"><span id="rr-days"></span><span>📅</span></div>
+                    <div class="rr-note">ℹ️ بيانات اليوم الحالي تدخل التقرير بعد «إنهاء اليوم وحفظ التقرير».</div>
+                    <button id="rr-go" class="rr-go" onclick="window.generateRangePDF()">⬇️ تحميل التقرير PDF</button>
+                    <div id="rr-msg" class="rr-msg"></div>
+                </div>`, 480);
+            window._rrPreset('month');
+        };
+        window._rrSync = (k) => {
+            const f = (document.getElementById('rr-from') || {}).value, t = (document.getElementById('rr-to') || {}).value;
+            document.querySelectorAll('#rr-seg button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
+            const el = document.getElementById('rr-days'); if (!el) return;
+            if (!f || !t) { el.textContent = ''; return; }
+            const n = Math.round((new Date(t + 'T12:00:00') - new Date(f + 'T12:00:00')) / 86400000) + 1;
+            el.textContent = n > 0 ? 'من ' + f + ' إلى ' + t + ' · ' + n + (n === 1 ? ' يوم' : n <= 10 ? ' أيام' : ' يوم') : '⚠️ تاريخ البداية بعد النهاية';
         };
         window._rrPreset = (kind) => {
             const t = getTodayDateString(); const [y, m] = t.split('-').map(Number);
             let from = t.slice(0, 8) + '01', to = t;
             if (kind === 'last') { from = _ymd(new Date(y, m - 2, 1)); to = _ymd(new Date(y, m - 1, 0)); }
             if (kind === 'today') from = t;
+            if (kind === 'week') from = _ymd(_evWeekStart(new Date()));
             document.getElementById('rr-from').value = from; document.getElementById('rr-to').value = to;
+            window._rrSync(kind);
         };
         window.generateRangePDF = async () => {
             if (loggedInId !== '__admin__') return;
             const msg = document.getElementById('rr-msg'), btn = document.getElementById('rr-go');
             const from = document.getElementById('rr-from').value, to = document.getElementById('rr-to').value;
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) { msg.textContent = '⚠️ اختر التاريخين'; return; }
-            if (from > to) { msg.textContent = '⚠️ تاريخ البداية بعد النهاية'; return; }
-            if ((new Date(to) - new Date(from)) / 86400000 > 366) { msg.textContent = '⚠️ المدة أطول من سنة'; return; }
-            btn.disabled = true; msg.style.color = '#64748b'; msg.textContent = '⏳ جاري تجهيز التقرير...';
+            const say = (t, c) => { msg.style.color = c || '#64748b'; msg.textContent = t; };
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) { say('⚠️ اختر التاريخين', '#dc2626'); return; }
+            if (from > to) { say('⚠️ تاريخ البداية بعد النهاية', '#dc2626'); return; }
+            if ((new Date(to) - new Date(from)) / 86400000 > 366) { say('⚠️ المدة أطول من سنة', '#dc2626'); return; }
+            btn.disabled = true; say('⏳ جاري تجهيز التقرير...');
             try {
                 await loadPdfLibs();
                 await _loadEmpMeta();
@@ -5398,41 +5459,184 @@
                 const leaveSet = {};
                 (lvRows || []).forEach(q => { if (q.kind === 'day') _expandDates(q.start_date, q.days).forEach(ds => { (leaveSet[q.employee_key] = leaveSet[q.employee_key] || new Set()).add(ds); }); });
                 const rows = data || [];
-                if (rows.length === 0) { msg.style.color = '#d97706'; msg.textContent = '⚠️ لا توجد سجلات محفوظة في هذه المدة'; btn.disabled = false; return; }
-                const agg = {}, body = [];
-                rows.forEach(r => {
-                    const k = r.employee_key;
-                    const a = agg[k] = agg[k] || { name: r.name || k, days: 0, off: 0, absent: 0, leave: 0, sum: 0, br: 0, rest: 0, secs: 0 };
-                    let st = _startLabel(k, r.history_date, r.start_time_str), rating = '-', hrs = r.total_duration_str || '-';
-                    if (String(r.start_time_str || '') === 'EXCLUDED') { st = 'EXCLUDED'; hrs = '-'; }
-                    else if (leaveSet[k] && leaveSet[k].has(r.history_date)) { st = 'LEAVE'; a.leave++; hrs = '-'; }
-                    else if (String(st).toUpperCase().startsWith('OFF')) { a.off++; hrs = 'OFF'; }
-                    else if (st === 'Absent' || st === '-') { a.absent++; hrs = '-'; }
-                    else {
-                        a.days++; const rt = (r.rating == null ? 100 : Number(r.rating) || 0); a.sum += rt; rating = rt + '%';
-                        a.br += Number(r.total_break_minutes) || 0; a.rest += Number(r.total_rest_minutes) || 0; a.secs += Number(r.total_work_seconds) || 0;
-                    }
-                    body.push([r.history_date, r.name || k, st, hrs, r.current_task || '-', (Number(r.total_break_minutes) || 0) + ' min', (Number(r.total_rest_minutes) || 0) + ' min', rating]);
-                });
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF({ orientation: 'landscape' });
-                doc.setFontSize(14);
-                doc.text(`Alsaree3 Morning Call Center - Report: ${from} to ${to}`, 14, 15);
-                const tStyle = { styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [34, 197, 94], textColor: 255, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [240, 253, 244] } };
-                doc.autoTable({ head: [['Date', 'Name', 'Check-In', 'Total Hours', 'Task', 'Break', 'Rest', 'Day Rating']], body, startY: 22, ...tStyle });
-                const sum = Object.values(agg).sort((p, q) => String(p.name).localeCompare(String(q.name))).map(a => [
-                    a.name, a.days, a.off, a.absent, a.leave, a.days ? (Math.round(a.sum / a.days * 10) / 10) + '%' : '-', a.br + ' min', a.rest + ' min', Math.floor(a.secs / 3600) + 'h ' + Math.floor((a.secs % 3600) / 60) + 'm'
-                ]);
-                const y0 = (doc.lastAutoTable && doc.lastAutoTable.finalY ? doc.lastAutoTable.finalY : 22) + 12;
-                doc.setFontSize(12); doc.text('Summary per employee', 14, y0 - 3);
-                doc.autoTable({ head: [['Name', 'Work days', 'OFF', 'Absent', 'Leave', 'Avg Rating', 'Break', 'Rest', 'Work hours']], body: sum, startY: y0, ...tStyle });
+                if (rows.length === 0) { say('⚠️ لا توجد سجلات محفوظة في هذه المدة', '#d97706'); btn.disabled = false; return; }
+                const doc = _buildRangePdf(rows, leaveSet, from, to);
                 doc.save(`Alsaree3_Report_${from}_to_${to}.pdf`);
-                msg.style.color = '#16a34a'; msg.textContent = '✅ تم تحميل التقرير';
+                say('✅ تم تحميل التقرير', '#16a34a');
             } catch (e) {
-                console.error('[RangePDF]', e); msg.style.color = '#dc2626'; msg.textContent = '❌ فشل إنشاء التقرير';
+                console.error('[RangePDF]', e); say('❌ فشل إنشاء التقرير', '#dc2626');
             }
             btn.disabled = false;
         };
+        // ===== بناء ملف PDF (jsPDF + autoTable) =====
+        function _buildRangePdf(rows, leaveSet, from, to) {
+            const BR = [16, 61, 66], LIME = [214, 253, 38], INK = [15, 46, 49], MUT = [100, 116, 139], LINE = [226, 232, 240];
+            const GOOD = [22, 163, 74], MID = [217, 119, 6], BAD = [220, 38, 38];
+            const rc = v => v >= 90 ? GOOD : v >= 75 ? MID : BAD;
+            const hasAr = s => /[؀-ۿ]/.test(String(s || ''));
+            const TASK = { 'واتساب': 'WhatsApp', 'توزيع': 'Dispatcher', 'قبول': 'Accept', 'لا يوجد': '-' };
+            const nameOf = (k, n) => { n = String(n || k || ''); return hasAr(n) ? String(k) : n; };
+            const hm = mins => { mins = Math.round(mins || 0); return Math.floor(mins / 60) + 'h ' + String(mins % 60).padStart(2, '0') + 'm'; };
+            const fmtD = ds => { const p = String(ds).split('-'); const d = new Date(+p[0], +p[1] - 1, +p[2]); return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] + ' ' + p[2] + '/' + p[1] + '/' + p[0]; };
+            const nDays = Math.round((new Date(to + 'T12:00:00') - new Date(from + 'T12:00:00')) / 86400000) + 1;
+
+            // ---- تجميع ----
+            const agg = {}, daily = [];
+            rows.forEach(r => {
+                const k = r.employee_key;
+                const a = agg[k] = agg[k] || { k, name: nameOf(k, r.name), days: 0, off: 0, absent: 0, leave: 0, sum: 0, br: 0, rest: 0, secs: 0 };
+                let st = _startLabel(k, r.history_date, r.start_time_str), kind = 'work', rating = null, hrs = r.total_duration_str || '-';
+                if (String(r.start_time_str || '') === 'EXCLUDED') { kind = 'excl'; st = 'Excluded'; hrs = '-'; }
+                else if (leaveSet[k] && leaveSet[k].has(r.history_date)) { kind = 'leave'; st = 'Leave'; a.leave++; hrs = '-'; }
+                else if (String(st).toUpperCase().startsWith('OFF')) { kind = 'off'; st = 'OFF'; a.off++; hrs = '-'; }
+                else if (st === 'Absent' || st === '-') { kind = 'absent'; st = 'Absent'; a.absent++; hrs = '-'; }
+                else {
+                    a.days++; rating = (r.rating == null ? 100 : Number(r.rating) || 0); a.sum += rating;
+                    a.br += Number(r.total_break_minutes) || 0; a.rest += Number(r.total_rest_minutes) || 0; a.secs += Number(r.total_work_seconds) || 0;
+                }
+                const task = TASK[r.current_task] || (hasAr(r.current_task) ? '-' : (r.current_task || '-'));
+                daily.push({ ds: r.history_date, name: a.name, st, kind, hrs, task, br: Number(r.total_break_minutes) || 0, rest: Number(r.total_rest_minutes) || 0, rating });
+            });
+            const emps = Object.values(agg).map(a => Object.assign(a, { avg: a.days ? a.sum / a.days : null })).sort((p, q) => (q.avg == null ? -1 : q.avg) - (p.avg == null ? -1 : p.avg) || q.days - p.days);
+            const worked = emps.filter(a => a.days);
+            const totDays = emps.reduce((s, a) => s + a.days, 0), totAbs = emps.reduce((s, a) => s + a.absent, 0);
+            const avgAll = totDays ? emps.reduce((s, a) => s + a.sum, 0) / totDays : null;
+            const totSecs = emps.reduce((s, a) => s + a.secs, 0), totBr = emps.reduce((s, a) => s + a.br, 0);
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+            const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 12;
+            let logo = ''; try { logo = _getNtfLogoUrl(); } catch (e) {}
+
+            const header = (sub) => {
+                doc.setFillColor(...BR); doc.rect(0, 0, W, 26, 'F');
+                doc.setFillColor(...LIME); doc.rect(0, 26, W, 1.2, 'F');
+                let x = M;
+                if (logo && /^data:image\//.test(logo)) { try { doc.addImage(logo, 'PNG', M, 4.5, 17, 17); x = M + 21; } catch (e) {} }
+                doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text('Alsaree3', x, 12.5);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(169, 201, 199); doc.text(sub || 'Attendance & Performance Report  |  Morning Call Center', x, 19);
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...LIME);
+                doc.text(from === to ? fmtD(from) : fmtD(from) + '  ->  ' + fmtD(to), W - M, 12.5, { align: 'right' });
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(169, 201, 199);
+                doc.text(nDays + (nDays === 1 ? ' day' : ' days') + '  |  ' + emps.length + ' employees', W - M, 19, { align: 'right' });
+            };
+            const sectionTitle = (y, t, s) => {
+                doc.setFillColor(...LIME); doc.roundedRect(M, y - 4.2, 1.6, 5.6, 0.8, 0.8, 'F');
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...INK); doc.text(t, M + 4, y);
+                const tw = doc.getTextWidth(t);
+                if (s) { doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUT); doc.text(s, M + 4 + tw + 3, y); }
+            };
+
+            // ---- الصفحة 1: البطاقات + الأفضل + ملخص الموظفين ----
+            header();
+            const cards = [
+                ['Employees', String(emps.length), MUT],
+                ['Work days', String(totDays), BR],
+                ['Avg rating', avgAll == null ? '-' : (Math.round(avgAll * 10) / 10) + '%', avgAll == null ? MUT : rc(avgAll)],
+                ['Absences', String(totAbs), totAbs ? BAD : GOOD],
+                ['Work hours', Math.floor(totSecs / 3600) + 'h', BR],
+                ['Total break', hm(totBr), MID]
+            ];
+            const cw = (W - 2 * M - 5 * 4) / 6, cy = 33, ch = 21;
+            cards.forEach(([lb, v, col], i) => {
+                const x = M + i * (cw + 4);
+                doc.setFillColor(248, 250, 252); doc.setDrawColor(...LINE); doc.roundedRect(x, cy, cw, ch, 2.5, 2.5, 'FD');
+                doc.setFillColor(...col); doc.roundedRect(x, cy, cw, 1.6, 0.8, 0.8, 'F');
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUT); doc.text(lb.toUpperCase(), x + 4, cy + 7.5);
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(...col); doc.text(v, x + 4, cy + 16.5);
+            });
+            let y = cy + ch + 9;
+            // الأفضل
+            if (worked.length) {
+                const medals = [[212, 160, 23], [148, 163, 184], [180, 110, 60]], labels = ['1st', '2nd', '3rd'];
+                sectionTitle(y, 'Top performers', 'by average day rating');
+                y += 4;
+                const tw = (W - 2 * M - 2 * 4) / 3;
+                worked.slice(0, 3).forEach((a, i) => {
+                    const x = M + i * (tw + 4);
+                    doc.setFillColor(i === 0 ? 255 : 255, i === 0 ? 251 : 255, i === 0 ? 235 : 255); doc.setDrawColor(...(i === 0 ? [252, 211, 77] : LINE)); doc.roundedRect(x, y, tw, 15, 2.5, 2.5, 'FD');
+                    doc.setFillColor(...medals[i]); doc.circle(x + 8, y + 7.5, 4.2, 'F');
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(255, 255, 255); doc.text(labels[i], x + 8, y + 8.6, { align: 'center' });
+                    doc.setFontSize(11); doc.setTextColor(...INK); doc.text(a.name, x + 15, y + 6.8);
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...MUT); doc.text(a.days + ' days  |  ' + Math.floor(a.secs / 3600) + 'h worked  |  break ' + hm(a.br), x + 15, y + 11.8);
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(...rc(a.avg)); doc.text((Math.round(a.avg * 10) / 10) + '%', x + tw - 4, y + 9.5, { align: 'right' });
+                });
+                y += 15 + 10;
+            }
+            sectionTitle(y, 'Employee summary', 'ranked by average rating');
+            const sum = emps.map((a, i) => [String(i + 1), a.name, String(a.days), String(a.off), String(a.absent), String(a.leave), a.avg == null ? '-' : (Math.round(a.avg * 10) / 10) + '%', '', hm(a.br), hm(a.rest), Math.floor(a.secs / 3600) + 'h ' + String(Math.floor((a.secs % 3600) / 60)).padStart(2, '0') + 'm']);
+            const base = { theme: 'plain', margin: { left: M, right: M, top: 32, bottom: 14 },
+                styles: { font: 'helvetica', fontSize: 9, fillColor: [255, 255, 255], cellPadding: { top: 2.6, bottom: 2.6, left: 3, right: 3 }, textColor: INK, lineColor: LINE, lineWidth: { bottom: 0.2 } },
+                headStyles: { fillColor: BR, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5, lineWidth: 0, halign: 'center' },
+                alternateRowStyles: { fillColor: [248, 250, 252] } };
+            doc.autoTable(Object.assign({}, base, {
+                startY: y + 3,
+                head: [['#', 'Employee', 'Work days', 'OFF', 'Absent', 'Leave', 'Avg rating', '', 'Break', 'Rest', 'Work hours']],
+                body: sum,
+                columnStyles: { 0: { halign: 'center', cellWidth: 9, textColor: MUT }, 1: { fontStyle: 'bold', cellWidth: 42 }, 2: { halign: 'center' }, 3: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'center' }, 6: { halign: 'center', fontStyle: 'bold', cellWidth: 22 }, 7: { cellWidth: 40 }, 8: { halign: 'center' }, 9: { halign: 'center' }, 10: { halign: 'center', fontStyle: 'bold' } },
+                didParseCell: d => {
+                    if (d.section === 'head') { if (d.column.index === 1) d.cell.styles.halign = 'left'; return; }
+                    if (d.section !== 'body') return;
+                    const a = emps[d.row.index];
+                    if (d.column.index === 6 && a.avg != null) d.cell.styles.textColor = rc(a.avg);
+                    if (d.column.index === 4 && a.absent) d.cell.styles.textColor = BAD;
+                    if (d.row.index < 3 && a.avg != null && d.column.index === 0) { d.cell.styles.textColor = [212, 160, 23]; d.cell.styles.fontStyle = 'bold'; }
+                },
+                didDrawCell: d => {
+                    if (d.section !== 'body' || d.column.index !== 7) return;
+                    const a = emps[d.row.index]; if (a.avg == null) return;
+                    const bx = d.cell.x + 2, bw = d.cell.width - 4, by = d.cell.y + d.cell.height / 2 - 1.4;
+                    doc.setFillColor(...LINE); doc.roundedRect(bx, by, bw, 2.8, 1.4, 1.4, 'F');
+                    doc.setFillColor(...rc(a.avg)); doc.roundedRect(bx, by, Math.max(2.8, bw * Math.min(100, a.avg) / 100), 2.8, 1.4, 1.4, 'F');
+                },
+                didDrawPage: () => header()
+            }));
+
+            // ---- السجل اليومي (صفحة جديدة، مقسوم حسب التاريخ) ----
+            doc.addPage(); header('Daily log  |  Morning Call Center');
+            sectionTitle(38, 'Daily log', 'every saved day per employee');
+            const KC = { off: [37, 99, 235], absent: BAD, leave: [147, 51, 234], excl: MUT };
+            const body = [], meta = [];
+            const dates = Array.from(new Set(daily.map(x => x.ds))).sort();
+            dates.forEach(ds => {
+                const list = daily.filter(x => x.ds === ds);
+                const w = list.filter(x => x.kind === 'work'), av = w.length ? w.reduce((s, x) => s + x.rating, 0) / w.length : null;
+                body.push([{ content: fmtD(ds) + '     ' + w.length + ' worked' + (av != null ? '  |  avg ' + Math.round(av) + '%' : ''), colSpan: 7 }]); meta.push({ day: true });
+                list.forEach(x => { body.push([x.name, x.st, x.hrs, x.task, x.kind === 'work' ? x.br + ' min' : '-', x.kind === 'work' ? x.rest + ' min' : '-', x.rating == null ? '-' : x.rating + '%']); meta.push(x); });
+            });
+            doc.autoTable(Object.assign({}, base, {
+                startY: 42,
+                head: [['Employee', 'Check-in', 'Total hours', 'Task', 'Break', 'Rest', 'Day rating']],
+                body,
+                alternateRowStyles: {},
+                styles: Object.assign({}, base.styles, { fontSize: 8.5, cellPadding: { top: 1.7, bottom: 1.7, left: 3, right: 3 } }),
+                columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55 }, 1: { halign: 'center' }, 2: { halign: 'center' }, 3: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'center' }, 6: { halign: 'center', fontStyle: 'bold' } },
+                didParseCell: d => {
+                    if (d.section === 'head') { if (d.column.index === 0) d.cell.styles.halign = 'left'; return; }
+                    if (d.section !== 'body') return;
+                    const m = meta[d.row.index];
+                    if (m.day) { d.cell.styles.fillColor = [236, 252, 203]; d.cell.styles.textColor = BR; d.cell.styles.fontStyle = 'bold'; d.cell.styles.fontSize = 9; return; }
+                    if (d.column.index === 1 && KC[m.kind]) { d.cell.styles.textColor = KC[m.kind]; d.cell.styles.fontStyle = 'bold'; }
+                    if (d.column.index === 6 && m.rating != null) d.cell.styles.textColor = rc(m.rating);
+                    if (m.kind !== 'work' && d.column.index > 1) d.cell.styles.textColor = [203, 213, 225];
+                },
+                didDrawPage: () => header('Daily log  |  Morning Call Center')
+            }));
+
+            // ---- تذييل لكل الصفحات ----
+            const n = doc.internal.getNumberOfPages(), gen = new Date();
+            const stamp = gen.getFullYear() + '-' + String(gen.getMonth() + 1).padStart(2, '0') + '-' + String(gen.getDate()).padStart(2, '0') + ' ' + String(gen.getHours()).padStart(2, '0') + ':' + String(gen.getMinutes()).padStart(2, '0');
+            for (let i = 1; i <= n; i++) {
+                doc.setPage(i);
+                doc.setDrawColor(...LINE); doc.setLineWidth(0.3); doc.line(M, H - 9, W - M, H - 9);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...MUT);
+                doc.text('Alsaree3  |  Generated ' + stamp, M, H - 5);
+                doc.text('Rating: ', W / 2 - 22, H - 5);
+                [[GOOD, '90%+'], [MID, '75-89%'], [BAD, '<75%']].forEach(([c, t], j) => { const x = W / 2 - 11 + j * 16; doc.setFillColor(...c); doc.circle(x, H - 6, 1.2, 'F'); doc.text(t, x + 2.2, H - 5); });
+                doc.text('Page ' + i + ' of ' + n, W - M, H - 5, { align: 'right' });
+            }
+            return doc;
+        }
 
         // تم حذف دالة البريك التلقائي عند الخمول (autoUpdateStatusToBreak) نهائياً
 
@@ -5732,41 +5936,44 @@
                             const _cn = window._cnlGet().length;
                             const _tb = (t, ic, lb, n, c) => '<button type="button" class="ord-tab' + (_tab === t ? ' on' : '') + '" style="--c:' + c + ';" onclick="window.ordTab(\'' + t + '\')"><span class="ot-ic">' + ic + '</span><span class="ot-lb">' + lb + '</span>' + (n ? '<span class="ot-n">' + n + '</span>' : '') + '</button>';
                             let _panel = '';
+                            const _hubOpen = !!(window._ld.hub || _tab);
+                            const _tabName = { acc: '📞 قبول طلب', cnl: '❌ إلغاء طلب', cap: '🚴 كفالة الكابتن', late: '⏱️ طلب متأخر', x80: '🚨 متأخر +80 دقيقة' }[_tab] || '';
                             if (_tab === 'acc') _panel = `<div class="ord-panel" style="--c:#16a34a;"><div class="op-t">📞 قبول طلب كول سنتر</div>` + `                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-input');if(d&&!d.value.trim()){d.focus();}else{window.addOrder();}}"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{var w=document.getElementById('acc-why');if(w&&!w.value.trim()){w.focus();}else{window.addOrder();}}}"></div>
                         <div class="tk-row" style="margin-bottom:6px;"><input id="acc-why" type="text" maxlength="100" autocomplete="off" placeholder="السبب${ACCEPT_REASON_REQUIRED ? ' *' : ''}" class="tk-input" style="direction:rtl;" oninput="window._accWhy=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"></div>
                         <div class="tk-row"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="width:100%;">➕ إضافة</button></div>` + `</div>` + window._accStackHtml();
                             else if (_tab === 'cnl') _panel = '<div class="ord-panel" style="--c:#ea580c;"><div class="op-t">❌ سبب إلغاء الطلب</div>' + window._cnlFormHtml() + '</div>' + window._cnlStackHtml();
                             else if (_tab === 'cap') _panel = `<div class="ord-panel" style="--c:#2563eb;"><div class="op-t">🚴 كفالة الكابتن</div>${_capInner}</div>`;
                             else if (_tab === 'late') _panel = _lateHtml;
+                            else if (_tab === 'x80') _panel = window._x80Panel();
                             taskExtra = `<div class="tk-stat" style="margin:0 0 8px;">اليوم: ${_dn} مقبول · ${_ln} ${_lateTx}${_cn ? ' · ' + _cn + ' ملغي' : ''}${_dn ? ' · آخر رقم: ' + sanitize(String(_ol[0].order_no)) : ''}</div>
-                        <div class="ord-tabs">${_tb('acc', '📞', 'قبول طلب', _dn, '#16a34a')}${_tb('cnl', '❌', 'إلغاء طلب', _cn, '#ea580c')}${_tb('cap', '🚴', 'كفالة الكابتن', 0, '#2563eb')}${_tb('late', '⏱️', 'طلب متأخر', _ln, '#dc2626')}</div>
+                        <button type="button" class="ord-hub${_hubOpen ? ' open' : ''}" onclick="window.ordHub()"><span class="oh-ic">📋</span><span>${_tabName || 'تسجيل الطلبات'}</span><span class="oh-sub">${_hubOpen ? '' : 'قبول · إلغاء · كفالة · متأخر · +80'}</span><span class="oh-chv">▾</span></button>
+                        ${_hubOpen ? '<div class="ord-tabs ord-icons">' + _tb('acc', '📞', 'قبول', _dn, '#16a34a') + _tb('cnl', '❌', 'إلغاء', _cn, '#ea580c') + _tb('cap', '🚴', 'كفالة', 0, '#2563eb') + _tb('late', '⏱️', 'متأخر', _ln, '#dc2626') + _tb('x80', '🚨', '+80 د', 0, '#be123c') + '</div>' : ''}
                         ${_panel}`;
                         }
                     }
                 }
                 if (i === loggedInId && !isAdmin) {
-                    if (d.currentTask === 'توزيع') taskExtra += window._drvHtml();
-                    taskExtra += window._x80Html();
+                    if (d.currentTask !== 'قبول') taskExtra += window._extraTabs(d.currentTask === 'توزيع');
                 }
                 const waBox = (i === loggedInId && !isAdmin) ? `
                         <div class="mb-3 flex gap-2"><button onclick="window.openWA()" class="tk-btn tk-wa tk-small">💬 واتساب الزبائن</button></div>` : '';
                 const taskButtonsHtml = canControl ? `
                         <div class="block mb-3 text-xs font-bold text-black text-right pr-1">المهمة الحالية (Current Task):</div>
                         <div class="grid grid-cols-3 gap-2 mb-5">
-                            <button onclick="window.setTask('${escId}', 'واتساب')" class="task-btn ${d.currentTask === 'واتساب' ? 'active' : ''}">💬 WhatsApp</button>
-                            <button onclick="window.setTask('${escId}', 'توزيع')" class="task-btn ${d.currentTask === 'توزيع' ? 'active' : ''}">🚴 Dispatcher</button>
-                            <button onclick="window.setTask('${escId}', 'قبول')" class="task-btn ${d.currentTask === 'قبول' ? 'active' : ''}">✅ Accept</button>
+                            <button onclick="window.setTask('${escId}', 'واتساب')" data-noi18n class="task-btn ${d.currentTask === 'واتساب' ? 'active' : ''}">💬 WhatsApp</button>
+                            <button onclick="window.setTask('${escId}', 'توزيع')" data-noi18n class="task-btn ${d.currentTask === 'توزيع' ? 'active' : ''}">🚴 Dispatcher</button>
+                            <button onclick="window.setTask('${escId}', 'قبول')" data-noi18n class="task-btn ${d.currentTask === 'قبول' ? 'active' : ''}">✅ Accept</button>
                         </div>
                         ${taskExtra}
                         ${waBox}
                         ${(d.status === 'بريك' || d.status === 'راحة') ? `<button onclick="window.updateStatus('${escId}', 'حضور')" class="w-full mb-2 py-3 rounded-2xl bg-green-500 hover:bg-green-600 text-white font-black text-base">✅ إنهاء ${d.status === 'بريك' ? 'البريك' : 'الراحة'} والعودة للعمل</button>` : ''}
                         <button type="button" class="act-toggle${window._actOpen ? ' on' : ''}" onclick="window.toggleActions()"><span>⚙️ الإجراءات (Actions)</span><span class="act-st">${sanitize(currentStatusDisplay)}</span><span class="act-ar">${window._actOpen ? '▴' : '▾'}</span></button>
                         ${window._actOpen ? `<div class="grid grid-cols-2 gap-3 act-body">
-                            <button onclick="window.updateStatus('${escId}', 'بريك')" class="btn-opt ${d.status === 'بريك' ? 'bg-red-200 border-red-500 font-black' : ''} text-black">Break</button>
-                            <button onclick="window.updateStatus('${escId}', 'راحة')" class="btn-opt ${d.status === 'راحة' ? 'bg-orange-200 border-orange-400 font-black' : ''} text-black">Rest (20m)</button>
-                            <button onclick="window.updateStatus('${escId}', 'حضور')" class="btn-opt ${d.status === 'حضور' ? 'bg-green-200 border-green-500 font-black' : ''} text-black">Check-In</button>
-                            <button onclick="window.updateStatus('${escId}', 'أوف')" class="btn-opt ${d.status === 'أوف' ? 'bg-blue-200 border-blue-500 font-black' : ''} text-black">OFF Day</button>
-                            <button onclick="window.updateStatus('${escId}', 'خارج العمل')" class="btn-opt hover:bg-red-100 text-black col-span-2">Check-Out</button>
+                            <button onclick="window.updateStatus('${escId}', 'بريك')" data-noi18n class="btn-opt ${d.status === 'بريك' ? 'bg-red-200 border-red-500 font-black' : ''} text-black">Break</button>
+                            <button onclick="window.updateStatus('${escId}', 'راحة')" data-noi18n class="btn-opt ${d.status === 'راحة' ? 'bg-orange-200 border-orange-400 font-black' : ''} text-black">Rest (20m)</button>
+                            <button onclick="window.updateStatus('${escId}', 'حضور')" data-noi18n class="btn-opt ${d.status === 'حضور' ? 'bg-green-200 border-green-500 font-black' : ''} text-black">Check-In</button>
+                            <button onclick="window.updateStatus('${escId}', 'أوف')" data-noi18n class="btn-opt ${d.status === 'أوف' ? 'bg-blue-200 border-blue-500 font-black' : ''} text-black">OFF Day</button>
+                            <button onclick="window.updateStatus('${escId}', 'خارج العمل')" data-noi18n class="btn-opt hover:bg-red-100 text-black col-span-2">Check-Out</button>
                         </div>` : ''}` : `
                         <div class="mt-4 text-center py-4 rounded-2xl bg-gray-50 border border-gray-200">
                             <span class="text-gray-400 text-sm font-bold">🔒 للعرض فقط</span>
