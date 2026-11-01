@@ -331,6 +331,8 @@
         #reportTable tbody td:first-child { color: #103d42 !important; font-weight: 900; }
         #reportTable tbody button { border-radius: 999px !important; }
     
+        .adm-side > .adm-grp-label { color: #6fa3a0; font-size: .66rem; font-weight: 900; letter-spacing: .4px; padding: 10px 14px 3px; text-align: right; text-transform: uppercase; }
+        .adm-side > .adm-grp-label:first-of-type { padding-top: 4px; }
         .adm-side > .adm-sec-label { color: #fca5a5; font-size: .72rem; font-weight: 800; padding: 4px 14px 2px; text-align: right; }
         .adm-side > button.adm-primary { background: #d6fd26 !important; color: #103d42 !important; font-weight: 900 !important; margin-top: 2px; }
         .adm-side > button.adm-primary > span:first-child { filter: none; opacity: 1; }
@@ -693,10 +695,9 @@
         }
         function calcLatePenalty(id, now) {
             const st = getShiftStart(id); if (!st) return null;
-            if (isOffDay(id, _ymd(new Date(now)))) return null;   // يوم الأوف: لا خصم أبداً
+            if (isOffDay(id, _bgYmdOf(now))) return null;   // يوم الأوف: لا خصم أبداً
             const [h, m] = st.split(':').map(Number);
-            const sd = new Date(now); sd.setHours(h, m, 0, 0);
-            const late = Math.floor((now - sd.getTime()) / 60000);
+            const late = Math.floor((now - (_bgDayStartMs(now) + (h * 60 + m) * 60000)) / 60000);   // بتوقيت بغداد
             if (late <= LATE_GRACE_MIN) return null;
             const pts = Math.min(LATE_MAX_POINTS, LATE_BASE_POINTS + LATE_EXTRA_POINTS * Math.floor((late - LATE_GRACE_MIN) / LATE_EXTRA_STEP_MIN));
             return { late, points: pts, start: st };
@@ -786,6 +787,58 @@
         }
         // عدد طلبات اليوم (قبول + توزيع، بدون المتأخرة) لكل موظف — يُحدَّث من السيرفر بشكل دوري
         let _ordCountToday = {}, _ordCountDate = '', _ordCountBusy = false, _ordCountAt = 0;
+        // ===== تنبيهات فورية للمسؤول: طلب متأخر +80 دقيقة، ومطعم وصل حد التأخير باليوم =====
+        const REST_ALERT_THRESHOLD = 3;   // كم مرة تأخير تجهيز لنفس المطعم باليوم حتى يطلع إنذار
+        function _aoaStore(day) { try { return JSON.parse(localStorage.getItem('a3_aoa_' + day) || 'null') || { x80: [], rest: [] }; } catch (e) { return { x80: [], rest: [] }; } }
+        function _aoaSave(day, v) { try { localStorage.setItem('a3_aoa_' + day, JSON.stringify(v)); } catch (e) {} }
+        function _adminAlertToast(html, color, onClick) {
+            let box = document.getElementById('a3-admin-alerts');
+            if (!box) { box = document.createElement('div'); box.id = 'a3-admin-alerts'; box.style.cssText = 'position:fixed;top:14px;left:14px;z-index:100000;display:flex;flex-direction:column;gap:8px;max-width:340px;direction:rtl;font-family:Cairo,sans-serif;'; document.body.appendChild(box); }
+            const t = document.createElement('div');
+            t.style.cssText = 'background:#fff;border:1px solid #e2e8f0;border-right:5px solid ' + color + ';border-radius:14px;padding:10px 12px;box-shadow:0 12px 30px -10px rgba(15,46,49,.45);display:flex;gap:10px;align-items:flex-start;cursor:pointer;animation:a3AlIn .25s ease-out;';
+            t.innerHTML = '<div style="flex:1;font-size:.85rem;font-weight:800;color:#0f2e31;line-height:1.6;">' + html + '</div><button style="border:0;background:#f1f5f9;border-radius:8px;width:24px;height:24px;cursor:pointer;font-weight:900;color:#64748b;flex:none;">✕</button>';
+            t.querySelector('button').onclick = (e) => { e.stopPropagation(); t.remove(); };
+            t.onclick = () => { t.remove(); if (onClick) onClick(); };
+            box.appendChild(t);
+            setTimeout(() => { if (t.isConnected) t.remove(); }, 120000);
+        }
+        if (!document.getElementById('a3-al-style')) { const st = document.createElement('style'); st.id = 'a3-al-style'; st.textContent = '@keyframes a3AlIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}'; document.head.appendChild(st); }
+        let _aoaFirst = true;
+        function _adminOrderAlerts(rows, today) {
+            if (loggedInId !== '__admin__') return;
+            const st = _aoaStore(today), seen = new Set(st.x80), restDone = new Set(st.rest);
+            const kOf = o => (o.id != null ? 'i' + o.id : o.kind + '|' + o.order_no);
+            const nm = k => sanitize((employeesData[k] && employeesData[k].name) || k || '');
+            const fresh = [], cnt = {};
+            rows.forEach(o => {
+                const kd = o.kind || 'dispatch'; if (!kd.endsWith('_late')) return;
+                const tg = window._tagOf(o.reason), raw = window._untag(o.reason), why = raw.split(' — المطعم: ')[0], rest = window._restOf(raw);
+                if (tg === 'x80' && !seen.has(kOf(o))) fresh.push({ o, why, rest });
+                const prep = tg === 'x80' ? /تجهيز/.test(why) : (!tg && !/رفض|لم تتم الموافقة|مغلق|لم يستلم/.test(why) && (kd === 'accept_late' || /تجهيز/.test(why)));
+                if (prep && rest) { const k = _normAr(rest).toLowerCase().replace(/\s+/g, ' ').trim(); (cnt[k] = cnt[k] || { name: rest, n: 0 }).n++; }
+            });
+            const beep = () => { try { _a3Play([[0, 660, 0.18], [0.22, 880, 0.18], [0.44, 1100, 0.3]], 'sine', 0.22); } catch (e) {} };
+            if (fresh.length) {
+                if (_aoaFirst && fresh.length > 1) {
+                    _adminAlertToast('🚨 اليوم <b>' + fresh.length + '</b> طلبات متأخرة أكثر من 80 دقيقة<br><span style="color:#64748b;font-size:.75rem;">اضغط حتى تشوفها</span>', '#be123c', () => window.openRestStats(1));
+                    _ciNotify('🚨 طلبات متأخرة +80 دقيقة', 'اليوم ' + fresh.length + ' طلبات');
+                } else fresh.forEach(({ o, why, rest }) => {
+                    _adminAlertToast('🚨 طلب <b dir="ltr">#' + sanitize(String(o.order_no)) + '</b> متأخر أكثر من 80 دقيقة<br><span style="color:#64748b;font-size:.78rem;">' + (rest ? '🍽️ ' + sanitize(rest) + ' · ' : '') + sanitize(why) + ' · 👤 ' + nm(o.employee_key) + '</span>', '#be123c', () => window.openRestStats(1));
+                    _ciNotify('🚨 طلب متأخر +80 دقيقة #' + o.order_no, (rest ? rest + ' — ' : '') + why);
+                });
+                beep();
+                fresh.forEach(f => seen.add(kOf(f.o)));
+            }
+            Object.keys(cnt).forEach(k => {
+                if (cnt[k].n < REST_ALERT_THRESHOLD || restDone.has(k)) return;
+                restDone.add(k);
+                _adminAlertToast('⚠️ مطعم <b>' + sanitize(cnt[k].name) + '</b> تأخر بالتجهيز <b>' + cnt[k].n + '</b> مرات اليوم<br><span style="color:#64748b;font-size:.75rem;">يستاهل تتصل بيه</span>', '#ea580c', () => window.openRestDetail && window.openRestDetail(cnt[k].name));
+                _ciNotify('⚠️ مطعم يتأخر: ' + cnt[k].name, cnt[k].n + ' مرات تأخير بالتجهيز اليوم');
+                if (!fresh.length) beep();
+            });
+            _aoaFirst = false;
+            _aoaSave(today, { x80: Array.from(seen), rest: Array.from(restDone) });
+        }
         async function refreshOrderCounts(force) {
             if (!loggedInId || _ordCountBusy) return;
             if (!force && Date.now() - _ordCountAt < 45000) return;
@@ -799,6 +852,7 @@
                         supabaseClient.rpc('alsaree3_tickets_admin', { p_date: today })
                     ]);
                     if (o.error) return;
+                    try { _adminOrderAlerts(o.data || [], today); } catch (e) { console.warn('[AdminAlerts]', e); }
                     (o.data || []).forEach(r => { if (String(r.kind || '').endsWith('_late')) return; cnt[r.employee_key] = (cnt[r.employee_key] || 0) + 1; });
                     if (!t.error) (t.data || []).forEach(r => { if (r.kind === 'accept' || (r.kind === 'self' && r.solved_at)) cnt[r.employee_key] = (cnt[r.employee_key] || 0) + 1; });   // التكتات المضافة تحسب بالمكافأة
                 } else {
@@ -1302,13 +1356,13 @@
             _fbWriteCount++;
             return true;
         }
-        function getTodayDateString() {
-            const d = new Date();
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-        }
+        // ===== توقيت بغداد ثابت (+3 طول السنة) — حتى لو ساعة الجهاز مضبوطة على منطقة ثانية =====
+        const BG_OFFSET_MS = 3 * 3600000;
+        function _bgParts(ms) { const d = new Date((ms == null ? Date.now() : ms) + BG_OFFSET_MS); return { y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), wd: d.getUTCDay() }; }
+        function _bgYmdOf(ms) { const p = _bgParts(ms); return p.y + '-' + String(p.mo).padStart(2, '0') + '-' + String(p.d).padStart(2, '0'); }
+        function _bgMinOf(ms) { const p = _bgParts(ms); return p.h * 60 + p.mi; }
+        function _bgDayStartMs(ms) { const t = (ms == null ? Date.now() : ms) + BG_OFFSET_MS; return t - (t % 86400000) - BG_OFFSET_MS; }
+        function getTodayDateString() { return _bgYmdOf(Date.now()); }
 
         // ===== تسجيل الدخول عبر Supabase (اسم مستخدم + كلمة مرور) =====
         let _loginFails = 0, _loginLockUntil = 0;
@@ -1610,17 +1664,19 @@
 
                 <div class="adm-side">
                     <div class="adm-brand"><div class="adm-logo"></div><div><div class="adm-brand-t">Alsaree3</div><div class="adm-brand-s">Admin Panel</div></div></div>
-                    <button onclick="window.openMonthSummary()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100"><span class="text-sm">📊</span><span>Monthly Summary</span></button>
+                    <div class="adm-grp-label"><span>📊</span> <span>Reports</span></div>
                     <button onclick="window.openMonthReport()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100"><span class="text-sm">📈</span><span>Monthly Report</span></button>
                     <button onclick="window.openScoreCard()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100"><span class="text-sm">🏆</span><span>Performance Card</span></button>
                     <button onclick="window.openEmpReport()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-rose-50 border-rose-200 text-rose-800 hover:bg-rose-100"><span class="text-sm">👤</span><span>Employee Report (Excel)</span></button>
-                    <button onclick="window.downloadPDF()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-green-50 border-green-200 text-green-800 hover:bg-green-100"><span class="text-sm">📄</span><span>PDF Report</span></button>
+                    <button onclick="window.waDailySummary()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition"><span class="text-sm">📤</span><span>WhatsApp Summary</span></button>
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
+                    <div class="adm-grp-label"><span>⚙️</span> <span>Operations</span></div>
                     <button id="leave-admin-btn" onclick="window.openLeaveAdmin()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-purple-50 border-purple-200 text-purple-800 hover:bg-purple-100"><span class="text-sm">📥</span><span>Leaves &amp; Permissions</span><span id="leave-badge" class="hidden absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
                     <button onclick="window.openCaptains()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-orange-50 border-orange-200 text-orange-800 hover:bg-orange-100"><span class="text-sm">🚴</span><span>Captain</span></button>
                     <button onclick="window.openRestStats()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition"><span class="text-sm">🍽️</span><span>Restaurants &amp; Delays</span></button>
                     <button onclick="window.openTickets()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"><span class="text-sm">📋</span><span>WhatsApp Tasks</span><span id="tickets-badge" class="hidden absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
+                    <div class="adm-grp-label"><span>👥</span> <span>Team & Settings</span></div>
                     <button onclick="window.openAddEmployee()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"><span class="text-sm">➕</span><span>Add Employee</span></button>
 
                     <button onclick="window.openEmpSchedules()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-teal-50 border-teal-200 text-teal-800 hover:bg-teal-100"><span class="text-sm">🕘</span><span>Work Schedules</span></button>
@@ -1629,13 +1685,13 @@
                     <button onclick="window.openLoginAccounts()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">🔑</span><span>Login Accounts</span></button>
                     <button onclick="window.toggleLang()" data-noi18n class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">🌐</span><span class="a3-lang-lbl">${window._langLabel ? window._langLabel() : 'Language / اللغة'}</span></button>
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
-                    <button onclick="window.runRatingDiagnostic()" title="Checks whether the server calculates ratings and logs late deductions" class="adm-act"><span class="text-sm">🔍</span><span>Rating Check</span></button>
                     <button onclick="window.endOfDay()" class="adm-primary"><span class="text-sm">🌙</span><span>End Day &amp; Save Report</span></button>
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
                     <div class="adm-sec-label">🔒 Sensitive Area · PIN required</div>
                     <button onclick="window.triggerInstantGlobalReset()" class="adm-danger"><span class="text-sm">🔄</span><span>Reset Today</span></button>
                     <button onclick="window.resetMonthlySystem()" class="adm-danger"><span class="text-sm">🗓️</span><span>Reset Month</span></button>
                     <button onclick="window.excludeDayPrompt()" title="Exclude an archived day from rating / reset everyone for today" class="adm-danger"><span class="text-sm">🚫</span><span>Exclude Day / Reset All</span></button>
+                    <button onclick="window.runRatingDiagnostic()" title="Checks whether the server calculates ratings and logs late deductions" class="adm-act adm-diag"><span class="text-sm">🔍</span><span>Rating Check</span></button>
                 </div>
 
                 <div class="mb-5"><div id="eom-banner"></div><div id="best-triple"></div></div>
@@ -4694,7 +4750,7 @@
         window._drvPanel = () => {
             const s = window._drv;
             return '<div class="ord-panel" style="--c:#7c3aed;"><div class="op-t">🔄 استبدال سائق</div>'
-                + '<div class="tk-row" style="margin-bottom:6px;"><input id="drv-order" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" value="' + sanitize(s.o) + '" oninput="window._drv.o=this.value"></div>'
+                + '<div class="tk-row" style="margin-bottom:6px;"><input id="drv-name" type="text" maxlength="40" autocomplete="off" placeholder="اسم السائق (اختياري)" class="tk-input" style="direction:rtl;" value="' + sanitize(s.n || '') + '" oninput="window._drv.n=this.value"><input id="drv-order" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" value="' + sanitize(s.o) + '" oninput="window._drv.o=this.value"></div>'
                 + '<div class="tk-row" style="margin-bottom:6px;"><input id="drv-why" type="text" list="drv-list" maxlength="80" autocomplete="off" placeholder="سبب الاستبدال * (اختر أو اكتب)" class="tk-input" style="direction:rtl;" value="' + sanitize(s.w) + '" oninput="window._drv.w=this.value" onkeydown="if(event.key===\'Enter\')window.addDrv()">' + _dl('drv-list', _DRV_REASONS) + '</div>'
                 + '<div class="tk-row" style="margin:0;"><button type="button" onclick="window.addDrv(this)" class="tk-btn" style="width:100%;background:#7c3aed;color:#fff;border-color:#7c3aed;">🔄 تسجيل الاستبدال</button></div></div>';
         };
@@ -4754,10 +4810,10 @@
             });
         };
         window.addDrv = async (b) => {
-            const s = window._drv, o = String(s.o || '').trim(), w = String(s.w || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+            const s = window._drv, o = String(s.o || '').trim(), w = String(s.w || '').trim().replace(/\s+/g, ' ').slice(0, 60), dn = String(s.n || '').trim().replace(/\s+/g, ' ').slice(0, 25);
             if (!o) { const e = document.getElementById('drv-order'); if (e) e.focus(); return; }
             if (!w) { alert('⚠️ اكتب سبب استبدال السائق أولاً'); const e = document.getElementById('drv-why'); if (e) e.focus(); return; }
-            await _submitTagged(b, o, TAG_DRV + w, '🔄 سُجّل استبدال السائق للطلب ', () => { window._drv = { open: false, o: '', w: '' }; });
+            await _submitTagged(b, o, TAG_DRV + w + (dn ? ' — السائق: ' + dn : ''), '🔄 سُجّل استبدال السائق للطلب ', () => { window._drv = { open: false, o: '', w: '', n: '' }; });
         };
         window.addOrder = async (b, late) => {
             const baseKind = _ordKind();
@@ -6000,7 +6056,7 @@
                     </div>`;
             }
             const _di = document.getElementById('disp-input'), _dv = _di ? _di.value : '', _df = !!_di && document.activeElement === _di;
-            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'acc-why', 'cnl-rest', 'cnl-order', 'cnl-why', 'disp-rest', 'disp-order', 'disp-driver', 'x80-rest', 'x80-order', 'x80-why', 'drv-order', 'drv-why'].indexOf(_ae.id) !== -1) ? _ae.id : null;
+            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'acc-why', 'cnl-rest', 'cnl-order', 'cnl-why', 'disp-rest', 'disp-order', 'disp-driver', 'x80-rest', 'x80-order', 'x80-why', 'drv-order', 'drv-why', 'drv-name'].indexOf(_ae.id) !== -1) ? _ae.id : null;
             const _aeSel = _aeId ? [_ae.selectionStart, _ae.selectionEnd] : null;
             document.getElementById('app').innerHTML = h;
             if (_dv || _df) {
@@ -6228,7 +6284,7 @@
             if (!d) return false;
             if (d.status === 'أوف') return false;                                   // اختار يوم أوف
             const today = getTodayDateString();
-            if (d.startTime && _ymd(new Date(d.startTime)) === today) return false; // سجّل حضوره اليوم
+            if (d.startTime && _bgYmdOf(Number(new Date(d.startTime))) === today) return false; // سجّل حضوره اليوم
             if (['حضور', 'بريك', 'راحة'].includes(d.status) && d.lastActiveDate === today) return false;
             return true;
         }
@@ -6255,7 +6311,7 @@
         function _ciExcused(id) {
             const rows = _ciLeave[id]; if (!rows || !rows.length) return false;
             const today = getTodayDateString();
-            const now = new Date(), nowMin = now.getHours() * 60 + now.getMinutes();
+            const nowMin = _bgMinOf(Date.now());
             const sm = _scParseMin(getShiftStart(id));
             return rows.some(r => {
                 if (r.kind === 'day') return _expandDates(r.start_date, r.days).includes(today);
@@ -6270,9 +6326,11 @@
             const today = getTodayDateString();
             if (isOffDay(id, today) || onLeaveDay(id, today) || _ciExcused(id)) return null;
             const [h, m] = st.split(':').map(Number);
-            const sd = new Date(); sd.setHours(h, m, 0, 0);
-            const late = Math.floor((Date.now() - sd.getTime()) / 60000);
-            if (late < 0 || late > CHECKIN_REMIND_MAX_LATE_MIN) return null;
+            const late = _bgMinOf(Date.now()) - (h * 60 + m);   // بتوقيت بغداد
+            // بعد ما يخلص الدوام (ساعات الدوام المطلوبة) ما نذكّر بالحضور أبداً
+            const maxLate = Math.min(CHECKIN_REMIND_MAX_LATE_MIN, Math.round((Number(SC_DAILY_HOURS) || 8) * 60));
+            if (late < 0 || late > maxLate) return null;
+            if (loggedInId === '__admin__' && _todayHist && _todayHist[id] !== undefined) return null;   // تقرير اليوم انحفظ = اليوم انتهى
             return late;
         }
         // ===== صوت موحّد: سياق صوت واحد يُفتح بأول لمسة =====
@@ -6657,6 +6715,14 @@
             .rs-sec .chv{transition:.2s;color:var(--mut);}
             .rs-note{margin-top:12px;font-size:.72rem;color:var(--mut);font-weight:700;line-height:1.8;background:#f8fafc;border-radius:14px;padding:8px 12px;}
             .rs-ord{direction:ltr;display:inline-block;font-weight:900;color:var(--ink);}
+            .rs-link{cursor:pointer;text-decoration:underline dotted #94a3b8;text-underline-offset:4px;}
+            .rs-link:hover{color:#103d42;text-decoration-color:#103d42;}
+            .rs-hbar{display:flex;align-items:flex-end;gap:3px;height:110px;padding:6px 0 0;border-bottom:1px solid #e8eef0;}
+            .rs-hbar div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:2px;}
+            .rs-hbar i{display:block;width:100%;max-width:26px;border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,var(--c),var(--c2));}
+            .rs-hbar b{font-size:.62rem;color:var(--c);}
+            .rs-hlbl{display:flex;gap:3px;margin-top:3px;}
+            .rs-hlbl span{flex:1;text-align:center;font-size:.6rem;font-weight:800;color:#94a3b8;}
             `;
             document.head.appendChild(st);
         }
@@ -6777,12 +6843,85 @@
                 const it = { shift: 'M', ds, tm: o.created_at ? _bgdHm(new Date(o.created_at).getTime()) : '', order: String(o.order_no), rest: window._restOf(raw), why, emp: empName(o.employee_key) };
                 it.cat = tg === 'drv' ? 'drv' : tg === 'x80' ? 'x80' : _REJECT_RE.test(why) ? 'rej' : (kd === 'accept_late' || /تجهيز/.test(why)) ? 'prep' : 'late';
                 if (it.cat === 'rej') it.src = 'طلب متأخر';
+                if (it.cat === 'drv') { const dp = it.why.split(' — السائق: '); it.why = dp[0]; it.driver = (dp[1] || '').trim(); }
                 items.push(it);
             }));
             (cnlRows || []).forEach(r => { const why = String(r[4] || ''); if (/رفض/.test(why)) items.push({ shift: 'M', ds: String(r[0] || ''), tm: String(r[1] || ''), order: String(r[2] || ''), rest: String(r[3] || '').trim(), why, emp: String(r[5] || ''), cat: 'rej', src: 'إلغاء' }); });
             (eveRows || []).forEach(r => { const it = _eveItem(r, from, to); if (it) items.push(it); });
             window._rsRaw = { from, to, items, cnlOk: !!cnlRows, eveOk: !!eveRows };
             window._rsRender();
+        };
+        window.openRestDetail = async function (name) {
+            if (loggedInId !== '__admin__' || !name) return;
+            if (!window._rsRaw || !document.getElementById('reststats-overlay')) { await window.openRestStats(30); }
+            const RAW = window._rsRaw; if (!RAW) return;
+            const key = n => _normAr(String(n || '').trim().replace(/\s+/g, ' ')).toLowerCase();
+            const k = key(name);
+            const L = RAW.items.filter(x => key(x.rest) === k && x.cat !== 'drv').sort((a, b) => String(b.ds + b.tm).localeCompare(String(a.ds + a.tm)));
+            const C = { prep: ['#dc2626', '#fca5a5', '#fef2f2', 'تأخير تجهيز'], rej: ['#ea580c', '#fdba74', '#fff7ed', 'رفض'], x80: ['#be123c', '#fda4af', '#fff1f2', '+80 د'], late: ['#64748b', '#cbd5e1', '#f1f5f9', 'تأخير آخر'] };
+            const sty = c => '--c:' + C[c][0] + ';--c2:' + C[c][1] + ';--bg:' + C[c][2] + ';';
+            const n = c => L.filter(x => x.cat === c).length;
+            const nM = L.filter(x => x.shift === 'M').length, nE = L.length - nM;
+            const kpi = (c, ic, v, lb) => '<div class="rs-kpi" style="' + sty(c) + '"><div class="ic">' + ic + '</div><div><b>' + v + '</b><span>' + lb + '</span></div></div>';
+            const bars = (labels, counts, c) => { const mx = Math.max(1, ...counts); return '<div class="rs-hbar" style="' + sty(c) + '">' + counts.map(v => '<div>' + (v ? '<b>' + v + '</b>' : '') + '<i style="height:' + (v ? Math.max(6, Math.round(v / mx * 100)) : 0) + '%"></i></div>').join('') + '</div><div class="rs-hlbl">' + labels.map(l => '<span>' + l + '</span>').join('') + '</div>'; };
+            const hours = Array(24).fill(0); L.forEach(x => { const h = parseInt(String(x.tm).slice(0, 2), 10); if (!isNaN(h)) hours[h]++; });
+            let hs = hours.findIndex(v => v), he = 23 - hours.slice().reverse().findIndex(v => v); if (hs < 0) { hs = 10; he = 23; }
+            const hrIdx = []; for (let h = hs; h <= he; h++) hrIdx.push(h);
+            const WD = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'], wd = Array(7).fill(0);
+            L.forEach(x => { const p = String(x.ds).split('-').map(Number); if (p.length === 3) wd[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()]++; });
+            const order = [6, 0, 1, 2, 3, 4, 5];
+            const peakH = hours.indexOf(Math.max(...hours)), peakD = wd.indexOf(Math.max(...wd));
+            const td = 'padding:7px 10px;border-bottom:1px solid #f3f6f7;font-weight:700;font-size:.8rem;';
+            const shTag = x => '<span style="display:inline-block;border-radius:99px;padding:0 7px;font-size:.66rem;font-weight:900;' + (x.shift === 'E' ? 'background:#e0e7ff;color:#3730a3;">🌙 مسائي' : 'background:#dcfce7;color:#166534;">☀️ صباحي') + '</span>';
+            const catTag = x => '<span class="rs-pill" style="' + sty(x.cat) + '">' + C[x.cat][3] + '</span>';
+            let h = '<div class="rs"><div class="rs-hero"><div><h3>🍽️ ' + sanitize(name) + '</h3><small>📅 ' + sanitize(RAW.from) + (RAW.from !== RAW.to ? ' ← ' + sanitize(RAW.to) : '') + ' · ☀️ صباحي ' + nM + ' · 🌙 مسائي ' + nE + '</small></div>'
+                + '<button class="rs-btn ghost" onclick="document.getElementById(\'restdetail-overlay\').remove()">→ رجوع للتحليل</button></div>'
+                + '<div class="rs-kpis">' + kpi('prep', '⏱️', n('prep'), 'تأخير تجهيز') + kpi('rej', '🚫', n('rej'), 'رفض') + kpi('x80', '🚨', n('x80'), 'متأخر +80 د') + kpi('late', '📋', L.length, 'كل السجلات') + '</div>';
+            if (L.length) h += '<div class="rs-grid">'
+                + '<div class="rs-card" style="' + sty('prep') + '"><h4><span class="dot"></span>حسب الساعة <span style="margin-inline-start:auto;font-size:.72rem;color:#64748b;">الذروة: ' + String(peakH).padStart(2, '0') + ':00</span></h4>' + bars(hrIdx.map(x => String(x).padStart(2, '0')), hrIdx.map(x => hours[x]), 'prep') + '</div>'
+                + '<div class="rs-card" style="' + sty('rej') + '"><h4><span class="dot"></span>حسب اليوم <span style="margin-inline-start:auto;font-size:.72rem;color:#64748b;">أكثر يوم: ' + WD[peakD] + '</span></h4>' + bars(order.map(i => WD[i].replace('ال', '')), order.map(i => wd[i]), 'rej') + '</div></div>';
+            h += '<div class="rs-card rs-sec" style="margin-top:12px;"><h4>📋 كل السجلات (' + L.length + ')</h4>'
+                + (L.length ? '<div style="overflow:auto;max-height:360px;"><table class="rs-tbl"><thead><tr><th>التاريخ</th><th>الوقت</th><th>رقم الطلب</th><th>النوع</th><th>السبب</th><th>الموظف</th></tr></thead><tbody>'
+                    + L.map(x => '<tr><td style="' + td + 'direction:ltr;text-align:right;">' + sanitize(x.ds) + '</td><td style="' + td + 'direction:ltr;text-align:right;color:#64748b;">' + sanitize(x.tm) + '</td><td style="' + td + '"><span class="rs-ord">#' + sanitize(x.order) + '</span> ' + shTag(x) + '</td><td style="' + td + '">' + catTag(x) + '</td><td style="' + td + '">' + sanitize(x.why) + (x.mins ? ' <b style="color:#be123c;">(' + x.mins + ' د)</b>' : '') + '</td><td style="' + td + '">' + sanitize(x.emp) + '</td></tr>').join('')
+                    + '</tbody></table></div>' : '<div class="rs-empty">لا توجد سجلات لهذا المطعم بالفترة</div>') + '</div></div>';
+            _modal('restdetail-overlay', '🍽️ تفاصيل المطعم', h, 980);
+            const ov = document.getElementById('restdetail-overlay'); if (ov) ov.style.zIndex = '9999';
+        };
+        // ===== ملخص اليوم بالواتساب (للمسؤول): رسالة جاهزة للكروب =====
+        window.waDailySummary = async function () {
+            if (loggedInId !== '__admin__') return;
+            _modal('wasum-overlay', '📤 ملخص واتساب', '<div style="text-align:center;color:#94a3b8;font-weight:800;padding:24px;">⏳ جاري تجهيز الملخص...</div>', 520);
+            const body = document.getElementById('wasum-overlay-body');
+            const today = getTodayDateString();
+            try {
+                const [o, sc, eve] = await Promise.all([_ordersAdminRpc(today), window.loadScoreCard(today, today, true).catch(() => null), _eveRows().catch(() => null)]);
+                const rows = (o && o.data) || [];
+                const c = { acc: 0, dis: 0, late: 0, x80: 0, drv: 0 }, R = {}, J = {};
+                const bump = (M, n) => { n = String(n || '').trim(); if (!n) return; const k = _normAr(n).toLowerCase(); (M[k] = M[k] || { name: n, n: 0 }).n++; };
+                rows.forEach(r => {
+                    const kd = r.kind || 'dispatch';
+                    if (kd === 'accept') { c.acc++; return; } if (kd === 'dispatch') { c.dis++; return; }
+                    const tg = window._tagOf(r.reason), raw = window._untag(r.reason), why = raw.split(' — المطعم: ')[0], rest = window._restOf(raw);
+                    if (tg === 'drv') { c.drv++; return; }
+                    if (tg === 'x80') c.x80++; else c.late++;
+                    if (/رفض|لم تتم الموافقة|مغلق|لم يستلم/.test(why)) bump(J, rest); else if (kd === 'accept_late' || /تجهيز/.test(why)) bump(R, rest);
+                });
+                let eN = 0, eX = 0;
+                (eve || []).forEach(r => { const it = _eveItem(r, today, today); if (!it) return; eN++; if (it.cat === 'x80') eX++; if (it.cat === 'prep') bump(R, it.rest); if (it.cat === 'rej') bump(J, it.rest); });
+                const top = M => { const L = Object.keys(M).map(k => M[k]).sort((a, b) => b.n - a.n); return L.length ? L[0].name + ' (' + L[0].n + ')' : '—'; };
+                const best = (sc || []).filter(r => r.hasData && r.days > 0)[0];
+                const p = _bgParts(Date.now()), WD = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+                const txt = '📊 *ملخص اليوم — السريع*\n📅 ' + WD[p.wd] + ' ' + today + '\n\n'
+                    + (best ? '⭐ *أفضل موظف اليوم:* ' + best.name + ' (' + Math.round(best.total) + '%)\n\n' : '')
+                    + '☀️ *الشفت الصباحي*\n✅ طلبات مقبولة: ' + c.acc + '\n🚴 طلبات موزّعة: ' + c.dis + '\n⏱️ طلبات متأخرة: ' + c.late + '\n🚨 متأخر +80 دقيقة: ' + c.x80 + '\n🔄 استبدال سائق: ' + c.drv + '\n\n'
+                    + (eve ? '🌙 *الشفت المسائي*\n⏱️ طلبات متأخرة: ' + eN + '\n🚨 متأخر +80 دقيقة: ' + eX + '\n\n' : '')
+                    + '🍽️ *أكثر مطعم تأخر:* ' + top(R) + '\n🚫 *أكثر مطعم رفض:* ' + top(J);
+                window._waSumTxt = txt;
+                body.innerHTML = '<div style="font-family:Cairo,sans-serif;"><div style="background:#e7fbe9;border:1px solid #bbf7d0;border-radius:16px;padding:12px 14px;white-space:pre-wrap;font-weight:700;font-size:.86rem;line-height:1.8;color:#0f2e31;max-height:52vh;overflow:auto;">' + sanitize(txt).replace(/\*([^*\n]+)\*/g, '<b>$1</b>') + '</div>'
+                    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">'
+                    + '<button onclick="window.open(\'https://wa.me/?text=\' + encodeURIComponent(window._waSumTxt), \'_blank\')" style="border:0;border-radius:12px;padding:11px;background:#16a34a;color:#fff;font:900 .9rem Cairo,sans-serif;cursor:pointer;">💬 فتح واتساب</button>'
+                    + '<button onclick="navigator.clipboard && navigator.clipboard.writeText(window._waSumTxt).then(() => { this.textContent = \'✅ انتسخ\'; })" style="border:1px solid #cbd5e1;border-radius:12px;padding:11px;background:#fff;color:#334155;font:900 .9rem Cairo,sans-serif;cursor:pointer;">📋 نسخ النص</button></div></div>';
+            } catch (e) { console.error('[WaSummary]', e); body.innerHTML = '<div style="text-align:center;color:#dc2626;font-weight:800;padding:20px;">❌ تعذّر تجهيز الملخص</div>'; }
         };
         window._rsSetShift = sh => { window._rsShift = sh; window._rsRender(); };
         window._rsRender = () => {
@@ -6815,21 +6954,25 @@
                 const tot = L.reduce((a, r) => a + r[f], 0) || 1, mx = L.length ? L[0][f] : 1;
                 return '<div class="rs-card" style="' + sty(f) + '"><h4><span class="dot"></span>' + title + '</h4>'
                     + (L.length ? L.map((r, i) => '<div class="rs-row"><div class="rs-rk' + (i < 3 ? ' m' : '') + '">' + (i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1) + '</div>'
-                        + '<div><div class="rs-nm" title="' + sanitize(r.name) + '">' + sanitize(r.name) + '</div><div class="rs-tr"><i style="width:' + Math.max(5, Math.round(r[f] / mx * 100)) + '%"></i></div></div>'
+                        + '<div><div class="rs-nm rs-link" data-n="' + sanitize(r.name) + '" onclick="window.openRestDetail(this.dataset.n)" title="اضغط لتفاصيل المطعم">' + sanitize(r.name) + '</div><div class="rs-tr"><i style="width:' + Math.max(5, Math.round(r[f] / mx * 100)) + '%"></i></div></div>'
                         + '<div class="rs-n">' + r[f] + '<small>' + Math.round(r[f] / tot * 100) + '%</small></div></div>').join('')
                         : '<div class="rs-empty">✨ ' + emptyTx + '</div>') + '</div>';
             };
             const pill = (v, c) => '<span class="rs-pill' + (v ? '' : ' z') + '" style="' + sty(c) + '">' + v + '</span>';
             const sec = (c, title, arr, withRest) => '<details class="rs-sec rs-card" style="' + sty(c) + '"' + (arr.length && arr.length <= 15 ? ' open' : '') + '><summary><span>' + title + '</span><span style="display:flex;gap:8px;align-items:center;"><span class="cnt">' + arr.length + '</span><span class="chv">▾</span></span></summary>'
                 + (arr.length ? '<div style="overflow:auto;max-height:340px;margin-top:10px;"><table class="rs-tbl"><thead><tr><th>التاريخ</th><th>الوقت</th><th>رقم الطلب</th>' + (withRest ? '<th>المطعم</th>' : '') + '<th>السبب</th><th>الموظف</th></tr></thead><tbody>'
-                    + arr.map(x => '<tr><td style="direction:ltr;text-align:right;">' + sanitize(x.ds) + '</td><td style="direction:ltr;text-align:right;color:#64748b;">' + sanitize(x.tm) + '</td><td><span class="rs-ord">#' + sanitize(x.order) + '</span>' + shTag(x) + '</td>' + (withRest ? '<td>' + (sanitize(x.rest) || '<span style="color:#cbd5e1;">—</span>') + '</td>' : '') + '<td>' + sanitize(x.why) + (x.mins ? ' <span style="color:#be123c;font-weight:900;">(' + x.mins + ' د)</span>' : '') + '</td><td>' + sanitize(x.emp) + '</td></tr>').join('')
+                    + arr.map(x => '<tr><td style="direction:ltr;text-align:right;">' + sanitize(x.ds) + '</td><td style="direction:ltr;text-align:right;color:#64748b;">' + sanitize(x.tm) + '</td><td><span class="rs-ord">#' + sanitize(x.order) + '</span>' + shTag(x) + '</td>' + (withRest ? '<td>' + (sanitize(x.rest) || '<span style="color:#cbd5e1;">—</span>') + '</td>' : '') + '<td>' + sanitize(x.why) + (x.mins ? ' <span style="color:#be123c;font-weight:900;">(' + x.mins + ' د)</span>' : '') + (x.driver ? ' <span style="background:#f5f3ff;color:#6d28d9;border-radius:99px;padding:0 7px;font-size:.72rem;font-weight:900;">🚴 ' + sanitize(x.driver) + '</span>' : '') + '</td><td>' + sanitize(x.emp) + '</td></tr>').join('')
                     + '</tbody></table></div>' : '<div class="rs-empty">لا يوجد في هذه الفترة</div>') + '</details>';
             let h = (RAW.eveOk ? '' : '<div class="rs-note" style="background:#fef2f2;color:#b91c1c;margin-top:12px;">⚠️ ما كدرت أقرأ شيت الشفت المسائي، فالأرقام هسه للصباحي بس. حاول مرة ثانية بعد شوية.</div>')
                 + '<div class="rs-kpis">' + kpi('prep', '⏱️', sumP, 'تأخير في التجهيز') + kpi('rej', '🚫', sumR, 'رفض من المطاعم') + kpi('x80', '🚨', x80.length, 'متأخر أكثر من 80 د') + kpi('drv', '🔄', drv.length, 'استبدال سائق') + '</div>'
                 + '<div class="rs-grid">' + rank('prep', 'الأكثر تأخراً في التجهيز', 'لا يوجد تأخير تجهيز مسجّل باسم مطعم') + rank('rej', 'الأكثر رفضاً للطلبات', 'لا يوجد رفض مسجّل باسم مطعم') + '</div>';
+            { const DV = {}; drv.forEach(x => { if (!x.driver) return; const k = _normAr(x.driver).toLowerCase(); (DV[k] = DV[k] || { name: x.driver, n: 0 }).n++; });
+              const DL = Object.keys(DV).map(k => DV[k]).sort((a, b) => b.n - a.n).slice(0, 10), mx = DL.length ? DL[0].n : 1;
+              window._rsLast.drivers = Object.keys(DV).map(k => DV[k]).sort((a, b) => b.n - a.n);
+              if (DL.length) h += '<div class="rs-card" style="margin-top:12px;' + sty('drv') + '"><h4><span class="dot"></span>أكثر السائقين استبدالاً</h4>' + DL.map((r, i) => '<div class="rs-row"><div class="rs-rk' + (i < 3 ? ' m' : '') + '">' + (i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1) + '</div><div><div class="rs-nm">🚴 ' + sanitize(r.name) + '</div><div class="rs-tr"><i style="width:' + Math.max(5, Math.round(r.n / mx * 100)) + '%"></i></div></div><div class="rs-n">' + r.n + '<small>مرة</small></div></div>').join('') + '</div>'; }
             if (all.length) h += '<details class="rs-sec rs-card" style="' + sty('prep') + '"><summary><span>🍽️ كل المطاعم</span><span style="display:flex;gap:8px;align-items:center;"><span class="cnt" style="background:#f1f5f9;color:#334155;">' + all.length + '</span><span class="chv">▾</span></span></summary>'
                 + '<div style="overflow:auto;max-height:340px;margin-top:10px;"><table class="rs-tbl"><thead><tr><th>المطعم</th><th>تأخير تجهيز</th><th>رفض</th><th>+80 د</th><th>المجموع</th></tr></thead><tbody>'
-                + all.map(r => '<tr><td style="font-weight:900;">' + sanitize(r.name) + '</td><td>' + pill(r.prep, 'prep') + '</td><td>' + pill(r.rej, 'rej') + '</td><td>' + pill(r.x80, 'x80') + '</td><td><b>' + r.total + '</b></td></tr>').join('')
+                + all.map(r => '<tr><td style="font-weight:900;"><span class="rs-link" data-n="' + sanitize(r.name) + '" onclick="window.openRestDetail(this.dataset.n)">' + sanitize(r.name) + '</span></td><td>' + pill(r.prep, 'prep') + '</td><td>' + pill(r.rej, 'rej') + '</td><td>' + pill(r.x80, 'x80') + '</td><td><b>' + r.total + '</b></td></tr>').join('')
                 + '</tbody></table></div></details>';
             h += sec('x80', '🚨 طلبات متأخرة أكثر من 80 دقيقة', x80, true) + sec('drv', '🔄 استبدال السائقين', drv, false)
                 + '<div class="rs-note">📦 السجلات بالفترة: ☀️ صباحي ' + nM + ' · 🌙 مسائي ' + (RAW.eveOk ? nE : '—') + '<br>ℹ️ <b>التأخير</b>: الطلبات المتأخرة في التجهيز، ومتأخر الوصول إذا كان سببه التجهيز. <b>الرفض</b>: الأسباب اللي بيها «رفض / لم تتم الموافقة / مغلق / لم يستلم»'
@@ -7009,7 +7152,7 @@
 
             // ---------- 6) التفاصيل ----------
             const detail = (name, title, arr, color, cols) => {
-                const H = { shift: ['الشفت', 10], ds: ['التاريخ', 12], tm: ['الوقت', 8], order: ['رقم الطلب', 13], rest: ['المطعم', 24], cat: ['النوع', 14], why: ['السبب', 38], mins: ['مدة التأخير (د)', 12], emp: ['الموظف', 16], src: ['المصدر', 11] };
+                const H = { shift: ['الشفت', 10], ds: ['التاريخ', 12], tm: ['الوقت', 8], order: ['رقم الطلب', 13], rest: ['المطعم', 24], cat: ['النوع', 14], why: ['السبب', 38], mins: ['مدة التأخير (د)', 12], emp: ['الموظف', 16], src: ['المصدر', 11], driver: ['السائق', 16] };
                 const ws = sheet(name, color, cols.map(c => H[c][1]), 4);
                 banner(ws, cols.length, title + '  (' + arr.length + ')', shName + '   •   ' + period, color);
                 const rows = arr.map(x => cols.map(c => c === 'shift' ? SHN[x.shift] : c === 'cat' ? CAT[x.cat] : c === 'mins' ? (x.mins || null) : (x[c] == null ? '' : String(x[c]))));
@@ -7019,7 +7162,8 @@
             detail('تفاصيل التأخير', '⏱️ تفاصيل التأخير في التجهيز', srt(D.prepL), CL.prep, ['shift', 'ds', 'tm', 'order', 'rest', 'why', 'emp']);
             detail('تفاصيل الرفض', '🚫 تفاصيل الرفض', srt(D.rejL), CL.rej, ['shift', 'ds', 'tm', 'order', 'rest', 'why', 'emp', 'src']);
             detail('متأخر +80 د', '🚨 الطلبات المتأخرة أكثر من 80 دقيقة', srt(D.x80), CL.x80, ['shift', 'ds', 'tm', 'order', 'rest', 'why', 'mins', 'emp']);
-            detail('استبدال سائق', '🔄 استبدال السائقين', srt(D.drv), CL.drv, ['shift', 'ds', 'tm', 'order', 'why', 'emp']);
+            detail('استبدال سائق', '🔄 استبدال السائقين', srt(D.drv), CL.drv, ['shift', 'ds', 'tm', 'order', 'driver', 'why', 'emp']);
+            if (D.drivers && D.drivers.length) { const ws = sheet('السائقين', CL.drv, [9, 26, 12, 12], 4); banner(ws, 4, 'أكثر السائقين استبدالاً', shName + '   •   ' + period, CL.drv); const tot = D.drivers.reduce((a, x) => a + x.n, 0); table(ws, 4, ['الترتيب', 'السائق', 'عدد المرات', 'النسبة'], D.drivers.map((x, i) => [i + 1, x.name, x.n, pct(x.n, tot)]), CL.drv, { left: [1], boldCols: [1, 2], pctCols: [3], filter: true, bars: [[2, CL.drv]], total: ['', 'المجموع', tot, 1] }); }
             detail('كل السجلات', '📋 كل السجلات المتأخرة', srt(items), CL.brand, ['shift', 'ds', 'tm', 'order', 'cat', 'rest', 'why', 'mins', 'emp']);
             return wb;
         }
@@ -7158,7 +7302,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(40px + env(safe-area-inset-bottom, 0px)) !important;right:8px !important;left:auto !important;z-index:9980;transform:translateZ(0);will-change:transform;font-size:10px;color:#94a3b8;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.10.23-callcenter-accept-stack</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.01-restaurants</div>
 </body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
@@ -7299,7 +7443,7 @@
         ['Rest (20m)', 'راحة (20 د)'], ['Check-In', 'تسجيل الحضور'], ['OFF Day', 'يوم أوف'], ['Check-Out', 'تسجيل الانصراف'],
         ['Customers WhatsApp', 'واتساب الزبائن'], ['Got a request', 'وصلني طلب'], ['Solved', 'تم الحل'], ['Ticket no.', 'رقم التكت'], ['Added', 'تم الإضافة'],
         // أدوات الطلبات
-        ['Accept Order', 'قبول طلب'], ['Cancel Order', 'إلغاء طلب'], ['Captain Guarantee', 'كفالة الكابتن'], ['Late Order', 'طلب متأخر'], ['Restaurants & Delays', 'المطاعم والتأخير'],
+        ['Accept Order', 'قبول طلب'], ['Cancel Order', 'إلغاء طلب'], ['Captain Guarantee', 'كفالة الكابتن'], ['Late Order', 'طلب متأخر'], ['Restaurants & Delays', 'المطاعم والتأخير'], ['WhatsApp Summary', 'ملخص واتساب'], ['Reports', 'التقارير'], ['Operations', 'التشغيل'], ['Team & Settings', 'الفريق والإعدادات'],
         ['Call Center Order Accept', 'قبول طلب كول سنتر'], ['Order Cancellation Reason', 'سبب إلغاء الطلب'], ['Log Late Order', 'تسجيل طلب متأخر'],
         ['Restaurant name', 'اسم المطعم'], ['Order number', 'رقم الطلب'], ['Report reason', 'سبب التبليغ'], ['Delay duration', 'مدة التأخير'],
         ['Cancel reason', 'سبب الإلغاء'], ['Reason', 'السبب'], ['Driver name', 'اسم السائق'], ['Add', 'إضافة'], ['Add guarantee', 'إضافة كفالة'],
