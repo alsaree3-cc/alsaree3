@@ -858,7 +858,7 @@
                 } else {
                     const [a, b] = await Promise.all(['accept', 'dispatch'].map(k => supabaseClient.rpc('alsaree3_dispatch_my_today', { p_kind: k })));
                     if (a.error || b.error) return;
-                    const _tkToday = (typeof _tkData !== 'undefined' ? _tkData : []).filter(x => x.kind === 'self' && x.solved_at && _ymd(new Date(x.created_at)) === today).length;
+                    const _tkToday = (typeof _tkData !== 'undefined' ? _tkData : []).filter(x => x.kind === 'self' && x.solved_at && _bgYmdOf(new Date(x.created_at).getTime()) === today).length;
                     cnt[loggedInId] = (a.data || []).length + (b.data || []).length + _tkToday;
                 }
                 _ordCountToday = cnt; _ordCountDate = today; _ordCountAt = Date.now();
@@ -880,7 +880,7 @@
                 if (hb.lateWaived) return 0;
                 if (onLeaveDay(id, getTodayDateString())) return 0;
                 if (lateWithPerm(id, d) !== null) return 0;
-                if (_ymd(new Date(d.startTime)) !== getTodayDateString()) return 0;
+                if (_bgYmdOf(Number(new Date(d.startTime))) !== getTodayDateString()) return 0;
                 const lp = calcLatePenalty(id, d.startTime);
                 if (!lp) return 0;
                 return Math.max(0, lp.points - (Number(hb.latePenalty) || 0));   // الفرق فقط، حتى لا يُخصم مرتين
@@ -942,7 +942,7 @@
                 const hb = d.hourlyBreaks || {};
                 let tr = null;
                 if (isOffDay(id, today) || onLeaveDay(id, today) || (_resetUpTo(id) && _resetUpTo(id) >= today)) tr = null;
-                else if (d.startTime && d.status !== 'أوف' && _ymd(new Date(d.startTime)) === today && hb.excluded !== today) tr = Number(d.rating);
+                else if (d.startTime && d.status !== 'أوف' && _bgYmdOf(Number(new Date(d.startTime))) === today && hb.excluded !== today) tr = Number(d.rating);
                 else if (!isOffDay(id, today) && !onLeaveDay(id, today) && _todayHist[id] !== undefined) tr = _todayHist[id];
                 d.monthlyRating = monthlyWith(id, tr);
             }
@@ -1669,6 +1669,7 @@
                     <button onclick="window.openScoreCard()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100"><span class="text-sm">🏆</span><span>Performance Card</span></button>
                     <button onclick="window.openEmpReport()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-rose-50 border-rose-200 text-rose-800 hover:bg-rose-100"><span class="text-sm">👤</span><span>Employee Report (Excel)</span></button>
                     <button onclick="window.waDailySummary()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition"><span class="text-sm">📤</span><span>WhatsApp Summary</span></button>
+                    <button onclick="window.openRushMap()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition"><span class="text-sm">🔥</span><span>Rush Hours</span></button>
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
                     <div class="adm-grp-label"><span>⚙️</span> <span>Operations</span></div>
                     <button id="leave-admin-btn" onclick="window.openLeaveAdmin()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-purple-50 border-purple-200 text-purple-800 hover:bg-purple-100"><span class="text-sm">📥</span><span>Leaves &amp; Permissions</span><span id="leave-badge" class="hidden absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
@@ -4183,7 +4184,7 @@
             document.getElementById('aao-reason-wrap').style.display = (late || cnl) ? '' : 'none';
             document.getElementById('aao-reason-lb').textContent = cnl ? 'سبب الإلغاء' : 'سبب التأخير';
             document.getElementById('aao-rest-wrap').style.display = (k === 'dispatch') ? 'none' : '';
-            document.getElementById('aao-date-wrap').style.display = cnl ? 'none' : '';
+            document.getElementById('aao-date-wrap').style.display = '';
             const go = document.getElementById('aao-go'); if (go) go.textContent = cnl ? 'تسجيل الإلغاء' : 'إضافة';
         };
         window.submitAdminAddOrder = async () => {
@@ -4205,7 +4206,7 @@
                 const nmC = emp === '__admin__' ? 'المسؤول' : (employeesData[emp].name || emp);
                 try {
                     await fetch(CANCEL_SHEET_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ secret: SHEET_SECRET, order: order, restaurant: rest, reason: why, employee: nmC + ' (أضافه المسؤول)' }), keepalive: true });
+                        body: JSON.stringify({ secret: SHEET_SECRET, order: order, restaurant: rest, reason: why, employee: nmC + ' (أضافه المسؤول)', date: date }), keepalive: true });
                 } catch (e) { console.warn('[AdminCancel]', e); btn.disabled = false; msg.textContent = '❌ تعذّر الإرسال، تحقق من الإنترنت'; return; }
                 btn.disabled = false;
                 g('aao-overlay').remove();
@@ -5333,7 +5334,7 @@
                     // خصم التأخير
                     const lp = calcLatePenalty(id, d.startTime);
                     let lateTxt = '-', lateColor = '#64748b';
-                    if (lp && !hb.lateWaived && _ymd(new Date(d.startTime)) === getTodayDateString()) {
+                    if (lp && !hb.lateWaived && _bgYmdOf(Number(new Date(d.startTime))) === getTodayDateString()) {
                         lateChecked++;
                         if (srvLate === 0) { lateMissing++; lateTxt = 'تأخر ' + lp.late + ' د — السيرفر لم يسجّل خصماً (المتوقع −' + lp.points + ')'; lateColor = '#dc2626'; }
                         else if (srvLate !== lp.points) { lateDiff++; lateTxt = 'تأخر ' + lp.late + ' د — السيرفر −' + srvLate + ' والمتوقع −' + lp.points; lateColor = '#d97706'; }
@@ -5386,7 +5387,7 @@
                 try {
                     const _r = await supabaseClient.from('alsaree3_employees').update({ monthly_rating: 100 }).not('employee_key', 'is', null);
                     mErr = _r.error;
-                    if (!mErr) { const _rd = _ymd(new Date(Date.now() - 86400000)); await _mhPatch(null, mh => { mh.resetDate = _rd; if (!_isoDate(mh.cardReset) || mh.cardReset < _rd) mh.cardReset = _rd; return mh; }); }   // يحافظ على أرشيف البطاقة وتصفيرها
+                    if (!mErr) { const _rd = _bgYmdOf(Date.now() - 86400000); await _mhPatch(null, mh => { mh.resetDate = _rd; if (!_isoDate(mh.cardReset) || mh.cardReset < _rd) mh.cardReset = _rd; return mh; }); }   // يحافظ على أرشيف البطاقة وتصفيرها
                 } catch (e) { mErr = e; }
                 if (mErr) { alert("❌ فشل تصفير الشهر"); return; }
                 await resyncEmployees().catch(() => {}); try { await refreshMonthlyRatings(true); } catch (e) {} alert("✅ تم تصفير الشهر الجديد!");
@@ -6031,8 +6032,7 @@
                     const _todayStr = getTodayDateString();
                     const _todaySelf = (typeof _tkData !== 'undefined' ? _tkData : []).filter(t => {
                         if (t.kind !== 'self') return false;
-                        const x = new Date(t.created_at);
-                        return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0') === _todayStr;
+                        return _bgYmdOf(new Date(t.created_at).getTime()) === _todayStr;
                     });
                     const _todayN = _todaySelf.length, _openToday = _todaySelf.filter(t => !t.solved_at).length;
                     // كفالة الكابتن: تظهر في المهام الثلاث (واتساب / توزيع / قبول)
@@ -6107,6 +6107,7 @@
                 }
                 if (i === loggedInId && !isAdmin) {
                     if (d.currentTask !== 'قبول') taskExtra += window._extraTabs(d.currentTask);
+                    taskExtra += window._myPerfHtml(i, d);
                 }
                 const waBox = (i === loggedInId && !isAdmin) ? `
                         <div class="mb-3 flex gap-2"><button onclick="window.openWA()" class="tk-btn tk-wa tk-small">💬 واتساب الزبائن</button></div>` : '';
@@ -6179,7 +6180,7 @@
                 if (!['بريك', 'راحة', 'حضور'].includes(d.status)) continue;
                 
                 // تحقق من التاريخ عبر lastActiveDate أو lastActionTime أو startTime
-                const _localDate = t => { const x = new Date(t); return x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0') + '-' + String(x.getDate()).padStart(2,'0'); };
+                const _localDate = t => _bgYmdOf(new Date(t).getTime());
                 const lastDate = d.lastActiveDate ||
                     (d.lastActionTime ? _localDate(d.lastActionTime) : null) ||
                     (d.startTime ? _localDate(d.startTime) : null);
@@ -7020,6 +7021,169 @@
                     + '<button onclick="navigator.clipboard && navigator.clipboard.writeText(window._waSumTxt).then(() => { this.textContent = \'✅ انتسخ\'; })" style="border:1px solid #cbd5e1;border-radius:12px;padding:11px;background:#fff;color:#334155;font:900 .9rem Cairo,sans-serif;cursor:pointer;">📋 نسخ النص</button></div></div>';
             } catch (e) { console.error('[WaSummary]', e); body.innerHTML = '<div style="text-align:center;color:#dc2626;font-weight:800;padding:20px;">❌ تعذّر تجهيز الملخص</div>'; }
         };
+        // ===== 🔥 خريطة الضغط حسب الساعة (للمسؤول): يوم × ساعة — الطلبات / المتأخرة / رسائل واتساب =====
+        window._rushState = window._rushState || { days: 14, metric: 'all' };
+        window.openRushMap = async function (days, metric) {
+            if (loggedInId !== '__admin__') return;
+            const S = window._rushState;
+            if (days) S.days = days; if (metric) S.metric = metric;
+            const today = getTodayDateString();
+            const to = today, from = _ymd(new Date(new Date(to + 'T12:00:00').getTime() - (S.days - 1) * 86400000));
+            const seg = (n, lb) => '<button class="' + (S.days === n ? 'on' : '') + '" onclick="window.openRushMap(' + n + ')">' + lb + '</button>';
+            const hero = '<div class="rs-hero"><div><h3>🔥 خريطة الضغط حسب الساعة</h3><small>📅 ' + sanitize(from) + ' ← ' + sanitize(to) + ' · الشفت الصباحي</small></div>'
+                + '<div class="rs-seg">' + seg(7, '7 أيام') + seg(14, '14 يوم') + seg(30, '30 يوم') + '</div></div>';
+            _modal('rush-overlay', '🔥 خريطة الضغط', '<div class="rs">' + hero + '<div id="rush-body" class="rs-empty" style="padding:40px 0;">⏳ جاري جمع البيانات...</div></div>', 1080);
+            const dates = window._expDates(from, to);
+            window._ordSearchCache = window._ordSearchCache || {}; window._tkSearchCache = window._tkSearchCache || {};
+            const O = {}, T = {};
+            for (let i = 0; i < dates.length; i += 6) {
+                await Promise.all(dates.slice(i, i + 6).map(async ds => {
+                    try {
+                        if (ds !== today && window._ordSearchCache[ds]) O[ds] = window._ordSearchCache[ds];
+                        else { let r = await supabaseClient.rpc('alsaree3_orders_admin', { p_date: ds }); if (r.error) r = await supabaseClient.rpc('alsaree3_dispatch_admin', { p_date: ds }); O[ds] = (r && r.data) || []; if (ds !== today && !r.error) window._ordSearchCache[ds] = O[ds]; }
+                    } catch (e) { O[ds] = []; }
+                    try {
+                        if (ds !== today && window._tkSearchCache[ds]) T[ds] = window._tkSearchCache[ds];
+                        else { const r = await supabaseClient.rpc('alsaree3_tickets_admin', { p_date: ds }); T[ds] = (r && r.data) || []; if (ds !== today && !r.error) window._tkSearchCache[ds] = T[ds]; }
+                    } catch (e) { T[ds] = []; }
+                }));
+            }
+            window._rushRaw = { from, to, O, T, dates };
+            window._rushRender();
+        };
+        window._rushMetric = m => { window._rushState.metric = m; window._rushRender(); };
+        const _h12 = h => { const x = h % 12 || 12; return x + (h < 4 ? ' بالليل' : h < 12 ? ' الصبح' : h < 15 ? ' الظهر' : h < 18 ? ' العصر' : ' المسا'); };
+        const _h12s = h => (h % 12 || 12) + (h < 12 ? ' ص' : ' م');
+        window._rushRender = () => {
+            const body = document.getElementById('rush-body'), R = window._rushRaw; if (!body || !R) return;
+            const M = window._rushState.metric;
+            const byH = Array(24).fill(0), byD = Array(7).fill(0);
+            const add = ts => { if (!ts) return; const p = _bgParts(new Date(ts).getTime()); byH[p.h]++; byD[p.wd]++; };
+            R.dates.forEach(ds => {
+                (R.O[ds] || []).forEach(o => {
+                    const kd = o.kind || 'dispatch', late = kd.endsWith('_late');
+                    if (M === 'all' && !late) add(o.created_at);
+                    else if (M === 'late' && late && window._tagOf(o.reason) !== 'drv') add(o.created_at);
+                });
+                if (M === 'msg') (R.T[ds] || []).forEach(t => { if (t.kind === 'self') add(t.created_at); });
+            });
+            const total = byH.reduce((a, b) => a + b, 0);
+            const WD = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'], order = [6, 0, 1, 2, 3, 4, 5];
+            const mname = { all: 'طلب', late: 'طلب متأخر', msg: 'رسالة' }[M];
+            const COL = { all: '#103d42', late: '#dc2626', msg: '#16a34a' }[M];
+            const tabs = [['all', '📦 الطلبات'], ['late', '⏱️ المتأخرة'], ['msg', '💬 رسائل واتساب']].map(([k, lb]) => '<button onclick="window._rushMetric(\'' + k + '\')" style="border:0;border-radius:10px;padding:7px 16px;font:800 .82rem Cairo,sans-serif;cursor:pointer;' + (M === k ? 'background:#103d42;color:#d6fd26;' : 'background:transparent;color:#334155;') + '">' + lb + '</button>').join('');
+            let h = '<div style="display:flex;justify-content:center;margin:14px 0;"><div style="display:inline-flex;gap:2px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:13px;padding:3px;">' + tabs + '</div></div>';
+            if (!total) { body.className = ''; body.innerHTML = h + '<div class="rs-empty">لا توجد بيانات بهاي الفترة</div>'; return; }
+            const hrs = []; for (let x = 0; x < 24; x++) if (byH[x]) hrs.push(x);
+            const sortedH = hrs.slice().sort((a, b) => byH[b] - byH[a]);
+            const busy = new Set(sortedH.slice(0, 3)), calm = new Set(hrs.length > 4 ? hrs.slice().sort((a, b) => byH[a] - byH[b]).slice(0, 2) : []);
+            const topD = order.slice().sort((a, b) => byD[b] - byD[a])[0];
+            const mxH = Math.max(...byH), mxD = Math.max(...byD);
+            // جملة واضحة بالأول
+            h += '<div style="background:#ecfccb;border:1px solid #d9f99d;border-radius:16px;padding:12px 16px;font-size:.95rem;font-weight:800;color:#365314;line-height:1.9;margin-bottom:12px;">'
+                + '🔥 أكثر ضغط الساعة <b>' + _h12(sortedH[0]) + '</b>' + (sortedH[1] != null ? ' و<b>' + _h12(sortedH[1]) + '</b>' : '') + '، وأكثر يوم <b>' + WD[topD] + '</b>.'
+                + (calm.size ? '<br>😌 أهدأ وقت <b>' + Array.from(calm).sort((a, b) => a - b).map(_h12).join(' و') + '</b>، وهذا أحسن وقت للبريك.' : '')
+                + '<div style="font-size:.72rem;color:#65a30d;font-weight:700;">المجموع ' + total + ' ' + mname + ' بآخر ' + R.dates.length + ' يوم (الشفت الصباحي)</div></div>';
+            const bar = (lb, v, mx, tag, hot) => '<div style="display:grid;grid-template-columns:92px 1fr 44px;gap:10px;align-items:center;padding:5px 0;">'
+                + '<span style="font-size:.82rem;font-weight:900;color:#0f2e31;">' + lb + '</span>'
+                + '<span style="background:#f1f5f9;border-radius:99px;height:14px;overflow:hidden;"><i style="display:block;height:100%;width:' + (v ? Math.max(3, Math.round(v / mx * 100)) : 0) + '%;border-radius:99px;background:' + (hot ? COL : COL + '66') + ';"></i></span>'
+                + '<span style="font-size:.82rem;font-weight:900;color:' + (hot ? COL : '#64748b') + ';text-align:left;">' + v + (tag ? ' ' + tag : '') + '</span></div>';
+            h += '<div class="rs-grid">'
+                + '<div class="rs-card"><h4>🕐 حسب الساعة</h4>' + hrs.map(x => bar(_h12s(x) + (busy.has(x) ? ' 🔥' : calm.has(x) ? ' 😌' : ''), byH[x], mxH, '', busy.has(x))).join('') + '</div>'
+                + '<div class="rs-card"><h4>📅 حسب اليوم</h4>' + order.map(d => bar(WD[d], byD[d], mxD, '', d === topD)).join('') + '</div></div>';
+            h += '<div class="rs-note">🔥 = أكثر 3 ساعات ضغط · 😌 = أهدأ ساعتين. الأرقام = مجموع ' + mname + ' بكل ساعة أو يوم خلال الفترة.</div>';
+            body.className = ''; body.innerHTML = h;
+        };
+
+        // ===== 📈 أدائي (بطاقة الموظف): تقييم اليوم والشهر وترتيبه، وشنو نقّص تقييمه اليوم =====
+        window._perfOpen = false;
+        window._perfToggle = () => { window._perfOpen = !window._perfOpen; try { render(); } catch (e) {} };
+        window._myPerfHtml = (id, d) => {
+            if (!d) return '';
+            const today = getTodayDateString(), now = Date.now();
+            const working = k => { const x = employeesData[k]; return x && x.startTime && x.status !== 'أوف' && _bgYmdOf(Number(new Date(x.startTime))) === today; };
+            const meWorking = working(id);
+            const rt = v => Math.round(Number(v));
+            const todayR = meWorking ? rt(d.rating == null ? 100 : d.rating) : null;
+            const monthR = d.monthlyRating == null ? null : rt(d.monthlyRating);
+            const ids = Object.keys(employeesData);
+            const rankOf = (vals, mine) => { const L = vals.filter(v => v != null && !isNaN(v)).sort((a, b) => b - a); return mine == null ? null : { r: L.indexOf(mine) + 1, n: L.length }; };
+            const rkT = rankOf(ids.filter(working).map(k => rt(employeesData[k].rating == null ? 100 : employeesData[k].rating)), todayR);
+            const rkM = rankOf(ids.map(k => employeesData[k].monthlyRating == null ? null : rt(employeesData[k].monthlyRating)), monthR);
+            const col = v => v == null ? '#64748b' : v >= 90 ? '#16a34a' : v >= 75 ? '#d97706' : '#dc2626';
+            const medal = r => r && r.r === 1 ? '🥇 ' : r && r.r === 2 ? '🥈 ' : r && r.r === 3 ? '🥉 ' : '';
+            const hm = ms => { const t = _bgParts(ms), h = t.h % 12 || 12; return h + ':' + String(t.mi).padStart(2, '0') + (t.h < 12 ? ' ص' : ' م'); };
+            // ---- أرقام اليوم ----
+            const rows = []; let tips = [], known = 0;
+            if (meWorking) {
+                const hb = d.hourlyBreaks || {}, st = Number(new Date(d.startTime));
+                const hrs = Math.min(12, Math.max(1, (now - st) / 3600000)), perm = permMinutesToday(id) || 0;
+                // الحضور
+                let late = 0, lateTxt = 'حضرت ' + hm(st);
+                try {
+                    const lp = calcLatePenalty(id, st), lw = lateWithPerm(id, d);
+                    late = Math.round(lw !== null ? lw : ((Number(hb.latePenalty) || 0) || lateFallbackPenalty(id, d) || 0));
+                    if (hb.lateWaived) { late = 0; lateTxt += ' · التأخير مسامَح'; }
+                    else if (lp) lateTxt += ' · متأخر ' + lp.late + ' د (السماح ' + LATE_GRACE_MIN + ' د)';
+                    else lateTxt += ' · على الوقت ✓';
+                    if (lw !== null && lp) lateTxt += ' · عندك إذن زمني';
+                } catch (e) {}
+                rows.push(['⏰', 'الحضور', lateTxt, -late]); known += late;
+                if (late) tips.push('احضر قبل بداية دوامك بـ 5 دقايق، أي تأخير بعد ' + LATE_GRACE_MIN + ' د يبدي الخصم.');
+                // البريك
+                const liveB = (d.status === 'بريك' && d.lastActionTime) ? Math.max(0, Math.floor((now - d.lastActionTime) / 60000)) : 0;
+                const usedB = (Number(d.totalBreakMinutes) || 0) + liveB, allowB = Math.round(BREAK_SCORE_ALLOW_PER_HOUR * hrs + perm);
+                let brk = 0; try { brk = Math.round(breakUsagePenalty(d, now, id) || 0); } catch (e) {}
+                rows.push(['☕', 'البريك', usedB + ' د من ' + allowB + ' د مسموح لحد هسه', -brk]); known += brk;
+                if (brk >= 3) tips.push('قلّل البريك، كل ما قلّ البريك ارتفع تقييمك.');
+                // تجاوز البريك بالساعة
+                let viol = 0; try { const hNow = Math.floor((now - st) / 3600000); for (let x = 0; x <= hNow; x++) viol += breakViolations(breakSecInHour(d, id, x, now)); } catch (e) {}
+                if (viol) { rows.push(['🚫', 'تجاوز البريك بالساعة', viol + (viol === 1 ? ' مرة' : ' مرات') + ' (أكثر من ' + Math.round(BREAK_HOUR_LIMIT_SEC / 60) + ' د بالساعة)', -viol * VIOLATION_POINTS]); known += viol * VIOLATION_POINTS; tips.push('لا تاخذ أكثر من ' + Math.round(BREAK_HOUR_LIMIT_SEC / 60) + ' دقايق بريك بالساعة الواحدة.'); }
+                // الاستراحة
+                const liveR = (d.status === 'راحة' && d.lastActionTime) ? Math.max(0, Math.floor((now - d.lastActionTime) / 60000)) : 0;
+                const usedR = (Number(d.totalRestMinutes) || 0) + liveR, allowR = REST_SCORE_ALLOW_MIN + perm;
+                let rst = 0; try { rst = Math.round(restUsagePenalty(d, now, id) || 0); } catch (e) {}
+                rows.push(['🛋️', 'الاستراحة', usedR + ' د من ' + allowR + ' د مسموح باليوم', -rst]); known += rst;
+                if (usedR > allowR) tips.push('خلّي الاستراحة ضمن ' + allowR + ' د باليوم.');
+                // الطلبات
+                const nOrd = (_ordCountDate === today ? (_ordCountToday[id] || 0) : 0);
+                let bonus = 0; try { bonus = Math.round(ordersBonus(id) || 0); } catch (e) {}
+                rows.push(['📦', 'طلباتك (قبول + توزيع)', nOrd + ' من ' + SC_ORDERS_DAILY_TARGET + ' (الهدف)', bonus]); known -= bonus;
+                if (nOrd < SC_ORDERS_DAILY_TARGET) tips.push('سجّل كل طلب قبول وتوزيع، باقيلك ' + (SC_ORDERS_DAILY_TARGET - nOrd) + ' حتى تاخذ المكافأة كاملة (+' + ORDERS_BONUS_MAX + ').');
+                // رسائل واتساب
+                const tk = (typeof _tkData !== 'undefined' ? _tkData : []).filter(t => t.kind === 'self' && t.created_at && _bgYmdOf(new Date(t.created_at).getTime()) === today);
+                const solved = tk.filter(t => t.solved_at).length, open = tk.length - solved;
+                if (tk.length) rows.push(['💬', 'رسائل واتساب', solved + ' انحلّت' + (open ? ' · ' + open + ' مفتوحة' : '') + ' (تنضاف عند إغلاق اليوم)', null]);
+                if (open) tips.push('عندك ' + open + ' رسالة مفتوحة، حلّها خلال ' + TICKET_SOLVE_LIMIT_MIN + ' د حتى ما ينخصم منك.');
+                const other = Math.round(100 - todayR - known);
+                if (other > 0) rows.push(['⚠️', 'خصومات ثانية', 'مثل تأخر قراءة المهام أو قواعد المجموعة', -other]);
+            }
+            const chip = (lb, v, rk, sub) => '<div style="flex:1;min-width:0;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:6px 8px;text-align:center;"><div style="font-size:.66rem;font-weight:800;color:#64748b;">' + lb + '</div><div style="font-size:1.15rem;font-weight:900;color:' + col(v) + ';line-height:1.3;">' + (v == null ? '—' : v + '%') + '</div><div style="font-size:.62rem;font-weight:800;color:#94a3b8;">' + (rk && rk.r ? medal(rk) + 'الترتيب ' + rk.r + ' من ' + rk.n : sub || '&nbsp;') + '</div></div>';
+            const eff = v => v == null ? '<span style="color:#94a3b8;">—</span>' : v === 0 ? '<span style="color:#16a34a;">✓ 0</span>' : '<span style="color:' + (v < 0 ? '#dc2626' : '#16a34a') + ';direction:ltr;display:inline-block;">' + (v > 0 ? '+' : '') + v + '</span>';
+            let h = '<div style="margin-top:6px;"><button type="button" class="tk-btn" onclick="window._perfToggle()" style="width:100%;display:flex;justify-content:space-between;align-items:center;background:#f8fafc;color:#0f2e31;border-color:#e2e8f0;">'
+                + '<span>📈 أدائي</span><span style="font-size:.74rem;font-weight:900;"><span style="color:' + col(todayR) + ';">اليوم ' + (todayR == null ? '—' : todayR + '%') + '</span> · <span style="color:' + col(monthR) + ';">الشهر ' + (monthR == null ? '—' : monthR + '%') + '</span> ' + (window._perfOpen ? '▴' : '▾') + '</span></button>';
+            if (window._perfOpen) {
+                h += '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:8px;background:#f8fafc;">'
+                    + '<div style="display:flex;gap:6px;margin-bottom:8px;">' + chip('تقييم اليوم', todayR, rkT, 'يبدي من 100') + chip('تقييم الشهر', monthR, rkM, 'معدل أيام دوامك') + '</div>';
+                if (!meWorking) h += '<div style="font-size:.74rem;font-weight:800;color:#94a3b8;text-align:center;padding:6px;">سجّل حضورك حتى ينحسب تقييم اليوم</div>';
+                else {
+                    h += '<div style="font-size:.72rem;font-weight:900;color:#0f2e31;margin:0 2px 4px;">📋 شلون انحسب تقييمك اليوم (يبدي من 100):</div>'
+                        + rows.map(([ic, lb, txt, v]) => '<div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;background:#fff;border:1px solid #eef2f4;border-radius:10px;padding:5px 8px;margin-bottom:4px;"><div><div style="font-size:.74rem;font-weight:900;color:#0f2e31;">' + ic + ' ' + lb + '</div><div style="font-size:.66rem;font-weight:700;color:#64748b;">' + txt + '</div></div><div style="font-size:.82rem;font-weight:900;">' + eff(v) + '</div></div>').join('')
+                        + '<div style="display:flex;justify-content:space-between;font-size:.78rem;font-weight:900;padding:4px 8px;color:#0f2e31;"><span>= تقييمك اليوم</span><span style="color:' + col(todayR) + ';">' + todayR + '%</span></div>';
+                    h += '<div style="margin-top:4px;background:' + (tips.length ? '#ecfccb' : '#dcfce7') + ';border-radius:10px;padding:6px 8px;font-size:.7rem;font-weight:800;color:#365314;line-height:1.8;">' + (tips.length ? '💡 ' + tips.slice(0, 3).join('<br>💡 ') : '✨ ممتاز! ما عندك أي خصم لحد هسه، استمر هيچ.') + '</div>';
+                }
+                h += '<details style="margin-top:6px;font-size:.68rem;font-weight:700;color:#475569;line-height:1.9;"><summary style="cursor:pointer;font-weight:900;color:#0f2e31;">📖 قواعد التقييم كاملة</summary><div style="padding:4px 2px;">'
+                    + '• كل يوم تبدي بـ <b>100</b>، وأعلى شي 100.<br>'
+                    + '• <b>التأخير:</b> عندك سماح ' + LATE_GRACE_MIN + ' د. بعدها ينخصم ' + LATE_BASE_POINTS + '، وكل ' + LATE_EXTRA_STEP_MIN + ' د زيادة ينخصم ' + LATE_EXTRA_POINTS + '، لحد ' + LATE_MAX_POINTS + ' نقطة. الإذن الزمني المعتمد يغطي التأخير.<br>'
+                    + '• <b>البريك:</b> مسموحلك ' + BREAK_SCORE_ALLOW_PER_HOUR + ' د عن كل ساعة دوام. الخصم يزيد بالتدريج كل ما استهلكت أكثر، لحد ' + BREAK_SCORE_MAX_PENALTY + ' نقاط. وإذا أخذت أكثر من ' + Math.round(BREAK_HOUR_LIMIT_SEC / 60) + ' د بساعة وحدة تنحسب مخالفة (-' + VIOLATION_POINTS + ').<br>'
+                    + '• <b>الاستراحة:</b> مسموحلك ' + REST_SCORE_ALLOW_MIN + ' د باليوم. الخصم بالتدريج لحد ' + REST_SCORE_MAX_PENALTY + ' نقاط.<br>'
+                    + '• <b>الطلبات:</b> كل طلب قبول أو توزيع تسجله يزيد مكافأتك، لحد +' + ORDERS_BONUS_MAX + ' لما توصل ' + SC_ORDERS_DAILY_TARGET + ' طلبات.<br>'
+                    + '• <b>رسائل واتساب:</b> +1 لكل رسالة تحلها (لحد +10). وإذا تأخرت بقراءة مهمة أكثر من ' + TICKET_READ_LIMIT_MIN + ' د أو بحلها أكثر من ' + TICKET_SOLVE_LIMIT_MIN + ' د ينخصم منك. هاي تنحسب عند إغلاق اليوم.<br>'
+                    + '• <b>تقييم الشهر:</b> معدل تقييمات أيام دوامك. أيام الأوف والإجازات ما تنحسب.'
+                    + '</div></details></div>';
+            }
+            return h + '</div>';
+        };
         window._rsSetShift = sh => { window._rsShift = sh; window._rsRender(); };
         window._rsRender = () => {
             const body = document.getElementById('rs-body'), RAW = window._rsRaw; if (!body || !RAW) return;
@@ -7539,7 +7703,7 @@
         ['Rest (20m)', 'راحة (20 د)'], ['Check-In', 'تسجيل الحضور'], ['OFF Day', 'يوم أوف'], ['Check-Out', 'تسجيل الانصراف'],
         ['Customers WhatsApp', 'واتساب الزبائن'], ['Got a request', 'وصلني طلب'], ['Solved', 'تم الحل'], ['Ticket no.', 'رقم التكت'], ['Added', 'تم الإضافة'],
         // أدوات الطلبات
-        ['Accept Order', 'قبول طلب'], ['Cancel Order', 'إلغاء طلب'], ['Captain Guarantee', 'كفالة الكابتن'], ['Late Order', 'طلب متأخر'], ['Restaurants & Delays', 'المطاعم والتأخير'], ['WhatsApp Summary', 'ملخص واتساب'], ['Reports', 'التقارير'], ['Operations', 'التشغيل'], ['Team & Settings', 'الفريق والإعدادات'],
+        ['Accept Order', 'قبول طلب'], ['Cancel Order', 'إلغاء طلب'], ['Captain Guarantee', 'كفالة الكابتن'], ['Late Order', 'طلب متأخر'], ['Restaurants & Delays', 'المطاعم والتأخير'], ['WhatsApp Summary', 'ملخص واتساب'], ['Rush Hours', 'خريطة الضغط'], ['Reports', 'التقارير'], ['Operations', 'التشغيل'], ['Team & Settings', 'الفريق والإعدادات'],
         ['Call Center Order Accept', 'قبول طلب كول سنتر'], ['Order Cancellation Reason', 'سبب إلغاء الطلب'], ['Log Late Order', 'تسجيل طلب متأخر'],
         ['Restaurant name', 'اسم المطعم'], ['Order number', 'رقم الطلب'], ['Report reason', 'سبب التبليغ'], ['Delay duration', 'مدة التأخير'],
         ['Cancel reason', 'سبب الإلغاء'], ['Reason', 'السبب'], ['Driver name', 'اسم السائق'], ['Add', 'إضافة'], ['Add guarantee', 'إضافة كفالة'],
