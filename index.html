@@ -4487,7 +4487,7 @@
             document.querySelectorAll('#late-dd-list .tk-dd-item[data-r]').forEach(c => c.classList.toggle('sel', !window._ld.other && c.dataset.r === window._ld.r));
             const oth = document.querySelector('#late-dd-list .tk-dd-item.other'); if (oth) oth.classList.toggle('sel', !!window._ld.other);
         };
-        window.toggleAcc = () => { const w = window._ld; const open = !!(w.acc || window._accR || window._accWhy); if (open) { w.acc = false; window._accR = ''; window._accWhy = ''; } else { w.acc = true; } try { render(); } catch (err) {} };
+        window.toggleAcc = () => { const w = window._ld; const open = !!(w.acc || window._accR || window._accWhy || window._accSel); if (open) { w.acc = false; window._accR = ''; window._accWhy = ''; window._accSel = ''; window._accPh = ''; } else { w.acc = true; } try { render(); } catch (err) {} };
         window.toggleCap = () => { const w = window._ld; const open = !!(w.cap || window._dispR || window._dispD || window._dispO); if (open) { w.cap = false; window._dispR = ''; window._dispD = ''; window._dispO = ''; } else { w.cap = true; } try { render(); } catch (err) {} };
         window.toggleLateBox = () => { const w = window._ld; const open = !!(w.show || w.o || w.r || w.rest || w.other); if (open) { w.show = false; w.o = ''; w.r = ''; w.rest = ''; w.other = false; w.open = false; } else { w.show = true; } try { render(); } catch (err) {} };
         window.toggleLateDD = (ev) => { if (ev) ev.stopPropagation(); window._ld.open = !window._ld.open; window._syncDD(); };
@@ -4518,6 +4518,57 @@
         // ===== تسجيل الطلبات المقبولة (رقم الطلب + اسم المطعم) في شيت "القبول" عبر Apps Script =====
         const ACCEPT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzNN1kxknuwJmqOcFp2h5rko-ADZ7fQWzkOGq9cs3MZyKqx2Zzj1oze26CvC31Jscg/exec';   // ← الصق هنا رابط النشر (ينتهي بـ /exec) الخاص بسكربت شيت القبول
         window._accR = window._accR || ''; window._accWhy = window._accWhy || '';
+        // ===== أسباب قبول الطلب (قائمة اختيار) — «سبب آخر» يُظهر حقل كتابة التفاصيل =====
+        const ACCEPT_REASONS = ['الجهاز طافي شحن', 'الجهاز عاطل', 'الجهاز لا يطبع', 'الجهاز لا يظهر الطلب', 'الجهاز لا يوجد به انترنت', 'الجهاز مسجل خروج', 'الجهاز مسحوب لغرض الصيانة', 'المطعم لا يرد', 'حسب تبليغ المطعم'];
+        const ACCEPT_OTHER = 'سبب آخر – أكتب التفاصيل';
+        window._accSel = window._accSel || '';
+        window.setAccSel = (v) => { window._accSel = v; if (v !== ACCEPT_OTHER) window._accWhy = ''; try { render(); } catch (e) {} if (v === ACCEPT_OTHER) { const w = document.getElementById('acc-why'); if (w) w.focus(); } };
+        // ===== 🎫 رفع تذكرة Jitbit من قسم القبول: يفتح صفحة «تذكرة جديدة» والحقول معبّأة تلقائياً =====
+        // الأرقام (IDs) تُؤخذ من Jitbit: كل حقل خاص اسمه بالرابط cfXXXX. اترك الرقم فارغاً '' إذا ما تريد يتعبّى.
+        const JB_TICKET = {
+            categoryId: '498400',          // رقم الفئة (Category - Statistics)
+            cfClass: '46916',        // رقم حقل Class
+            classValue: '297599',   // Class = مطعم
+            cfPhone: '46926',             // رقم حقل Phone Number
+            cfOrder: '46917',             // رقم حقل Order Number
+            cfRest: '51574',              // رقم حقل Restaurant Name
+            cfCallClass: '47100',    // رقم حقل Call Classification
+            callClassValue: '298336'   // Call Classification = طلب فريق الصيانة
+        };
+        window._accPh = window._accPh || '';
+        window.openAccTicket = () => {
+            const g = id => { const e = document.getElementById(id); return e ? e.value.trim().replace(/\s+/g, ' ') : ''; };
+            const rest = g('acc-rest') || window._accR || '', ord = g('disp-input'), ph = g('acc-ph') || window._accPh || '';
+            const sel = g('acc-sel') || window._accSel || '';
+            let why = sel === ACCEPT_OTHER ? g('acc-why') : sel;
+            if (!ord) { alert('⚠️ اكتب رقم الطلب أولاً'); const e = document.getElementById('disp-input'); if (e) e.focus(); return; }
+            if (!sel) { alert('⚠️ اختر السبب أولاً'); const e = document.getElementById('acc-sel'); if (e) e.focus(); return; }
+            if (!why) { alert('⚠️ اكتب تفاصيل السبب أولاً'); const e = document.getElementById('acc-why'); if (e) e.focus(); return; }
+            if (!ph) { alert('⚠️ اكتب رقم الهاتف أولاً'); const e = document.getElementById('acc-ph'); if (e) e.focus(); return; }
+            window._jbOpen({ ord, rest, ph, why });
+        };
+        window._jbOpen = ({ ord, rest, ph, why, callClass }) => {
+            const q = [];
+            const add = (k, v) => { if (k && v !== '' && v != null) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(v)); };
+            add('categoryId', JB_TICKET.categoryId);
+            add('subject', ord);
+            add('body', 'الحالة :- ' + why);
+            if (JB_TICKET.cfClass) add('cf' + JB_TICKET.cfClass, JB_TICKET.classValue);
+            if (JB_TICKET.cfPhone) add('cf' + JB_TICKET.cfPhone, ph);
+            if (JB_TICKET.cfOrder) add('cf' + JB_TICKET.cfOrder, ord);
+            if (JB_TICKET.cfRest) add('cf' + JB_TICKET.cfRest, rest);
+            if (JB_TICKET.cfCallClass) add('cf' + JB_TICKET.cfCallClass, callClass || JB_TICKET.callClassValue);
+            window.open(HELPDESK_URL.replace(/\/+$/, '') + '/Tickets/New?' + q.join('&'), '_blank', 'noopener');
+        };
+        window._accWhyHtml = () => {
+            const sel = window._accSel || '', other = sel === ACCEPT_OTHER;
+            return '<div class="tk-row" style="margin-bottom:6px;"><input id="acc-ph" type="tel" inputmode="tel" maxlength="20" autocomplete="off" placeholder="رقم الهاتف (للتذكرة)" class="tk-input" style="direction:ltr;text-align:center;" value="' + sanitize(window._accPh || '') + '" oninput="window._accPh=this.value"></div>'
+                + '<div class="tk-row" style="margin-bottom:6px;"><select id="acc-sel" class="tk-input" style="direction:rtl;cursor:pointer;" onchange="window.setAccSel(this.value)">'
+                + '<option value=""' + (sel ? '' : ' selected') + '>اختر السبب' + (ACCEPT_REASON_REQUIRED ? ' *' : '') + '</option>'
+                + ACCEPT_REASONS.concat([ACCEPT_OTHER]).map(r => '<option value="' + sanitize(r) + '"' + (r === sel ? ' selected' : '') + '>' + sanitize(r) + '</option>').join('')
+                + '</select></div>'
+                + (other ? '<div class="tk-row" style="margin-bottom:6px;"><input id="acc-why" type="text" maxlength="100" autocomplete="off" placeholder="اكتب تفاصيل السبب *" class="tk-input" style="direction:rtl;" value="' + sanitize(window._accWhy || '') + '" oninput="window._accWhy=this.value" onkeydown="if(event.key===\'Enter\')window.addOrder()"></div>' : '');
+        };
         const ACCEPT_REASON_REQUIRED = false;   // true = السبب إلزامي عند تسجيل قبول الطلب
         function _sheetEmpName() { return (loggedInId === '__admin__') ? 'المسؤول' : ((employeesData[loggedInId] && employeesData[loggedInId].name) || String(loggedInId || '')); }
         function _postAcceptSheet(payload) {
@@ -4683,23 +4734,55 @@
             } catch (e) { console.warn('[CancelSheet]', e); }
         }
         window._cnl = window._cnl || { open: false, r: '', o: '', w: '' };
+        // ===== أسباب إلغاء الطلب (قائمة اختيار) — «سبب آخر» يُظهر حقل كتابة التفاصيل =====
+        const CANCEL_REASONS = ['الزبون ألغى الطلب', 'الزبون ما يرد', 'الطلب غير متوفر', 'العنوان غلط / بعيد', 'المطعم لا يرد', 'المطعم مغلق', 'المطعم موقف تعامل', 'تغيير بالاسعار', 'تواصل مع ادارة المطاعم', 'طلب مكرر'];
+        const CANCEL_OTHER = 'سبب آخر – أكتب التفاصيل';
+        window.setCnlSel = (v) => { window._cnl.s = v; if (v !== CANCEL_OTHER) window._cnl.w = ''; try { render(); } catch (e) {} if (v === CANCEL_OTHER) { const w = document.getElementById('cnl-why'); if (w) w.focus(); } };
+        // 🎫 تذكرة الإلغاء: نفس معلومات القبول، عدا «المطعم موقف تعامل» → Call Classification = المطعم لا يستقبل الطلبات
+        const CANCEL_CALLCLASS = {
+            'المطعم موقف تعامل': '505324',          // المطعم لا يستقبل الطلبات
+            'تغيير بالاسعار': '298335',              // طلب تحديث منيو
+            'تواصل مع ادارة المطاعم': '298334'       // طلب التواصل مع ادارة المطاعم
+        };
+        window.openCnlTicket = () => {
+            const g = id => { const e = document.getElementById(id); return e ? e.value.trim().replace(/\s+/g, ' ') : ''; };
+            const f = id => { const e = document.getElementById(id); if (e) e.focus(); };
+            const c = window._cnl, rest = g('cnl-rest') || c.r || '', ord = g('cnl-order') || c.o || '', ph = g('cnl-ph') || c.p || '';
+            const sel = g('cnl-sel') || c.s || '', why = sel === CANCEL_OTHER ? g('cnl-why') : sel;
+            if (!ord) { alert('⚠️ اكتب رقم الطلب أولاً'); f('cnl-order'); return; }
+            if (!sel) { alert('⚠️ اختر سبب الإلغاء أولاً'); f('cnl-sel'); return; }
+            if (!why) { alert('⚠️ اكتب تفاصيل السبب أولاً'); f('cnl-why'); return; }
+            if (!ph) { alert('⚠️ اكتب رقم الهاتف أولاً'); f('cnl-ph'); return; }
+            window._jbOpen({ ord, rest, ph, why, callClass: CANCEL_CALLCLASS[sel] });
+        };
+        window._cnlWhyHtml = () => {
+            const c = window._cnl, sel = c.s || '', other = sel === CANCEL_OTHER;
+            return '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-ph" type="tel" inputmode="tel" maxlength="20" autocomplete="off" placeholder="رقم الهاتف (للتذكرة)" class="tk-input" style="direction:ltr;text-align:center;" value="' + sanitize(c.p || '') + '" oninput="window._cnl.p=this.value"></div>'
+                + '<div class="tk-row" style="margin-bottom:6px;"><select id="cnl-sel" class="tk-input" style="direction:rtl;cursor:pointer;" onchange="window.setCnlSel(this.value)">'
+                + '<option value=""' + (sel ? '' : ' selected') + '>اختر سبب الإلغاء *</option>'
+                + CANCEL_REASONS.concat([CANCEL_OTHER]).map(r => '<option value="' + sanitize(r) + '"' + (r === sel ? ' selected' : '') + '>' + sanitize(r) + '</option>').join('')
+                + '</select></div>'
+                + (other ? '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-why" type="text" maxlength="120" autocomplete="off" placeholder="اكتب تفاصيل السبب *" class="tk-input" style="direction:rtl;" value="' + sanitize(c.w || '') + '" oninput="window._cnl.w=this.value" onkeydown="if(event.key===\'Enter\')window.addCancel()"></div>' : '');
+        };
         window._cnlKey = () => 'a3_cnlstack_' + String(loggedInId) + '_' + new Date().toLocaleDateString('en-CA');
         window._cnlGet = () => { try { const a = JSON.parse(localStorage.getItem(window._cnlKey()) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
         window._cnlSet = (a) => { try { localStorage.setItem(window._cnlKey(), JSON.stringify(a.slice(0, 100))); } catch (e) {} };
-        window.toggleCnl = () => { const c = window._cnl; const open = !!(c.open || c.r || c.o || c.w); if (open) { c.open = false; c.r = ''; c.o = ''; c.w = ''; } else { c.open = true; } try { render(); } catch (e) {} };
+        window.toggleCnl = () => { const c = window._cnl; const open = !!(c.open || c.r || c.o || c.w || c.s); if (open) { c.open = false; c.r = ''; c.o = ''; c.w = ''; c.s = ''; c.p = ''; } else { c.open = true; } try { render(); } catch (e) {} };
         window.addCancel = () => {
             const g = id => { const e = document.getElementById(id); return e ? e.value.trim().replace(/\s+/g, ' ') : ''; };
-            const r = g('cnl-rest').slice(0, 60), o = g('cnl-order').slice(0, 30), w = g('cnl-why').slice(0, 150);
+            const r = g('cnl-rest').slice(0, 60), o = g('cnl-order').slice(0, 30), _cs = g('cnl-sel') || window._cnl.s || '', _cd = g('cnl-why').slice(0, 120);
+            const w = _cs === CANCEL_OTHER ? (_cd ? 'سبب آخر: ' + _cd : '') : _cs;
             const f = id => { const e = document.getElementById(id); if (e) e.focus(); };
             if (!r) { alert('⚠️ اكتب اسم المطعم أولاً'); f('cnl-rest'); return; }
             if (!o) { alert('⚠️ اكتب رقم الطلب أولاً'); f('cnl-order'); return; }
             if (!/^[0-9A-Za-z؀-ۿ#_\-\/]{1,30}$/.test(o)) { alert('⚠️ رقم الطلب غير صالح'); f('cnl-order'); return; }
-            if (!w) { alert('⚠️ اكتب سبب الإلغاء أولاً'); f('cnl-why'); return; }
+            if (!_cs) { alert('⚠️ اختر سبب الإلغاء أولاً'); f('cnl-sel'); return; }
+            if (!w) { alert('⚠️ اكتب تفاصيل السبب أولاً'); f('cnl-why'); return; }
             const a = window._cnlGet();
             a.unshift({ o, r, w, t: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) });
             window._cnlSet(a);
             sendCancelToSheet(o, r, w);
-            window._cnl.r = ''; window._cnl.o = ''; window._cnl.w = '';
+            window._cnl.r = ''; window._cnl.o = ''; window._cnl.w = ''; window._cnl.s = ''; window._cnl.p = '';
             if (navigator.vibrate) navigator.vibrate(30);
             try { render(); } catch (e) {}
             try { _tkToast('❌ سُجّل إلغاء الطلب: ' + r + ' — #' + o); } catch (e) {}
@@ -4726,18 +4809,18 @@
         window._cnlFormHtml = () => {
             const c = window._cnl;
             return '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" value="' + sanitize(c.r) + '" oninput="window._cnl.r=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-order\');if(n)n.focus();}">'
-                + '<input id="cnl-order" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" value="' + sanitize(c.o) + '" oninput="window._cnl.o=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-why\');if(n)n.focus();}"></div>'
-                + '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-why" type="text" maxlength="150" autocomplete="off" placeholder="سبب إلغاء الطلب *" class="tk-input" style="direction:rtl;" value="' + sanitize(c.w) + '" oninput="window._cnl.w=this.value" onkeydown="if(event.key===\'Enter\')window.addCancel()"></div>'
-                + '<div class="tk-row" style="margin:0;"><button type="button" onclick="window.addCancel()" class="tk-btn" style="width:100%;background:#fff7ed;color:#9a3412;border-color:#fed7aa;">➕ إضافة</button></div>';
+                + '<input id="cnl-order" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" value="' + sanitize(c.o) + '" oninput="window._cnl.o=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-sel\');if(n)n.focus();}"></div>'
+                + '' + window._cnlWhyHtml()
+                + '<div class="tk-row" style="margin:0;gap:6px;"><button type="button" onclick="window.addCancel()" class="tk-btn" style="flex:1;background:#fff7ed;color:#9a3412;border-color:#fed7aa;">➕ إضافة</button><button type="button" onclick="window.openCnlTicket()" class="tk-btn" style="flex:0 0 40%;background:#eef2ff;color:#4338ca;border-color:#c7d2fe;">🎫 تذكرة</button></div>';
         };
         window._cnlBlockHtml = () => {
-            const c = window._cnl, open = !!(c.open || c.r || c.o || c.w);
+            const c = window._cnl, open = !!(c.open || c.r || c.o || c.w || c.s);
             return '<div style="margin-bottom:6px;"><button type="button" onclick="window.toggleCnl()" style="display:block;width:100%;font-family:inherit;cursor:pointer;font-weight:900;font-size:0.85rem;color:#9a3412;text-align:center;background:#fff7ed;border:1px solid #fed7aa;border-radius:' + (open ? '12px 12px 0 0' : '12px') + ';padding:7px;">❌ سبب إلغاء الطلب ' + (open ? '▴' : '▾') + '</button>'
                 + (open ? '<div style="border:1px solid #fed7aa;border-top:none;border-radius:0 0 12px 12px;padding:6px;background:#fffaf5;">'
                     + '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" value="' + sanitize(c.r) + '" oninput="window._cnl.r=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-order\');if(n)n.focus();}">'
-                    + '<input id="cnl-order" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" value="' + sanitize(c.o) + '" oninput="window._cnl.o=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-why\');if(n)n.focus();}"></div>'
-                    + '<div class="tk-row" style="margin-bottom:6px;"><input id="cnl-why" type="text" maxlength="150" autocomplete="off" placeholder="سبب إلغاء الطلب *" class="tk-input" style="direction:rtl;" value="' + sanitize(c.w) + '" oninput="window._cnl.w=this.value" onkeydown="if(event.key===\'Enter\')window.addCancel()"></div>'
-                    + '<div class="tk-row"><button type="button" onclick="window.addCancel()" class="tk-btn" style="width:100%;background:#fff7ed;color:#9a3412;border-color:#fed7aa;">➕ إضافة</button></div></div>' : '')
+                    + '<input id="cnl-order" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" value="' + sanitize(c.o) + '" oninput="window._cnl.o=this.value" onkeydown="if(event.key===\'Enter\'){var n=document.getElementById(\'cnl-sel\');if(n)n.focus();}"></div>'
+                    + '' + window._cnlWhyHtml()
+                    + '<div class="tk-row" style="gap:6px;"><button type="button" onclick="window.addCancel()" class="tk-btn" style="flex:1;background:#fff7ed;color:#9a3412;border-color:#fed7aa;">➕ إضافة</button><button type="button" onclick="window.openCnlTicket()" class="tk-btn" style="flex:0 0 40%;background:#eef2ff;color:#4338ca;border-color:#c7d2fe;">🎫 تذكرة</button></div></div>' : '')
                 + '</div>' + window._cnlStackHtml();
         };
         // ===== طلب متأخر +80 دقيقة (كل الموظفين) + استبدال سائق (الموزّع) =====
@@ -4952,9 +5035,14 @@
             }
             let accWhy = '';
             if (!late && baseKind === 'accept') {
-                const rw = document.getElementById('acc-why');
-                accWhy = rw ? rw.value.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
-                if (!accWhy && ACCEPT_REASON_REQUIRED) { alert('⚠️ اكتب السبب أولاً'); if (rw) rw.focus(); return; }
+                const rs = document.getElementById('acc-sel'), rw = document.getElementById('acc-why');
+                const _sel = rs ? rs.value : (window._accSel || '');
+                if (_sel === ACCEPT_OTHER) {
+                    const _det = rw ? rw.value.trim().replace(/\s+/g, ' ').slice(0, 80) : '';
+                    if (!_det) { alert('⚠️ اكتب تفاصيل السبب أولاً'); if (rw) rw.focus(); return; }
+                    accWhy = 'سبب آخر: ' + _det;
+                } else accWhy = _sel;
+                if (!accWhy && ACCEPT_REASON_REQUIRED) { alert('⚠️ اختر السبب أولاً'); if (rs) rs.focus(); return; }
             }
             if (!_checkWriteRate()) return;
             if (b && b.classList) b.classList.add('busy');
@@ -4970,7 +5058,7 @@
                 return;
             }
             if (late) { const _dsel = document.getElementById('late-dur'); const _dur = (_dsel && _dsel.value) || window._ld.dur || ''; sendLateToSheet(v, reason.split(' — المطعم: ')[0] + (_dur ? ' | مدة التأخير: ' + _dur : ''), lateRest); }
-            if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName, accWhy); window._accPush(v, restName, accWhy); window._accR = ''; window._accWhy = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; const _rw = document.getElementById('acc-why'); if (_rw) _rw.value = ''; }
+            if (!late && baseKind === 'accept') { sendAcceptToSheet(v, restName, accWhy); window._accPush(v, restName, accWhy); window._accR = ''; window._accWhy = ''; window._accSel = ''; window._accPh = ''; const _rs = document.getElementById('acc-sel'); if (_rs) _rs.value = ''; const _rn = document.getElementById('acc-rest'); if (_rn) _rn.value = ''; const _rw = document.getElementById('acc-why'); if (_rw) _rw.value = ''; }
             inp.value = '';
             if (late) { const _ri = document.getElementById('late-reason'); if (_ri) _ri.value = ''; window._ld.o = ''; window._ld.r = ''; window._ld.rest = ''; const _lr2 = document.getElementById('late-rest'); if (_lr2) _lr2.value = ''; window._ld.other = false; window._ld.open = false; window._ld.show = false; }
             if (navigator.vibrate) navigator.vibrate(30);
@@ -6072,7 +6160,7 @@
                         const _lateOpen = !!(window._ld.show || window._ld.o || window._ld.r || window._ld.rest || window._ld.other);
                         const _latePh = _k === 'accept' ? 'رقم طلب متأخر في التجهيز' : 'رقم طلب متأخر للوصول للزبون';
                         const _lateTx = _k === 'accept' ? 'متأخر تجهيز' : 'متأخر وصول';
-                        const _accOpen = !!(window._ld.acc || window._accR || window._accWhy);
+                        const _accOpen = !!(window._ld.acc || window._accR || window._accWhy || window._accSel);
                         const _lateHtml = `
                         <div style="background:#fff7f7;border:1px solid #fecaca;border-radius:16px;padding:10px;margin-bottom:8px;">
                         <div style="font-weight:900;font-size:0.8rem;color:#b91c1c;text-align:center;margin-bottom:8px;">⏱️ تسجيل طلب متأخر</div>
@@ -6087,8 +6175,8 @@
                         `;
                         taskExtra = `${_k === 'accept' ? `<div style="margin-bottom:6px;"><button type="button" onclick="window.toggleAcc()" style="display:block;width:100%;font-family:inherit;cursor:pointer;font-weight:900;font-size:0.85rem;color:#166534;text-align:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:${_accOpen ? '12px 12px 0 0' : '12px'};padding:7px;">📞 قبول طلب كول سنتر ${_accOpen ? '▴' : '▾'}</button>${_accOpen ? `<div style="border:1px solid #bbf7d0;border-top:none;border-radius:0 0 12px 12px;padding:6px;background:#f7fef9;">
                         <div class="tk-row" style="margin-bottom:6px;"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-input');if(d&&!d.value.trim()){d.focus();}else{window.addOrder();}}"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{var w=document.getElementById('acc-why');if(w&&!w.value.trim()){w.focus();}else{window.addOrder();}}}"></div>
-                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-why" type="text" maxlength="100" autocomplete="off" placeholder="السبب${ACCEPT_REASON_REQUIRED ? ' *' : ''}" class="tk-input" style="direction:rtl;" oninput="window._accWhy=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"></div>
-                        <div class="tk-row"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="width:100%;">➕ إضافة</button></div></div>` : ''}</div>
+                        ${window._accWhyHtml()}
+                        <div class="tk-row" style="gap:6px;"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:1;">➕ إضافة</button><button type="button" onclick="window.openAccTicket()" class="tk-btn" style="flex:0 0 40%;background:#eef2ff;color:#4338ca;border-color:#c7d2fe;">🎫 تذكرة</button></div></div>` : ''}</div>
                         ${window._accStackHtml()}
                         ${window._cnlBlockHtml()}` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب (توزيع يدوي)" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
                         <div class="tk-row" style="gap:6px;margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">🚴 كفالة الكابتن ${_capOpen ? '▴' : '▾'}</button><button type="button" class="tk-btn" onclick="window.toggleLateBox()" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر ${_lateOpen ? '▴' : '▾'}</button></div>${_capOpen ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-order');if(d)d.focus();}"><input id="disp-order" type="text" maxlength="30" autocomplete="off" inputmode="text" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" oninput="window._dispO=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
@@ -6105,8 +6193,8 @@
                             const _hubOpen = !!(window._ld.hub || _tab);
                             const _tabName = { acc: '📞 قبول طلب', cnl: '❌ إلغاء طلب', cap: '🚴 كفالة الكابتن', late: '⏱️ طلب متأخر', x80: '🚨 متأخر +80 دقيقة' }[_tab] || '';
                             if (_tab === 'acc') _panel = `<div class="ord-panel" style="--c:#16a34a;"><div class="op-t">📞 قبول طلب كول سنتر</div>` + `                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-input');if(d&&!d.value.trim()){d.focus();}else{window.addOrder();}}"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{var w=document.getElementById('acc-why');if(w&&!w.value.trim()){w.focus();}else{window.addOrder();}}}"></div>
-                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-why" type="text" maxlength="100" autocomplete="off" placeholder="السبب${ACCEPT_REASON_REQUIRED ? ' *' : ''}" class="tk-input" style="direction:rtl;" oninput="window._accWhy=this.value" onkeydown="if(event.key==='Enter')window.addOrder()"></div>
-                        <div class="tk-row"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="width:100%;">➕ إضافة</button></div>` + `</div>` + window._accStackHtml();
+                        ${window._accWhyHtml()}
+                        <div class="tk-row" style="gap:6px;"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:1;">➕ إضافة</button><button type="button" onclick="window.openAccTicket()" class="tk-btn" style="flex:0 0 40%;background:#eef2ff;color:#4338ca;border-color:#c7d2fe;">🎫 تذكرة</button></div>` + `</div>` + window._accStackHtml();
                             else if (_tab === 'cnl') _panel = '<div class="ord-panel" style="--c:#ea580c;"><div class="op-t">❌ سبب إلغاء الطلب</div>' + window._cnlFormHtml() + '</div>' + window._cnlStackHtml();
                             else if (_tab === 'cap') _panel = `<div class="ord-panel" style="--c:#2563eb;"><div class="op-t">🚴 كفالة الكابتن</div>${_capInner}</div>`;
                             else if (_tab === 'late') _panel = _lateHtml;
@@ -6167,7 +6255,7 @@
                     </div>`;
             }
             const _di = document.getElementById('disp-input'), _dv = _di ? _di.value : '', _df = !!_di && document.activeElement === _di;
-            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'acc-why', 'cnl-rest', 'cnl-order', 'cnl-why', 'disp-rest', 'disp-order', 'disp-driver', 'x80-rest', 'x80-order', 'x80-why', 'drv-order', 'drv-why', 'drv-name', 'qr-ph', 'qr-o', 'qr-txt'].indexOf(_ae.id) !== -1) ? _ae.id : null;
+            const _ae = document.activeElement, _aeId = (_ae && ['late-input', 'late-reason', 'acc-rest', 'acc-why', 'acc-ph', 'cnl-rest', 'cnl-order', 'cnl-why', 'cnl-ph', 'disp-rest', 'disp-order', 'disp-driver', 'x80-rest', 'x80-order', 'x80-why', 'drv-order', 'drv-why', 'drv-name', 'qr-ph', 'qr-o', 'qr-txt'].indexOf(_ae.id) !== -1) ? _ae.id : null;
             const _aeSel = _aeId ? [_ae.selectionStart, _ae.selectionEnd] : null;
             document.getElementById('app').innerHTML = h;
             if (_dv || _df) {
