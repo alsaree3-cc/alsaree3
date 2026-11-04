@@ -3106,6 +3106,19 @@
                 + tile('🏅 أفضل موظف الأسبوع', 'من ' + wk.slice(5) + ' (يبدأ السبت)', pick(wRows, 2), '#eff6ff', '#bfdbfe', '#1d4ed8')
                 + tile('🏆 أفضل موظف الشهر', 'من 1 ' + today.slice(5, 7), pick(monthRows, 3), '#fffbeb', '#fde68a', '#92400e') + '</div>';
         };
+        // نحسب نجم الشهر الماضي (بعد ما كمل) ونحفظه مرة وحدة — إذا المسؤول ما اختار بنفسه
+        window._ensurePrevChampion = async () => {
+            if (loggedInId !== '__admin__' || !window._saveChampion) return;
+            const P = window._prevMonthRange(), c = window._champ;
+            if (c && c.month === P.ym) return;
+            let man = null; try { man = localStorage.getItem('a3_champ_manual_' + P.ym); } catch (e) {}
+            if (man) return;
+            const rows = await window.loadScoreCard(P.from, P.to, true);
+            const d = (rows || []).filter(r => r.hasData && r.days > 0);
+            const mx = d.reduce((m, r) => Math.max(m, r.days), 0), need = Math.max(3, Math.ceil(mx * 0.6));
+            const w = d.filter(r => r.days >= need)[0];
+            if (w) await window._saveChampion(w, P.to);
+        };
         window.refreshTopPerformer = async (force) => {
             if (loggedInId !== '__admin__' || _eomBusy) return;
             const box = document.getElementById('eom-banner');
@@ -3127,18 +3140,18 @@
                 const medals = ['🥇', '🥈', '🥉'];
                 const top = ranked.slice(0, 3);
                 const w = top[0];
-                if (!_fewData && window._saveChampion) window._saveChampion(w, today);
+                try { await window._ensurePrevChampion(); } catch (e) { console.warn('[PrevChampion]', e); }
                 const monthName = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'][Number(today.slice(5, 7)) - 1];
                 bx.innerHTML = '<div style="border:1px solid #fcd34d;background:linear-gradient(135deg,#fffbeb,#fef3c7);border-radius:18px;padding:12px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:14px;">'
                     + '<div style="font-size:2rem;line-height:1;">🏆</div>'
-                    + '<div style="flex:1;min-width:200px;"><div style="font-size:0.75rem;font-weight:800;color:#92400e;">موظف الشهر حتى الآن — ' + monthName + ' (من 1 إلى ' + Number(today.slice(8, 10)) + ')</div>'
+                    + '<div style="flex:1;min-width:200px;"><div style="font-size:0.75rem;font-weight:800;color:#92400e;">المتصدّر حتى الآن — ' + monthName + ' (من 1 إلى ' + Number(today.slice(8, 10)) + ') · غير نهائي، موظف الشهر يُعلن بعد ما يكمل الشهر</div>'
                     + '<div style="font-size:1.25rem;font-weight:900;color:#78350f;">' + sanitize(w.name) + ' <span style="font-size:0.95rem;color:#16a34a;">' + Math.round(w.total) + '%</span></div>'
                     + '<div style="font-size:0.72rem;font-weight:700;color:#a16207;">' + w.days + ' يوم دوام' + (w.absent ? ' · ' + w.absent + ' غياب' : '') + ' · حضور ' + Math.round(w.att || 0) + '% · بريك ' + Math.round(w.brk || 0) + '% · ساعات ' + (w.hrs === null ? '-' : Math.round(w.hrs) + '%') + (w.ord ? ' · مكافأة طلبات +' + (Math.round(w.ord / 100 * SC_WEIGHTS.ord * 10) / 10) : '') + '</div>'
                     + '<div style="font-size:0.68rem;font-weight:700;color:#b45309;">' + (_fewData ? '⚠️ بداية الشهر: بيانات قليلة، الترتيب غير نهائي' : 'يُحتسب فقط من داوم ' + _minDays + ' أيام فأكثر') + ' · يتحدّث تلقائياً</div></div>'
                     + '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + top.map((r, i) => '<div style="background:#fff;border:1px solid #fde68a;border-radius:12px;padding:6px 12px;font-size:0.8rem;font-weight:800;color:#334155;">' + medals[i] + ' ' + sanitize(r.name) + ' · ' + Math.round(r.total) + '%</div>').join('') + '</div>'
                     + '<div style="display:flex;gap:6px;"><button onclick="window.openScoreCard()" style="background:#fff;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:5px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">التفاصيل</button>'
                     + '<button onclick="window.openEmpEval()" style="background:#fff;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:5px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">📈 النواقص</button>'
-                    + '<button onclick="window.celebrateNow()" style="background:linear-gradient(135deg,#fde68a,#fbbf24);border:1px solid #f59e0b;color:#78350f;border-radius:10px;padding:5px 12px;font-family:Cairo,sans-serif;font-weight:900;font-size:0.78rem;cursor:pointer;">🎉 احتفل الآن</button>'
+                    + '<button onclick="window.celebrateNow()" style="background:linear-gradient(135deg,#fde68a,#fbbf24);border:1px solid #f59e0b;color:#78350f;border-radius:10px;padding:5px 12px;font-family:Cairo,sans-serif;font-weight:900;font-size:0.78rem;cursor:pointer;">🏆 نجم الشهر الماضي</button>'
                     + '<button onclick="window.refreshTopPerformer(true)" style="background:#fff;border:1px solid #cbd5e1;color:#475569;border-radius:10px;padding:5px 10px;font-family:Cairo,sans-serif;font-weight:800;font-size:0.78rem;cursor:pointer;">🔄</button></div></div>';
             } catch (e) { console.warn('[TopPerformer]', e); }
             finally { _eomBusy = false; }
@@ -7562,7 +7575,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.01-restaurants</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.04-eom</div>
 </body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
@@ -7940,24 +7953,29 @@
         const MONTHS = ['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
         window._champ = null;   // { employee_key, name, month, total }
         const ym = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        // موظف الشهر يُعلن بس بعد ما يكمل الشهر: نجم الشهر = الشهر الماضي (بتوقيت بغداد)
+        window._prevMonthRange = () => {
+            const t = getTodayDateString(); let y = Number(t.slice(0, 4)), m = Number(t.slice(5, 7)) - 1;
+            if (m < 1) { m = 12; y--; }
+            const mm = String(m).padStart(2, '0'), last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+            return { ym: y + '-' + mm, from: y + '-' + mm + '-01', to: y + '-' + mm + '-' + String(last).padStart(2, '0') };
+        };
+        const _todayDay = () => Number(getTodayDateString().slice(8, 10));
         const monthLabel = m => { const p = String(m || '').split('-'); return MONTHS[(Number(p[1]) || 1) - 1] + ' ' + (p[0] || ''); };
         const isLastDay = d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n.getDate() === 1; };
-        const prevYm = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return ym(d); };
+        const prevYm = () => window._prevMonthRange().ym;
 
         // هل نعرض التاج؟ المتصدّر الحالي طول الشهر، ونجم الشهر الماضي أول أسبوع من الشهر الجديد
         window._champActive = () => {
             const c = window._champ; if (!c || !c.employee_key) return null;
-            const now = new Date();
-            if (c.month === ym(now)) return c;
-            if (c.month === prevYm() && now.getDate() <= 7) return c;
+            if (c.month === prevYm() && _todayDay() <= 7) return c;   // التاج لنجم الشهر الماضي أول أسبوع بس
             return null;
         };
         window._isChamp = id => { const c = window._champActive(); return !!(c && c.employee_key === id); };
         window._champCls = id => window._isChamp(id) ? 'a3-champ' : '';
         window._champTag = id => {
             const c = window._champActive(); if (!c || c.employee_key !== id) return '';
-            const final = c.month !== ym(new Date()) || isLastDay(new Date());
-            return '<div class="a3-champ-row"><span class="a3-champ-tag" onclick="window.showChampion(true)" title="اضغط للاحتفال">🏆 ' + (final ? 'نجم شهر ' : 'الأول هذا الشهر · ') + sanitize(final ? monthLabel(c.month) : (Math.round(Number(c.total) || 0) + '%')) + '</span></div>';
+            return '<div class="a3-champ-row"><span class="a3-champ-tag" onclick="window.showChampion(true)" title="اضغط للاحتفال">🏆 نجم شهر ' + sanitize(monthLabel(c.month)) + '</span></div>';
         };
 
         // جهاز المسؤول: يحفظ المتصدّر بالسيرفر (لما البيانات تكفي)
@@ -7996,10 +8014,9 @@
         // الاحتفال: آخر يوم بالشهر (المتصدّر الحالي) + أول يومين بالشهر الجديد (نجم الشهر الماضي) — مرة باليوم لكل جهاز
         function maybeCelebrate() {
             const c = window._champActive(); if (!c) return;
-            const now = new Date();
-            const due = (c.month === ym(now) && isLastDay(now)) || (c.month === prevYm() && now.getDate() <= 2);
+            const due = c.month === prevYm() && _todayDay() <= 7;   // أول أسبوع بالشهر الجديد، مرة وحدة لكل جهاز
             if (!due) return;
-            const key = 'a3_cel_' + c.month + '_' + now.getDate() + '_' + String(c.employee_key) + '_' + String(loggedInId);   // إذا تغيّر النجم يطلع الاحتفال من جديد
+            const key = 'a3_cel_' + c.month + '_' + String(c.employee_key) + '_' + String(loggedInId);   // إذا تغيّر النجم يطلع الاحتفال من جديد
             try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) {}
             setTimeout(() => window.showChampion(false), 1200);
         }
@@ -8101,12 +8118,12 @@
         const MONTHS = ['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
         const isLastDay = d => { const n = new Date(d); n.setDate(n.getDate() + 1); return n.getDate() === 1; };
         // أيام الاحتفال: آخر يوم بالشهر + أول يومين بالشهر الجديد
-        window._isFestDay = () => { const d = new Date(); return isLastDay(d) || d.getDate() <= 2; };
+        window._isFestDay = () => Number(getTodayDateString().slice(8, 10)) <= 3;   // أول 3 أيام بالشهر الجديد (بعد ما كمل الشهر)
 
         function festHtml() {
             const c = window._champActive ? window._champActive() : null;
             const nm = c ? ((employeesData[c.employee_key] && employeesData[c.employee_key].name) || c.name || '') : '';
-            const d = new Date(); const mIdx = isLastDay(d) ? d.getMonth() : (d.getMonth() + 11) % 12;
+            const mIdx = Number(window._prevMonthRange().ym.slice(5, 7)) - 1;
             const text = nm ? '🏆 مبروك ' + sanitize(nm) + ' — نجم شهر ' + MONTHS[mIdx] + ' 🎉' : '🎉 ختام شهر ' + MONTHS[mIdx] + ' — شكراً للجميع 💚';
             const cols = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#d6fd26'];
             let flags = '';
@@ -8143,8 +8160,9 @@
         window.celebrateNow = async () => {
             if (loggedInId !== '__admin__') return;
             const today = getTodayDateString();
-            _modal('champ-pick-overlay', '🏆 اختار نجم الشهر', '<div style="text-align:center;color:#94a3b8;font-weight:700;padding:16px;">⏳ جاري الحساب...</div>', 440);
-            const rows = await window.loadScoreCard(today.slice(0, 7) + '-01', today, true).catch(() => null);
+            const P = window._prevMonthRange();
+            _modal('champ-pick-overlay', '🏆 اختار نجم الشهر الماضي (' + P.ym + ')', '<div style="text-align:center;color:#94a3b8;font-weight:700;padding:16px;">⏳ جاري الحساب...</div>', 440);
+            const rows = await window.loadScoreCard(P.from, P.to, true).catch(() => null);
             const body = document.getElementById('champ-pick-overlay-body'); if (!body) return;
             const withData = (rows || []).filter(r => r.hasData && r.days > 0);
             const maxDays = withData.reduce((m, r) => Math.max(m, r.days), 0);
@@ -8169,10 +8187,10 @@
         window._pickChampion = async (i) => {
             const r = (window._champPickList || [])[i]; if (!r) return;
             if (!confirm('🏆 نجم الشهر: ' + r.name + '\n\nنطلّع الاحتفال للكل؟')) return;
-            const today = getTodayDateString();
-            const ok = await window._saveChampion({ k: r.k, name: r.name, total: r.total == null ? 0 : r.total }, today, true);
+            const P = window._prevMonthRange();
+            const ok = await window._saveChampion({ k: r.k, name: r.name, total: r.total == null ? 0 : r.total }, P.to, true);
             if (ok === false) return;
-            try { localStorage.setItem('a3_champ_manual_' + today.slice(0, 7), r.k); } catch (e) {}
+            try { localStorage.setItem('a3_champ_manual_' + P.ym, r.k); } catch (e) {}
             try { Object.keys(localStorage).filter(k => k.startsWith('a3_cel_')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
             const o = document.getElementById('champ-pick-overlay'); if (o) o.remove();
             try { window.refreshTopPerformer(true); } catch (e) {}
