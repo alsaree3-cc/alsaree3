@@ -2555,7 +2555,7 @@
                     <button style="${_MR_BTN}background:linear-gradient(135deg,#fde68a,#fbbf24);border-color:#f59e0b;color:#78350f;font-weight:900;" onclick="window.openFullReport()">🏅 التقرير الشامل (ليش الأول + كل التفاصيل)</button>
                     <button style="${_MR_BTN}background:#f0fdf4;border-color:#86efac;color:#166534;" onclick="window.saveMonthReport()">💾 حفظ التقرير</button>
                     <button style="${_MR_BTN}" onclick="window.mrPdf()">📄 PDF</button>
-                    <button style="${_MR_BTN}" onclick="window.mrCsv()">📊 Excel / CSV</button>
+                    <button style="${_MR_BTN}" onclick="window.mrCsv()">📊 Excel</button>
                     <button style="${_MR_BTN}background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8;" onclick="window.mrShowSaved()">📚 التقارير المحفوظة</button>
                 </div>
                 <div id="mr-msg" style="font-size:0.82rem;font-weight:800;margin-bottom:8px;min-height:1em;"></div>
@@ -2971,17 +2971,35 @@
                 _mrMsg('✅ تم تحميل PDF', '#16a34a');
             } catch (e) { console.error('[MonthReportPDF]', e); _mrMsg('❌ فشل إنشاء PDF', '#dc2626'); }
         };
-        window.mrCsv = () => {
+        // تحميل التقرير كملف Excel حقيقي (.xlsx) — كل عمود بخانته، بالنسب والألوان
+        window.mrCsv = async () => {
             if (loggedInId !== '__admin__') return;
             const L = window._mrLast; if (!L || !L.rows || !L.rows.length) { _mrMsg('⚠️ اعرض التقرير أولاً', '#d97706'); return; }
-            const q = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""').replace(/^([=+\-@])/, "'$1") + '"';
-            const lines = [['الموظف', 'أيام الدوام', 'OFF', 'غياب', 'إجازة', 'إذن زمني (س)', 'نسبة الفترة %', 'البريك (د)', 'الراحة (د)', 'ساعات العمل'].map(q).join(',')];
-            L.rows.forEach(a => { const p = _mrPct(a); lines.push([a.name || a.k, a.days, a.off, a.absent, a.leave, a.permH, p === null ? '' : p, a.br, a.rest, _mrHrs(a.secs)].map(q).join(',')); });
-            const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-            const url = URL.createObjectURL(blob), a = document.createElement('a');
-            a.href = url; a.download = 'Alsaree3_Monthly_Report_' + L.from + '_to_' + L.to + '.csv';
-            document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
-            _mrMsg('✅ تم تحميل الملف', '#16a34a');
+            _mrMsg('⏳ جاري تجهيز Excel...');
+            try {
+                const ExcelJS = await _loadExcelJS();
+                const wb = new ExcelJS.Workbook(); wb.creator = 'Alsaree3';
+                const ws = wb.addWorksheet('تقرير الشهر', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 3 }] });
+                const H = ['الموظف', 'أيام الدوام', 'OFF', 'غياب', 'إجازة', 'إذن زمني (س)', 'نسبة الفترة', 'البريك (د)', 'الراحة (د)', 'ساعات العمل'];
+                const bd = { top: { style: 'thin', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }, left: { style: 'thin', color: { argb: 'FFE2E8F0' } }, right: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
+                ws.mergeCells(1, 1, 1, H.length); const t = ws.getCell(1, 1); t.value = '📈 تقرير الشهر — عالسريع   (' + L.from + ' ← ' + L.to + ')'; t.font = { bold: true, size: 14, name: 'Arial', color: { argb: 'FF1E1B4B' } }; t.alignment = { horizontal: 'center' }; ws.getRow(1).height = 26;
+                const hr = ws.getRow(3); hr.values = H; hr.height = 26;
+                hr.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } }; c.font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Arial' }; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; c.border = bd; });
+                L.rows.forEach((a, i) => {
+                    const p = _mrPct(a);
+                    const r = ws.addRow([a.name || a.k, a.days, a.off, a.absent, a.leave, a.permH, p === null ? null : p / 100, a.br, a.rest, _mrHrs(a.secs)]);
+                    r.eachCell({ includeEmpty: true }, c => { c.border = bd; c.alignment = { horizontal: 'center', vertical: 'middle' }; c.font = { name: 'Arial' }; if (i % 2) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2FF' } }; });
+                    r.getCell(1).font = { name: 'Arial', bold: true }; r.getCell(7).numFmt = '0.0%';
+                    if (p !== null) r.getCell(7).font = { name: 'Arial', bold: true, color: { argb: p >= 90 ? 'FF16A34A' : p >= 75 ? 'FFD97706' : 'FFDC2626' } };
+                });
+                ws.columns.forEach((c, i) => { c.width = i === 0 ? 22 : 14; });
+                const buf = await wb.xlsx.writeBuffer();
+                const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob), a = document.createElement('a');
+                a.href = url; a.download = 'Alsaree3_Monthly_Report_' + L.from + '_to_' + L.to + '.xlsx';
+                document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+                _mrMsg('✅ تم تحميل Excel', '#16a34a');
+            } catch (e) { console.error('[MonthReportXLSX]', e); _mrMsg('❌ فشل إنشاء Excel: ' + ((e && e.message) || ''), '#dc2626'); }
         };
 
         // ===== بطاقة الأداء الشهرية (للمسؤول): درجة من 100 بأوزان قابلة للتعديل =====
@@ -7946,7 +7964,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.05-fullreport</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.05-excel</div>
 </body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
