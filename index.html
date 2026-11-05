@@ -2613,9 +2613,11 @@
                 });
                 Object.keys(agg).forEach(k => { agg[k].leave = leaveSet[k] ? leaveSet[k].size : 0; agg[k].permH = Math.round((permHours[k] || 0) * 100) / 100; });
                 const rows = Object.values(agg).sort((p, q) => String(p.name).localeCompare(String(q.name)));
-                window._mrLast = { from, to, rows };
+                let win = null;
+                if (window._isFullPastMonth(from, to)) { try { const sc = await window.loadScoreCard(from, to, true); win = await window._winnerFor(from, to, sc || []); } catch (e) { console.warn('[MonthWinner]', e); } }
+                window._mrLast = { from, to, rows, win };
                 if (!rows.length) { box.innerHTML = '<p>لا توجد بيانات لهذه المدة.</p>'; return; }
-                box.style.color = '#000'; box.style.padding = '0'; box.innerHTML = _mrTableHtml(rows);
+                box.style.color = '#000'; box.style.padding = '0'; box.innerHTML = window._winnerBannerHtml(win, from, to) + _mrTableHtml(rows);
             } catch (e) { console.error('[MonthReport]', e); box.style.color = '#dc2626'; box.innerHTML = '❌ فشل تحميل التقرير'; }
         };
         function _mrTableHtml(rows) {
@@ -2668,6 +2670,16 @@
             if (!rows) throw new Error('تعذّر تحميل البيانات');
             const R = rows.filter(r => r.hasData);
             R.forEach(r => { r.st = _frStats(r); });
+            // شهر مخلّص ومحفوظ بالأرشيف: نعتمد الأرقام والترتيب الرسمي (حتى ما يتبدل الفائز)
+            const win = await window._winnerFor(from, to, R).catch(() => null);
+            if (win && win.source === 'official') {
+                const idx = {}; win.off.rows.forEach((o, i) => { idx[o.k] = { o, i }; });
+                R.forEach(r => { const x = idx[r.k]; r._oi = x ? x.i : 999; if (x) { r.liveTotal = r.total; ['total', 'att', 'brk', 'hrs', 'ord'].forEach(f => { if (x.o[f] !== null && x.o[f] !== undefined) r[f] = Number(x.o[f]); }); } });
+                R.sort((a, b) => a._oi - b._oi);
+                const wi = R.findIndex(r => String(r.k) === String(win.k)); if (wi > 0) R.unshift(R.splice(wi, 1)[0]);
+            } else if (win && win.source === 'manual') {
+                const wi = R.findIndex(r => String(r.k) === String(win.k)); if (wi > 0) R.unshift(R.splice(wi, 1)[0]);
+            }
             const avgOf = f => { const v = R.map(f).filter(x => x !== null && x !== undefined && !isNaN(x)); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
             const team = {
                 total: avgOf(r => r.total), att: avgOf(r => r.att), brk: avgOf(r => r.brk), hrs: avgOf(r => r.hrs), ord: avgOf(r => r.ord),
@@ -2679,7 +2691,7 @@
             const F = { att: r => r.att, brk: r => r.brk, hrs: r => r.hrs, ord: r => r.ord, lateMin: r => r.st.lateMin, usedAvg: r => r.st.usedAvg, orders: r => r.st.orders, onTime: r => r.st.onTime };
             Object.keys(F).forEach(k => { F[k].key = k; rankBy(F[k], !['lateMin', 'usedAvg'].includes(k)); });
             R.forEach(r => { r.notes = _frNotes(r, team, R.length); });
-            return { from, to, rows: R, all: rows, team, why: R.length ? _frWhy(R, team) : null };
+            return { from, to, rows: R, all: rows, team, win, why: R.length ? _frWhy(R, team) : null };
         }
         const _fr1 = v => (v === null || v === undefined || isNaN(v)) ? '-' : Math.round(v);
         const _frH = s => Math.floor((s || 0) / 3600) + 'س ' + Math.floor(((s || 0) % 3600) / 60) + 'د';
@@ -2830,7 +2842,7 @@
                     + '</tbody></table></div>';
                 const how = '<div style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:8px 10px;">📐 شلون تنحسب الدرجة: الحضور والالتزام ' + SC_WEIGHTS.att + '% + البريك والاستراحة ' + SC_WEIGHTS.brk + '% + ساعات الدوام ' + SC_WEIGHTS.hrs + '%، وفوكاها مكافأة القبول والتوزيع لحد ' + SC_WEIGHTS.ord + ' نقاط. إذا تساوت الدرجة، يتقدّم الأقل بريكاً واستراحة.</div>';
                 box.style.cssText = 'padding:0;color:#000;text-align:right;';
-                box.innerHTML = _frWhyHtml(D.why, T) + how + '<div style="font-weight:900;color:#334155;margin:6px 0;">📊 الترتيب</div>' + rk + '<div style="font-weight:900;color:#334155;margin:6px 0;">👥 تفاصيل كل موظف</div>' + D.rows.map((r, i) => _frEmpHtml(r, i, T)).join('');
+                box.innerHTML = window._winnerBannerHtml(D.win, from, to) + _frWhyHtml(D.why, T) + how + '<div style="font-weight:900;color:#334155;margin:6px 0;">📊 الترتيب</div>' + rk + '<div style="font-weight:900;color:#334155;margin:6px 0;">👥 تفاصيل كل موظف</div>' + D.rows.map((r, i) => _frEmpHtml(r, i, T)).join('');
             } catch (e) { console.error('[FullReport]', e); box.style.color = '#dc2626'; box.innerHTML = '❌ فشل تحميل التقرير'; }
         };
         // ===== Excel احترافي: الملخص + ليش الأول + تفاصيل كل موظف =====
@@ -2852,6 +2864,9 @@
                 const s1 = wb.addWorksheet('الملخص والترتيب', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 4 }] });
                 const H1 = ['الترتيب', 'الموظف', 'الدرجة النهائية', 'الحضور والالتزام', 'البريك والاستراحة', 'ساعات الدوام', 'مكافأة الطلبات', 'أيام الدوام', 'غياب', 'OFF', 'إجازة', 'أيام التأخير', 'مجموع التأخير (د)', 'الالتزام بالوقت', 'معدل البريك/يوم (د)', 'معدل الراحة/يوم (د)', 'ساعات العمل', 'القبول والتوزيع', 'معدل التقييم اليومي'];
                 title(s1, '🏅 التقرير الشامل لأداء الموظفين — عالسريع', H1.length);
+                if (D.win) { s1.mergeCells(3, 1, 3, H1.length); const wc = s1.getCell(3, 1);
+                    wc.value = '🏆 موظف شهر ' + window._ymLabel(D.win.ym) + ' — الفائز بالجائزة: ' + D.win.name + '   ·   الدرجة: ' + Math.round(Number(D.win.total) || 0) + '%   ·   ' + (D.win.source === 'official' ? 'نتيجة رسمية محفوظة بنهاية الشهر' : D.win.source === 'manual' ? 'اختيار المسؤول' : 'محسوب من البيانات الحالية');
+                    wc.font = { bold: true, size: 13, color: { argb: 'FF78350F' }, name: 'Arial' }; wc.fill = GOLD; wc.alignment = { horizontal: 'center', vertical: 'middle' }; s1.getRow(3).height = 26; }
                 styleHead(s1.getRow(4)); s1.getRow(4).values = H1; styleHead(s1.getRow(4));
                 D.rows.forEach((r, i) => {
                     const s = r.st;
@@ -2983,6 +2998,8 @@
                 const H = ['الموظف', 'أيام الدوام', 'OFF', 'غياب', 'إجازة', 'إذن زمني (س)', 'نسبة الفترة', 'البريك (د)', 'الراحة (د)', 'ساعات العمل'];
                 const bd = { top: { style: 'thin', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }, left: { style: 'thin', color: { argb: 'FFE2E8F0' } }, right: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
                 ws.mergeCells(1, 1, 1, H.length); const t = ws.getCell(1, 1); t.value = '📈 تقرير الشهر — عالسريع   (' + L.from + ' ← ' + L.to + ')'; t.font = { bold: true, size: 14, name: 'Arial', color: { argb: 'FF1E1B4B' } }; t.alignment = { horizontal: 'center' }; ws.getRow(1).height = 26;
+                if (L.win) { ws.mergeCells(2, 1, 2, H.length); const wc = ws.getCell(2, 1); wc.value = '🏆 موظف شهر ' + window._ymLabel(L.win.ym) + ' — الفائز بالجائزة: ' + L.win.name + '   ·   الدرجة: ' + Math.round(Number(L.win.total) || 0) + '%';
+                    wc.font = { bold: true, size: 13, color: { argb: 'FF78350F' }, name: 'Arial' }; wc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }; wc.alignment = { horizontal: 'center', vertical: 'middle' }; ws.getRow(2).height = 26; }
                 const hr = ws.getRow(3); hr.values = H; hr.height = 26;
                 hr.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } }; c.font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Arial' }; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; c.border = bd; });
                 L.rows.forEach((a, i) => {
@@ -3271,7 +3288,7 @@
         function _scSnapshotRows(rows, from, to, auto) {
             const rd = v => (v === null || v === undefined) ? null : Math.round(v), m = {};
             const at = new Date().toISOString().slice(0, 16).replace('T', ' ');
-            rows.forEach(r => { m[r.k] = { from, to, name: r.name, total: r.hasData ? Math.round(r.total) : null, att: rd(r.att), brk: rd(r.brk), tkt: rd(r.tkt), ord: rd(r.ord), hrs: rd(r.hrs), days: r.days, absent: r.absent, auto: !!auto, savedAt: at }; });
+            rows.forEach(r => { m[r.k] = { from, to, name: r.name, total: r.hasData ? Math.round(r.total) : null, raw: r.hasData ? Math.round((Number(r.raw) || 0) * 100) / 100 : null, used: r.usedAvg == null ? null : Math.round(r.usedAvg), att: rd(r.att), brk: rd(r.brk), tkt: rd(r.tkt), ord: rd(r.ord), hrs: rd(r.hrs), days: r.days, absent: r.absent, auto: !!auto, savedAt: at }; });
             return m;
         }
         async function _scSaveSnapshot(rows, from, to, auto) {
@@ -3405,17 +3422,84 @@
                 + tile('🏅 أفضل موظف الأسبوع', 'من ' + wk.slice(5) + ' (يبدأ السبت)', pick(wRows, 2), '#eff6ff', '#bfdbfe', '#1d4ed8')
                 + tile('🏆 أفضل موظف الشهر', 'من 1 ' + today.slice(5, 7), pick(monthRows, 3), '#fffbeb', '#fde68a', '#92400e') + '</div>';
         };
-        // نحسب نجم الشهر الماضي (بعد ما كمل) ونحفظه مرة وحدة — إذا المسؤول ما اختار بنفسه
+        // ===== الفائز الرسمي للشهر =====
+        // القاعدة: بعد ما يكمل الشهر، النتيجة الرسمية = النسخة المحفوظة تلقائياً بالأرشيف بنهاية الشهر.
+        // ليش؟ لأن إعادة الحساب بعدين ممكن تتغير (إجازة انعتمدت متأخر، استثناء يوم، تغيير الأوف أو الإعدادات) — فالفائز ما يتبدل.
+        window._offCache = window._offCache || {};
+        const _AR_MONTHS = ['كانون الثاني', 'شباط', 'آذار', 'نيسان', 'أيار', 'حزيران', 'تموز', 'آب', 'أيلول', 'تشرين الأول', 'تشرين الثاني', 'كانون الأول'];
+        window._ymLabel = ym => { const p = String(ym || '').split('-'); return (_AR_MONTHS[(Number(p[1]) || 1) - 1] || '') + ' ' + (p[0] || ''); };
+        // المؤهل للفوز: داوم 3 أيام على الأقل و60% من أكثر واحد داوم
+        function _eligibleRows(rows) {
+            const d = (rows || []).filter(r => r && r.total !== null && r.total !== undefined && (Number(r.days) || 0) > 0);
+            const mx = d.reduce((m, r) => Math.max(m, Number(r.days) || 0), 0), need = Math.max(3, Math.ceil(mx * 0.6));
+            return d.filter(r => (Number(r.days) || 0) >= need);
+        }
+        window._isFullPastMonth = (from, to) => {
+            if (!_isoDate(from) || !_isoDate(to) || !/-01$/.test(from) || from.slice(0, 7) !== to.slice(0, 7)) return false;
+            const y = Number(from.slice(0, 4)), m = Number(from.slice(5, 7)), last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+            return Number(to.slice(8, 10)) === last && to < getTodayDateString();
+        };
+        async function _officialMonth(from, to) {
+            const key = from + '_' + to, hit = window._offCache[key];
+            if (hit && Date.now() - hit.at < 300000) return hit.v;
+            const { data, error } = await supabaseClient.from('alsaree3_employees').select('employee_key,monthly_history');
+            if (error) throw error;
+            let savedAt = ''; const rows = [];
+            (data || []).forEach(r => {
+                const a = (_parseMH(r.monthly_history).cardArchive || {})[key];
+                if (!a || a.total === null || a.total === undefined) return;
+                rows.push({ k: r.employee_key, name: a.name || r.employee_key, total: Number(a.total), raw: a.raw == null ? Number(a.total) : Number(a.raw), used: a.used, att: a.att, brk: a.brk, hrs: a.hrs, ord: a.ord, days: a.days, absent: a.absent });
+                if (String(a.savedAt || '') > savedAt) savedAt = String(a.savedAt || '');
+            });
+            rows.sort((p, q) => (q.raw - p.raw) || ((p.used == null ? 1e9 : p.used) - (q.used == null ? 1e9 : q.used)) || ((q.att || 0) - (p.att || 0)));
+            const elig = _eligibleRows(rows);
+            const v = elig.length ? { key, savedAt, rows, winner: elig[0] } : null;
+            window._offCache[key] = { at: Date.now(), v };
+            return v;
+        }
+        // منو الفائز لفترة شهر كامل مخلّص؟ (اختيار المسؤول ← المحفوظ بالأرشيف ← الحساب الحالي)
+        window._winnerFor = async (from, to, liveRows) => {
+            if (!window._isFullPastMonth(from, to)) return null;
+            const ym = from.slice(0, 7), c = window._champ;
+            let man = null; try { man = localStorage.getItem('a3_champ_manual_' + ym); } catch (e) {}
+            const live = _eligibleRows((liveRows || []).filter(r => r.hasData))[0] || null;
+            if (man && c && c.month === ym) return { ym, k: c.employee_key, name: c.name, total: c.total, source: 'manual' };
+            const off = await _officialMonth(from, to).catch(() => null);
+            if (off) return { ym, k: off.winner.k, name: off.winner.name, total: off.winner.total, source: 'official', savedAt: off.savedAt, off, liveName: (live && String(live.k) !== String(off.winner.k)) ? live.name : '' };
+            if (live) return { ym, k: live.k, name: live.name, total: Math.round(live.total), source: 'live' };
+            return null;
+        };
+        window._winnerBannerHtml = (W, from, to) => {
+            if (!W) {
+                if (from && to && !window._isFullPastMonth(from, to)) return '<div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:14px;padding:10px 12px;margin-bottom:12px;font-weight:800;color:#475569;font-size:0.85rem;">📌 هذي الفترة مو شهر كامل مخلّص. موظف الشهر الرسمي يطلع بعد ما يكمل الشهر.</div>';
+                return '';
+            }
+            const src = W.source === 'official' ? '✅ النتيجة الرسمية المعتمدة: محفوظة تلقائياً بالأرشيف بنهاية الشهر' + (W.savedAt ? ' (' + sanitize(W.savedAt) + ')' : '') + '، وما تتغيّر.'
+                : W.source === 'manual' ? '✍️ اختاره المسؤول بنفسه.'
+                : '⚠️ ماكو نسخة محفوظة لهذا الشهر بالأرشيف، فالفائز محسوب من البيانات الحالية.';
+            return '<div style="background:linear-gradient(135deg,#fef9c3,#fde68a);border:2px solid #f59e0b;border-radius:18px;padding:14px 16px;margin-bottom:12px;text-align:center;">'
+                + '<div style="font-size:0.85rem;font-weight:900;color:#92400e;">🏆 موظف شهر ' + sanitize(window._ymLabel(W.ym)) + ' — الفائز بالجائزة</div>'
+                + '<div style="font-size:1.6rem;font-weight:900;color:#78350f;margin:4px 0;">' + sanitize(W.name) + '</div>'
+                + '<div style="font-size:0.95rem;font-weight:900;color:#92400e;">الدرجة النهائية: ' + Math.round(Number(W.total) || 0) + '%</div>'
+                + '<div style="font-size:0.76rem;font-weight:700;color:#78350f;margin-top:6px;">' + src + '</div>'
+                + (W.liveName ? '<div style="font-size:0.74rem;font-weight:700;color:#9a3412;margin-top:4px;">ℹ️ لو انحسب هسه من جديد يطلع «' + sanitize(W.liveName) + '»، لأن صارت تعديلات بعد نهاية الشهر (إجازات، استثناء أيام، تغيير الأوف أو الإعدادات). المعتمد هو المحفوظ.</div>' : '')
+                + '</div>';
+        };
+        // نحسب نجم الشهر الماضي (بعد ما كمل) ونحفظه — من النسخة الرسمية المحفوظة إذا موجودة
         window._ensurePrevChampion = async () => {
             if (loggedInId !== '__admin__' || !window._saveChampion) return;
             const P = window._prevMonthRange(), c = window._champ;
-            if (c && c.month === P.ym) return;
             let man = null; try { man = localStorage.getItem('a3_champ_manual_' + P.ym); } catch (e) {}
             if (man) return;
+            const off = await _officialMonth(P.from, P.to).catch(() => null);
+            if (off) {
+                const w = off.winner;
+                if (!c || c.month !== P.ym || String(c.employee_key) !== String(w.k)) await window._saveChampion({ k: w.k, name: w.name, total: w.total }, P.to);
+                return;
+            }
+            if (c && c.month === P.ym) return;
             const rows = await window.loadScoreCard(P.from, P.to, true);
-            const d = (rows || []).filter(r => r.hasData && r.days > 0);
-            const mx = d.reduce((m, r) => Math.max(m, r.days), 0), need = Math.max(3, Math.ceil(mx * 0.6));
-            const w = d.filter(r => r.days >= need)[0];
+            const w = _eligibleRows((rows || []).filter(r => r.hasData))[0];
             if (w) await window._saveChampion(w, P.to);
         };
         window.refreshTopPerformer = async (force) => {
@@ -3700,8 +3784,9 @@
                         + '<td style="padding:9px;direction:ltr;text-align:right;">' + r.days + ' / ' + r.absent + '</td></tr>'
                         + '<tr id="scd-' + i + '" style="display:none;background:#f8fafc;"><td colspan="9" style="padding:10px 12px;">' + ctrl + '<div style="overflow-x:auto;">' + dt + '</div></td></tr>';
                 });
+                const _win = window._isFullPastMonth(from, to) ? await window._winnerFor(from, to, rows).catch(() => null) : null;
                 box.style.cssText = 'padding:0;color:#000;';
-                box.innerHTML = '<div style="overflow-x:auto;">' + html + '</tbody></table></div>'
+                box.innerHTML = (_win ? window._winnerBannerHtml(_win) : '') + '<div style="overflow-x:auto;">' + html + '</tbody></table></div>'
                     + (tkOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل الطلبات، فحُسبت الدرجة بدون معيار سرعة الطلبات. (السبب: ' + sanitize(tkErr) + ')</p>')
                     + (ordOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل القبول والتوزيع، فحُسبت الدرجة بدونه. (السبب: ' + sanitize(ordErr) + ')</p>');
             } catch (e) {
@@ -7964,7 +8049,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.05-excel</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.05-winner</div>
 </body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
