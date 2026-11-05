@@ -2491,7 +2491,7 @@
                 (data || []).forEach(r => {
                     const a = agg[r.employee_key] = agg[r.employee_key] || { name: r.name, days: 0, off: 0, absent: 0, leave: 0, permH: 0, sum: 0, br: 0, rest: 0, secs: 0 };
                     if (r.name) a.name = r.name;
-                    const _rs0 = _resetUpTo(r.employee_key); if (_rs0 && r.history_date <= _rs0) return;   // قبل التصفير
+                    const _rs0 = end >= getTodayDateString() ? _resetUpTo(r.employee_key) : null; if (_rs0 && r.history_date <= _rs0) return;   // قبل التصفير (الفترات الماضية تنعرض كاملة)
                     const _ls = leaveSet[r.employee_key];
                     if (_ls && _ls.has(r.history_date)) return;   // يوم إجازة معتمدة: لا يدخل في النسبة
                     const st = String(r.start_time_str || '');
@@ -2598,7 +2598,7 @@
                 (data || []).forEach(r => {
                     const a = agg[r.employee_key] = agg[r.employee_key] || { k: r.employee_key, name: r.name, days: 0, off: 0, absent: 0, leave: 0, permH: 0, sum: 0, br: 0, rest: 0, secs: 0 };
                     if (r.name) a.name = r.name;
-                    const rs0 = _resetUpTo(r.employee_key); if (rs0 && r.history_date <= rs0) return;
+                    const rs0 = to >= today ? _resetUpTo(r.employee_key) : null; if (rs0 && r.history_date <= rs0) return;   // الفترات الماضية تنعرض كاملة
                     const ls = leaveSet[r.employee_key]; if (ls && ls.has(r.history_date)) return;
                     const st = String(r.start_time_str || '');
                     if (st === 'EXCLUDED') return;
@@ -3263,6 +3263,8 @@
             box.style.cssText = 'text-align:center;color:#94a3b8;font-weight:700;padding:20px;';
             box.innerHTML = '⏳ جاري الحساب...';
             const today = getTodayDateString();
+            // التصفير يسري بس على الفترة الحالية. الفترات الماضية (مثل «الشهر الماضي») تنعرض كاملة
+            const _crOf = k => (to >= today ? _cardResetOf(k) : null);
             const dates = []; for (let i = 0; i < nDays; i++) dates.push(_ymd(new Date(pf[0], pf[1] - 1, pf[2] + i)));
             try {
                 const { data, error } = await supabaseClient.from('alsaree3_history').select('*').gte('history_date', from).lte('history_date', to).order('history_date').limit(5000);
@@ -3290,7 +3292,7 @@
                     if (ds > today) return;
                     const isToday = ds === today;
                     keys.forEach(k => {
-                        const _cr = _cardResetOf(k); if (_cr && ds <= _cr) return;   // تصفير البطاقة: أيام ما قبل التصفير لا تُحتسب
+                        const _cr = _crOf(k); if (_cr && ds <= _cr) return;   // تصفير البطاقة: أيام ما قبل التصفير لا تُحتسب
                         const a = agg[k], r = (byKey[k] || {})[ds];
                         const push = (status, extra) => detail[k].push(Object.assign({ date: ds, status }, extra || {}));
                         const ls = leaveSet[k]; if (ls && ls.has(ds)) { push('إجازة'); return; }
@@ -3323,7 +3325,7 @@
                 const tk = {}; let tkOk = true, tkErr = '';
                 const qd = dates.filter(ds => ds <= today);
                 const ordCnt = {}; let ordOk = true, ordErr = '';
-                const _addOrd = (k, ds) => { const _c0 = _cardResetOf(k); if (_c0 && ds <= _c0) return; const m = ordCnt[k] = ordCnt[k] || {}; m[ds] = (m[ds] || 0) + 1; };
+                const _addOrd = (k, ds) => { const _c0 = _crOf(k); if (_c0 && ds <= _c0) return; const m = ordCnt[k] = ordCnt[k] || {}; m[ds] = (m[ds] || 0) + 1; };
                 const ores = await Promise.all(qd.map(ds => _ordersAdminRpc(ds).then(r => ({ ds, r }))));
                 ores.forEach(({ ds, r }) => { if (r.error) { ordOk = false; ordErr = ordErr || String(r.error.message || r.error); return; } if (ds === today) return; (r.data || []).forEach(o => { if (String(o.kind || '').endsWith('_late')) return; _addOrd(o.employee_key, ds); }); });
                 const res = await Promise.all(qd.map(ds => supabaseClient.rpc('alsaree3_tickets_admin', { p_date: ds }).then(r => ({ ds, r })).catch(e => ({ ds, r: { error: { message: String((e && e.message) || e) } } }))));
@@ -3333,7 +3335,7 @@
                         if (t.kind === 'accept') { if (ds !== today) _addOrd(t.employee_key, ds); return; }   // سجل قبول قديم (بدون رقم) يُحسب كطلب
                         if (!t.solved_at && ds === today) return;   // طلب اليوم المفتوح لم ينتهِ وقته بعد
                         const sc = _scTicketScore(t); if (sc === null) return;
-                        const _c1 = _cardResetOf(t.employee_key); if (_c1 && ds <= _c1) return;
+                        const _c1 = _crOf(t.employee_key); if (_c1 && ds <= _c1) return;
                         (tk[t.employee_key] = tk[t.employee_key] || []).push(sc);
                     });
                 });
@@ -7663,7 +7665,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.04-eom</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.05-lastmonth</div>
 </body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
