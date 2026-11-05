@@ -2552,6 +2552,7 @@
                     <button style="${_MR_BTN}" onclick="window._mrPreset('last')">الشهر الماضي</button>
                 </div>
                 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;padding:8px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;">
+                    <button style="${_MR_BTN}background:linear-gradient(135deg,#fde68a,#fbbf24);border-color:#f59e0b;color:#78350f;font-weight:900;" onclick="window.openFullReport()">🏅 التقرير الشامل (ليش الأول + كل التفاصيل)</button>
                     <button style="${_MR_BTN}background:#f0fdf4;border-color:#86efac;color:#166534;" onclick="window.saveMonthReport()">💾 حفظ التقرير</button>
                     <button style="${_MR_BTN}" onclick="window.mrPdf()">📄 PDF</button>
                     <button style="${_MR_BTN}" onclick="window.mrCsv()">📊 Excel / CSV</button>
@@ -2631,6 +2632,286 @@
             });
             return h + '</tbody></table></div>';
         }
+        // ===== 🏅 التقرير الشامل: كل تفاصيل كل موظف + ليش الأول صار الأول وبشنو تفوّق =====
+        const _FR_CRIT = [
+            { c: 'att', name: 'الحضور والالتزام بالوقت', w: () => SC_WEIGHTS.att, hi: true },
+            { c: 'brk', name: 'البريك والاستراحة', w: () => SC_WEIGHTS.brk, hi: true },
+            { c: 'hrs', name: 'ساعات الدوام', w: () => SC_WEIGHTS.hrs, hi: true },
+            { c: 'ord', name: 'مكافأة القبول والتوزيع', w: () => SC_WEIGHTS.ord, hi: true, bonus: true }
+        ];
+        function _frStats(r) {
+            const d = (r.detail || []), work = d.filter(x => x.status === 'دوام');
+            const cnt = s => d.filter(x => x.status === s).length;
+            const sum = (arr, f) => arr.reduce((s, x) => s + (Number(f(x)) || 0), 0);
+            const lateDays = work.filter(x => x.late > 0);
+            const orders = Object.values(r.ordByDay || {}).reduce((s, n) => s + (Number(n) || 0), 0);
+            const rated = work.filter(x => x.rating != null);
+            const best = rated.slice().sort((a, b) => b.rating - a.rating)[0] || null;
+            const worst = rated.slice().sort((a, b) => a.rating - b.rating)[0] || null;
+            const n = work.length || 0;
+            return {
+                work: n, absent: cnt('غياب'), off: cnt('OFF'), leave: cnt('إجازة'), excl: cnt('مستثنى'),
+                lateDays: lateDays.length, lateMin: sum(lateDays, x => x.late), maxLate: lateDays.reduce((m, x) => Math.max(m, x.late), 0),
+                onTime: n ? Math.round((n - lateDays.length) / n * 100) : null,
+                brkTot: sum(work, x => x.brk), restTot: sum(work, x => x.rest),
+                brkAvg: n ? Math.round(sum(work, x => x.brk) / n) : null, restAvg: n ? Math.round(sum(work, x => x.rest) / n) : null,
+                usedAvg: n ? Math.round(sum(work, x => (x.brk || 0) + (x.rest || 0)) / n) : null,
+                secs: sum(work, x => x.secs), hrsAvg: n ? sum(work, x => x.secs) / n / 3600 : null,
+                dayAvg: rated.length ? Math.round(sum(rated, x => x.rating) / rated.length) : null,
+                orders, ordAvg: n ? Math.round(orders / n * 10) / 10 : null,
+                best, worst
+            };
+        }
+        // يجمع كل شي ويحلّل (يُستعمل للعرض وللإكسل)
+        async function _frBuild(from, to) {
+            const rows = await window.loadScoreCard(from, to, true);
+            if (!rows) throw new Error('تعذّر تحميل البيانات');
+            const R = rows.filter(r => r.hasData);
+            R.forEach(r => { r.st = _frStats(r); });
+            const avgOf = f => { const v = R.map(f).filter(x => x !== null && x !== undefined && !isNaN(x)); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+            const team = {
+                total: avgOf(r => r.total), att: avgOf(r => r.att), brk: avgOf(r => r.brk), hrs: avgOf(r => r.hrs), ord: avgOf(r => r.ord),
+                lateMin: avgOf(r => r.st.lateMin), lateDays: avgOf(r => r.st.lateDays), usedAvg: avgOf(r => r.st.usedAvg), hrsAvg: avgOf(r => r.st.hrsAvg),
+                onTime: avgOf(r => r.st.onTime), orders: avgOf(r => r.st.orders), absent: avgOf(r => r.st.absent)
+            };
+            // ترتيب كل موظف بكل معيار
+            const rankBy = (f, hi) => { const s = R.filter(r => f(r) !== null && f(r) !== undefined).slice().sort((a, b) => hi ? f(b) - f(a) : f(a) - f(b)); R.forEach(r => { const i = s.indexOf(r); (r.rk = r.rk || {})[f.key] = i < 0 ? null : i + 1; }); };
+            const F = { att: r => r.att, brk: r => r.brk, hrs: r => r.hrs, ord: r => r.ord, lateMin: r => r.st.lateMin, usedAvg: r => r.st.usedAvg, orders: r => r.st.orders, onTime: r => r.st.onTime };
+            Object.keys(F).forEach(k => { F[k].key = k; rankBy(F[k], !['lateMin', 'usedAvg'].includes(k)); });
+            R.forEach(r => { r.notes = _frNotes(r, team, R.length); });
+            return { from, to, rows: R, all: rows, team, why: R.length ? _frWhy(R, team) : null };
+        }
+        const _fr1 = v => (v === null || v === undefined || isNaN(v)) ? '-' : Math.round(v);
+        const _frH = s => Math.floor((s || 0) / 3600) + 'س ' + Math.floor(((s || 0) % 3600) / 60) + 'د';
+        // نقاط القوة والضعف لكل موظف مقارنة بالفريق
+        function _frNotes(r, T, n) {
+            const good = [], bad = [], tip = [];
+            const s = r.st;
+            if (r.rk.att === 1) good.push('الأول بالفريق بالحضور والالتزام (' + _fr1(r.att) + '%)');
+            else if (T.att !== null && r.att !== null && r.att >= T.att + 3) good.push('حضوره والتزامه أعلى من معدل الفريق بـ ' + _fr1(r.att - T.att) + ' نقطة');
+            if (s.lateDays === 0 && s.work > 0) good.push('ما تأخر ولا يوم 👏');
+            if (r.rk.brk === 1) good.push('الأفضل بالفريق بالبريك والاستراحة (' + _fr1(r.brk) + '%)');
+            else if (T.brk !== null && r.brk !== null && r.brk >= T.brk + 3) good.push('البريك والاستراحة عنده أفضل من المعدل بـ ' + _fr1(r.brk - T.brk) + ' نقطة');
+            if (r.rk.hrs === 1) good.push('أكثر واحد ملتزم بساعات الدوام (' + _fr1(r.hrs) + '%)');
+            else if (T.hrs !== null && r.hrs !== null && r.hrs >= T.hrs + 3) good.push('ساعات دوامه أعلى من المعدل بـ ' + _fr1(r.hrs - T.hrs) + ' نقطة');
+            if (r.rk.orders === 1 && s.orders > 0) good.push('أكثر واحد سجّل طلبات قبول وتوزيع (' + s.orders + ' طلب)');
+            if (s.absent === 0 && s.work > 0) good.push('بدون أي غياب');
+
+            if (s.lateDays > 0 && T.lateMin !== null && s.lateMin > T.lateMin * 1.3) bad.push('تأخر ' + s.lateDays + ' يوم بمجموع ' + s.lateMin + ' دقيقة (أكثر من معدل الفريق)');
+            else if (s.lateDays >= 3) bad.push('تأخر ' + s.lateDays + ' أيام بمجموع ' + s.lateMin + ' دقيقة');
+            if (T.brk !== null && r.brk !== null && r.brk <= T.brk - 5) bad.push('البريك والاستراحة أكثر من اللازم (معدله ' + s.usedAvg + ' د باليوم، والفريق ' + _fr1(T.usedAvg) + ' د)');
+            if (T.hrs !== null && r.hrs !== null && r.hrs <= T.hrs - 5) bad.push('ساعات دوامه أقل من المعدل (' + (s.hrsAvg !== null ? s.hrsAvg.toFixed(1) : '-') + ' س باليوم)');
+            if (s.absent > 0) bad.push('غاب ' + s.absent + ' يوم');
+            if (r.rk.att === n && n > 2) bad.push('الأخير بالفريق بالحضور والالتزام');
+
+            if (s.lateDays > 0) tip.push('يلتزم بوقت بداية الدوام، كل تأخير ينزل درجة الحضور');
+            if (T.brk !== null && r.brk !== null && r.brk < T.brk) tip.push('يقلل البريك والاستراحة ويخليها ضمن المسموح');
+            if (T.ord !== null && (r.ord || 0) < T.ord) tip.push('يسجّل طلبات القبول والتوزيع أكثر حتى ياخذ نقاط المكافأة');
+            if (!good.length) good.push('أداء قريب من معدل الفريق');
+            return { good, bad, tip };
+        }
+        // ليش الأول صار الأول؟
+        function _frWhy(R, T) {
+            const A = R[0], B = R[1] || null, out = { champ: A, second: B, points: [], vsSecond: [], margin: B ? A.total - B.total : null, tie: false };
+            _FR_CRIT.forEach(k => {
+                const v = A[k.c]; if (v === null || v === undefined) return;
+                const rank = A.rk[k.c], t = T[k.c];
+                if (rank === 1) out.points.push('🥇 الأول بالفريق بـ «' + k.name + '» (' + _fr1(v) + '%)');
+                else if (t !== null && v > t) out.points.push('⬆️ «' + k.name + '» ' + _fr1(v) + '% — أعلى من معدل الفريق (' + _fr1(t) + '%) بـ ' + _fr1(v - t) + ' نقطة');
+            });
+            const s = A.st;
+            if (s.lateDays === 0) out.points.push('⏰ ما تأخر ولا يوم خلال الفترة'); else out.points.push('⏰ تأخر ' + s.lateDays + ' يوم فقط (' + s.lateMin + ' د) — معدل الفريق ' + _fr1(T.lateMin) + ' د');
+            if (s.absent === 0) out.points.push('📅 داوم ' + s.work + ' يوم بدون أي غياب');
+            if (s.usedAvg !== null) out.points.push('☕ معدل البريك + الاستراحة ' + s.usedAvg + ' د باليوم (الفريق ' + _fr1(T.usedAvg) + ' د)');
+            if (s.orders) out.points.push('📦 سجّل ' + s.orders + ' طلب قبول وتوزيع (معدل الفريق ' + _fr1(T.orders) + ')');
+            if (B) {
+                // شكد كل معيار ساهم بالفرق عن الثاني (بالنقاط الفعلية بالدرجة النهائية)
+                const wsum = ['att', 'brk', 'tkt', 'hrs'].reduce((x, c) => x + ((A[c] !== null && A[c] !== undefined) ? SC_WEIGHTS[c] : 0), 0) || 100;
+                _FR_CRIT.forEach(k => {
+                    const a = A[k.c], b = B[k.c]; if (a === null || a === undefined || b === null || b === undefined) return;
+                    const pts = k.bonus ? (a - b) / 100 * k.w() : (a - b) * k.w() / wsum;
+                    out.vsSecond.push({ name: k.name, a, b, pts });
+                });
+                out.vsSecond.sort((x, y) => y.pts - x.pts);
+                out.tie = Math.round(A.total) === Math.round(B.total);
+            }
+            return out;
+        }
+        function _frWhyHtml(W, T) {
+            if (!W) return '';
+            const A = W.champ, B = W.second;
+            let h = '<div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:2px solid #fbbf24;border-radius:18px;padding:16px;margin-bottom:14px;">'
+                + '<div style="font-size:1.15rem;font-weight:900;color:#78350f;margin-bottom:6px;">🏆 الأول: ' + sanitize(A.name) + ' — ' + _fr1(A.total) + '%</div>'
+                + '<div style="font-size:0.85rem;font-weight:800;color:#92400e;margin-bottom:10px;">' + (B ? ('الثاني: ' + sanitize(B.name) + ' (' + _fr1(B.total) + '%) — الفرق ' + (W.margin).toFixed(1) + ' نقطة' + (W.tie ? ' · الدرجة متساوية تقريباً، فتقدّم الأول لأن البريك والاستراحة عنده أقل' : '')) : '') + '</div>'
+                + '<div style="font-weight:900;color:#334155;margin-bottom:4px;">ليش صار الأول؟</div><ul style="margin:0 0 10px;padding-right:18px;line-height:1.9;font-weight:700;color:#334155;">'
+                + W.points.map(p => '<li>' + sanitize(p) + '</li>').join('') + '</ul>';
+            if (B && W.vsSecond.length) {
+                h += '<div style="font-weight:900;color:#334155;margin-bottom:4px;">بشنو تفوّق على ' + sanitize(B.name) + '؟</div>'
+                    + '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;text-align:right;background:#fff;border-radius:10px;overflow:hidden;"><thead><tr style="background:#fde68a;font-weight:900;">'
+                    + ['المعيار', sanitize(A.name), sanitize(B.name), 'الفرق', 'أثره على الدرجة'].map(x => '<th style="padding:6px;">' + x + '</th>').join('') + '</tr></thead><tbody>'
+                    + W.vsSecond.map(v => '<tr style="border-top:1px solid #fde68a;"><td style="padding:6px;font-weight:800;">' + sanitize(v.name) + '</td><td style="padding:6px;">' + _fr1(v.a) + '%</td><td style="padding:6px;">' + _fr1(v.b) + '%</td>'
+                        + '<td style="padding:6px;font-weight:900;color:' + (v.a >= v.b ? '#15803d' : '#b91c1c') + ';">' + (v.a >= v.b ? '+' : '') + _fr1(v.a - v.b) + '</td>'
+                        + '<td style="padding:6px;font-weight:900;color:' + (v.pts >= 0 ? '#15803d' : '#b91c1c') + ';">' + (v.pts >= 0 ? '+' : '') + v.pts.toFixed(1) + ' نقطة</td></tr>').join('')
+                    + '</tbody></table>';
+                const top = W.vsSecond.filter(v => v.pts > 0.05)[0];
+                if (top) h += '<div style="margin-top:8px;font-weight:900;color:#78350f;">⭐ أهم سبب تقدّمه: «' + sanitize(top.name) + '» — كسب منه ' + top.pts.toFixed(1) + ' نقطة على الثاني.</div>';
+            }
+            return h + '</div>';
+        }
+        function _frEmpHtml(r, i, T) {
+            const s = r.st, medal = ['🥇', '🥈', '🥉'][i] || ('#' + (i + 1));
+            const cell = (lbl, val, sub) => '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:8px 10px;min-width:120px;flex:1;"><div style="font-size:0.72rem;color:#64748b;font-weight:800;">' + lbl + '</div><div style="font-size:1rem;font-weight:900;color:#0f172a;">' + val + '</div>' + (sub ? '<div style="font-size:0.7rem;color:#94a3b8;font-weight:700;">' + sub + '</div>' : '') + '</div>';
+            const rk = (k) => r.rk[k] ? ('ترتيبه ' + r.rk[k] + ' من ' + T.n) : '';
+            const days = (r.detail || []).filter(d => d.status !== 'لم يبدأ').map(d => {
+                const w = d.status === 'دوام';
+                return '<tr style="border-top:1px solid #e2e8f0;"><td style="padding:4px 6px;font-weight:800;">' + sanitize(d.date.slice(5)) + '</td><td style="padding:4px 6px;">' + sanitize(d.status) + '</td>'
+                    + '<td style="padding:4px 6px;">' + (w ? sanitize(d.start || '') : '-') + '</td><td style="padding:4px 6px;color:' + (w && d.late ? '#dc2626' : '#64748b') + ';font-weight:800;">' + (w ? (d.late ? d.late + ' د' : '✔') : '-') + '</td>'
+                    + '<td style="padding:4px 6px;">' + (w ? d.brk + ' د' : '-') + '</td><td style="padding:4px 6px;">' + (w ? d.rest + ' د' : '-') + '</td><td style="padding:4px 6px;">' + (w ? _frH(d.secs) : '-') + '</td>'
+                    + '<td style="padding:4px 6px;">' + (w ? ((r.ordByDay || {})[d.date] || 0) : '-') + '</td><td style="padding:4px 6px;font-weight:900;">' + (w ? d.rating + '%' : '-') + '</td></tr>';
+            }).join('');
+            return '<details style="border:1px solid #e2e8f0;border-radius:16px;padding:10px 12px;margin-bottom:10px;background:#fff;"' + (i === 0 ? ' open' : '') + '>'
+                + '<summary style="cursor:pointer;font-weight:900;font-size:1rem;color:#0f172a;">' + medal + ' ' + sanitize(r.name) + ' — <span style="color:' + (r.total >= 90 ? '#16a34a' : r.total >= 75 ? '#d97706' : '#dc2626') + ';">' + _fr1(r.total) + '%</span></summary>'
+                + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;">'
+                + cell('الحضور والالتزام', _fr1(r.att) + '%', rk('att')) + cell('البريك والاستراحة', _fr1(r.brk) + '%', rk('brk')) + cell('ساعات الدوام', _fr1(r.hrs) + '%', rk('hrs')) + cell('مكافأة الطلبات', r.ord === null ? '-' : _fr1(r.ord) + '%', rk('ord'))
+                + '</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">'
+                + cell('أيام الدوام', s.work, 'غياب ' + s.absent + ' · OFF ' + s.off + ' · إجازة ' + s.leave)
+                + cell('التأخير', s.lateDays + ' يوم', 'المجموع ' + s.lateMin + ' د · أكثر تأخير ' + s.maxLate + ' د')
+                + cell('الالتزام بالوقت', s.onTime === null ? '-' : s.onTime + '%', 'أيام بدون تأخير')
+                + cell('معدل البريك', (s.brkAvg === null ? '-' : s.brkAvg + ' د'), 'المجموع ' + s.brkTot + ' د')
+                + cell('معدل الاستراحة', (s.restAvg === null ? '-' : s.restAvg + ' د'), 'المجموع ' + s.restTot + ' د')
+                + cell('ساعات العمل', _frH(s.secs), 'معدل ' + (s.hrsAvg === null ? '-' : s.hrsAvg.toFixed(1)) + ' س باليوم')
+                + cell('القبول والتوزيع', s.orders + ' طلب', 'معدل ' + (s.ordAvg === null ? '-' : s.ordAvg) + ' باليوم')
+                + cell('معدل التقييم اليومي', s.dayAvg === null ? '-' : s.dayAvg + '%', (s.best ? 'أحسن يوم ' + s.best.date.slice(5) + ' (' + s.best.rating + '%)' : '') + (s.worst ? ' · أضعف يوم ' + s.worst.date.slice(5) + ' (' + s.worst.rating + '%)' : ''))
+                + '</div>'
+                + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin-bottom:10px;">'
+                + '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:8px 10px;"><div style="font-weight:900;color:#166534;margin-bottom:4px;">✅ نقاط القوة</div>' + r.notes.good.map(x => '<div style="font-size:0.82rem;font-weight:700;">• ' + sanitize(x) + '</div>').join('') + '</div>'
+                + '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:8px 10px;"><div style="font-weight:900;color:#991b1b;margin-bottom:4px;">⚠️ يحتاج تحسين</div>' + (r.notes.bad.length ? r.notes.bad.map(x => '<div style="font-size:0.82rem;font-weight:700;">• ' + sanitize(x) + '</div>').join('') : '<div style="font-size:0.82rem;font-weight:700;">• ماكو ملاحظات سلبية</div>') + '</div>'
+                + '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:8px 10px;"><div style="font-weight:900;color:#1e40af;margin-bottom:4px;">💡 نصيحة</div>' + (r.notes.tip.length ? r.notes.tip.map(x => '<div style="font-size:0.82rem;font-weight:700;">• ' + sanitize(x) + '</div>').join('') : '<div style="font-size:0.82rem;font-weight:700;">• يستمر بنفس المستوى 👏</div>') + '</div>'
+                + '</div>'
+                + '<details><summary style="cursor:pointer;font-weight:800;color:#475569;font-size:0.85rem;">📅 تفصيل الأيام</summary><div style="overflow-x:auto;margin-top:6px;"><table style="width:100%;border-collapse:collapse;font-size:0.78rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
+                + ['اليوم', 'الحالة', 'الدخول', 'التأخير', 'البريك', 'الراحة', 'الساعات', 'الطلبات', 'التقييم'].map(x => '<th style="padding:5px 6px;">' + x + '</th>').join('') + '</tr></thead><tbody>' + days + '</tbody></table></div></details>'
+                + '</details>';
+        }
+        window.openFullReport = async () => {
+            if (loggedInId !== '__admin__') return;
+            let from = (document.getElementById('mr-from') || {}).value, to = (document.getElementById('mr-to') || {}).value;
+            if (!_isoDate(from) || !_isoDate(to)) { const P = window._prevMonthRange(); from = P.from; to = P.to; }
+            _modal('freport-overlay', '🏅 التقرير الشامل للموظفين', '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">'
+                + '<label style="font-weight:800;font-size:0.85rem;">من <input type="date" id="fr-from" value="' + from + '" style="' + _MR_INP + '"></label>'
+                + '<label style="font-weight:800;font-size:0.85rem;">إلى <input type="date" id="fr-to" value="' + to + '" style="' + _MR_INP + '"></label>'
+                + '<button style="' + _MR_BTN + 'background:#4f46e5;color:#fff;border-color:#4f46e5;" onclick="window.frLoad()">🔍 عرض</button>'
+                + '<button style="' + _MR_BTN + '" onclick="window.frPreset(\'last\')">الشهر الماضي</button>'
+                + '<button style="' + _MR_BTN + '" onclick="window.frPreset(\'month\')">هذا الشهر</button>'
+                + '<button style="' + _MR_BTN + 'background:#f0fdf4;border-color:#86efac;color:#166534;" onclick="window.frExcel()">📥 تحميل Excel</button></div>'
+                + '<div id="fr-msg" style="font-size:0.82rem;font-weight:800;margin-bottom:8px;min-height:1em;"></div>'
+                + '<div id="fr-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div>', 1100);
+            window.frLoad();
+        };
+        window.frPreset = (k) => {
+            const t = getTodayDateString();
+            let f = t.slice(0, 8) + '01', e = t;
+            if (k === 'last') { const P = window._prevMonthRange(); f = P.from; e = P.to; }
+            document.getElementById('fr-from').value = f; document.getElementById('fr-to').value = e; window.frLoad();
+        };
+        window.frLoad = async () => {
+            const box = document.getElementById('fr-content'), msg = document.getElementById('fr-msg'); if (!box) return;
+            const from = document.getElementById('fr-from').value, to = document.getElementById('fr-to').value;
+            box.style.cssText = 'text-align:center;color:#94a3b8;font-weight:700;padding:20px;'; box.innerHTML = '⏳ جاري التحليل...'; msg.textContent = '';
+            try {
+                const D = await _frBuild(from, to); window._frLast = D;
+                if (!D.rows.length) { box.innerHTML = 'لا توجد بيانات لهذه الفترة.'; return; }
+                const T = D.team; T.n = D.rows.length;
+                const rk = '<div style="overflow-x:auto;margin-bottom:14px;"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
+                    + ['#', 'الموظف', 'الدرجة', 'الحضور', 'البريك', 'الساعات', 'المكافأة', 'أيام / غياب', 'أيام التأخير', 'البريك+الراحة/يوم', 'الطلبات'].map(x => '<th style="padding:7px;">' + x + '</th>').join('') + '</tr></thead><tbody>'
+                    + D.rows.map((r, i) => '<tr style="border-top:1px solid #e2e8f0;' + (i === 0 ? 'background:#fffbeb;' : '') + '"><td style="padding:7px;font-weight:900;">' + (['🥇', '🥈', '🥉'][i] || i + 1) + '</td><td style="padding:7px;font-weight:900;">' + sanitize(r.name) + '</td>'
+                        + '<td style="padding:7px;font-weight:900;">' + _fr1(r.total) + '%</td><td style="padding:7px;">' + _fr1(r.att) + '%</td><td style="padding:7px;">' + _fr1(r.brk) + '%</td><td style="padding:7px;">' + _fr1(r.hrs) + '%</td><td style="padding:7px;">' + (r.ord === null ? '-' : _fr1(r.ord) + '%') + '</td>'
+                        + '<td style="padding:7px;direction:ltr;text-align:right;">' + r.st.work + ' / ' + r.st.absent + '</td><td style="padding:7px;">' + r.st.lateDays + ' (' + r.st.lateMin + ' د)</td><td style="padding:7px;">' + (r.st.usedAvg === null ? '-' : r.st.usedAvg + ' د') + '</td><td style="padding:7px;">' + r.st.orders + '</td></tr>').join('')
+                    + '<tr style="border-top:2px solid #cbd5e1;background:#f8fafc;font-weight:900;color:#475569;"><td></td><td style="padding:7px;">معدل الفريق</td><td style="padding:7px;">' + _fr1(T.total) + '%</td><td style="padding:7px;">' + _fr1(T.att) + '%</td><td style="padding:7px;">' + _fr1(T.brk) + '%</td><td style="padding:7px;">' + _fr1(T.hrs) + '%</td><td style="padding:7px;">' + (T.ord === null ? '-' : _fr1(T.ord) + '%') + '</td><td></td><td style="padding:7px;">' + (T.lateDays === null ? '-' : T.lateDays.toFixed(1)) + ' (' + _fr1(T.lateMin) + ' د)</td><td style="padding:7px;">' + _fr1(T.usedAvg) + ' د</td><td style="padding:7px;">' + _fr1(T.orders) + '</td></tr>'
+                    + '</tbody></table></div>';
+                const how = '<div style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:8px 10px;">📐 شلون تنحسب الدرجة: الحضور والالتزام ' + SC_WEIGHTS.att + '% + البريك والاستراحة ' + SC_WEIGHTS.brk + '% + ساعات الدوام ' + SC_WEIGHTS.hrs + '%، وفوكاها مكافأة القبول والتوزيع لحد ' + SC_WEIGHTS.ord + ' نقاط. إذا تساوت الدرجة، يتقدّم الأقل بريكاً واستراحة.</div>';
+                box.style.cssText = 'padding:0;color:#000;text-align:right;';
+                box.innerHTML = _frWhyHtml(D.why, T) + how + '<div style="font-weight:900;color:#334155;margin:6px 0;">📊 الترتيب</div>' + rk + '<div style="font-weight:900;color:#334155;margin:6px 0;">👥 تفاصيل كل موظف</div>' + D.rows.map((r, i) => _frEmpHtml(r, i, T)).join('');
+            } catch (e) { console.error('[FullReport]', e); box.style.color = '#dc2626'; box.innerHTML = '❌ فشل تحميل التقرير'; }
+        };
+        // ===== Excel احترافي: الملخص + ليش الأول + تفاصيل كل موظف =====
+        window.frExcel = async () => {
+            const D = window._frLast, msg = document.getElementById('fr-msg');
+            if (!D || !D.rows || !D.rows.length) { if (msg) { msg.style.color = '#d97706'; msg.textContent = '⚠️ اعرض التقرير أولاً'; } return; }
+            if (msg) { msg.style.color = '#64748b'; msg.textContent = '⏳ جاري تجهيز Excel...'; }
+            try {
+                const ExcelJS = await _loadExcelJS();
+                const wb = new ExcelJS.Workbook(); wb.creator = 'Alsaree3';
+                const T = D.team, W = D.why;
+                const HEAD = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } }, GOLD = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }, GREY = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+                const border = { top: { style: 'thin', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }, left: { style: 'thin', color: { argb: 'FFE2E8F0' } }, right: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
+                const pctC = v => v === null || v === undefined || isNaN(v) ? null : Math.round(v) / 100;
+                const styleHead = row => { row.eachCell(c => { c.fill = HEAD; c.font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Arial' }; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; c.border = border; }); row.height = 30; };
+                const title = (ws, t, cols) => { ws.mergeCells(1, 1, 1, cols); const c = ws.getCell(1, 1); c.value = t; c.font = { bold: true, size: 15, color: { argb: 'FF1E1B4B' }, name: 'Arial' }; c.alignment = { horizontal: 'center' }; ws.getRow(1).height = 28;
+                    ws.mergeCells(2, 1, 2, cols); const d = ws.getCell(2, 1); d.value = 'الفترة: ' + D.from + ' ← ' + D.to + '   ·   عدد الموظفين: ' + D.rows.length; d.font = { size: 10, color: { argb: 'FF64748B' }, name: 'Arial' }; d.alignment = { horizontal: 'center' }; };
+                // 1) الملخص والترتيب
+                const s1 = wb.addWorksheet('الملخص والترتيب', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 4 }] });
+                const H1 = ['الترتيب', 'الموظف', 'الدرجة النهائية', 'الحضور والالتزام', 'البريك والاستراحة', 'ساعات الدوام', 'مكافأة الطلبات', 'أيام الدوام', 'غياب', 'OFF', 'إجازة', 'أيام التأخير', 'مجموع التأخير (د)', 'الالتزام بالوقت', 'معدل البريك/يوم (د)', 'معدل الراحة/يوم (د)', 'ساعات العمل', 'القبول والتوزيع', 'معدل التقييم اليومي'];
+                title(s1, '🏅 التقرير الشامل لأداء الموظفين — عالسريع', H1.length);
+                styleHead(s1.getRow(4)); s1.getRow(4).values = H1; styleHead(s1.getRow(4));
+                D.rows.forEach((r, i) => {
+                    const s = r.st;
+                    const row = s1.addRow([i + 1, r.name, pctC(r.total), pctC(r.att), pctC(r.brk), pctC(r.hrs), pctC(r.ord), s.work, s.absent, s.off, s.leave, s.lateDays, s.lateMin, s.onTime === null ? null : s.onTime / 100, s.brkAvg, s.restAvg, Math.round(s.secs / 360) / 10, s.orders, s.dayAvg === null ? null : s.dayAvg / 100]);
+                    row.eachCell(c => { c.border = border; c.alignment = { horizontal: 'center', vertical: 'middle' }; c.font = { name: 'Arial' }; });
+                    if (i === 0) row.eachCell(c => { c.fill = GOLD; c.font = { bold: true, name: 'Arial' }; });
+                });
+                const tr = s1.addRow(['', 'معدل الفريق', pctC(T.total), pctC(T.att), pctC(T.brk), pctC(T.hrs), pctC(T.ord), '', '', '', '', T.lateDays === null ? '' : Math.round(T.lateDays * 10) / 10, T.lateMin === null ? '' : Math.round(T.lateMin), T.onTime === null ? '' : Math.round(T.onTime) / 100, T.usedAvg === null ? '' : Math.round(T.usedAvg), '', T.hrsAvg === null ? '' : Math.round(T.hrsAvg * 10) / 10, T.orders === null ? '' : Math.round(T.orders), '']);
+                tr.eachCell(c => { c.fill = GREY; c.font = { bold: true, name: 'Arial' }; c.border = border; c.alignment = { horizontal: 'center' }; });
+                [3, 4, 5, 6, 7, 14, 19].forEach(ci => s1.getColumn(ci).numFmt = '0%');
+                s1.columns.forEach((c, i) => { c.width = i === 1 ? 22 : 14; });
+                s1.addConditionalFormatting({ ref: 'C5:C' + (4 + D.rows.length), rules: [{ type: 'colorScale', cfvo: [{ type: 'min' }, { type: 'percentile', value: 50 }, { type: 'max' }], color: [{ argb: 'FFF8696B' }, { argb: 'FFFFEB84' }, { argb: 'FF63BE7B' }] }] });
+                s1.addRow([]); const nr = s1.addRow(['', 'طريقة الحساب: الحضور ' + SC_WEIGHTS.att + '% + البريك ' + SC_WEIGHTS.brk + '% + الساعات ' + SC_WEIGHTS.hrs + '% + مكافأة الطلبات لحد ' + SC_WEIGHTS.ord + ' نقاط']); nr.getCell(2).font = { italic: true, color: { argb: 'FF64748B' }, name: 'Arial' };
+                // 2) ليش الأول؟
+                const s2 = wb.addWorksheet('ليش الأول؟', { views: [{ rightToLeft: true }] });
+                title(s2, '🏆 ليش ' + W.champ.name + ' صار الأول؟', 5);
+                s2.getColumn(1).width = 34; [2, 3, 4, 5].forEach(i => s2.getColumn(i).width = 18);
+                let rr = s2.addRow(['الدرجة النهائية', Math.round(W.champ.total) + '%', W.second ? ('الثاني: ' + W.second.name) : '', W.second ? Math.round(W.second.total) + '%' : '', W.second ? ('الفرق: ' + W.margin.toFixed(1) + ' نقطة') : '']);
+                rr.eachCell(c => { c.fill = GOLD; c.font = { bold: true, size: 12, name: 'Arial' }; c.border = border; });
+                s2.addRow([]);
+                const hp = s2.addRow(['أسباب التفوّق']); hp.getCell(1).font = { bold: true, size: 12, color: { argb: 'FF78350F' }, name: 'Arial' };
+                W.points.forEach(p => { const x = s2.addRow([p]); s2.mergeCells(x.number, 1, x.number, 5); x.getCell(1).alignment = { wrapText: true }; x.getCell(1).font = { name: 'Arial' }; });
+                if (W.second && W.vsSecond.length) {
+                    s2.addRow([]);
+                    const hv = s2.addRow(['المعيار', W.champ.name, W.second.name, 'الفرق', 'أثره على الدرجة (نقطة)']); styleHead(hv);
+                    W.vsSecond.forEach(v => { const x = s2.addRow([v.name, Math.round(v.a) / 100, Math.round(v.b) / 100, Math.round(v.a - v.b), Math.round(v.pts * 10) / 10]); x.getCell(2).numFmt = '0%'; x.getCell(3).numFmt = '0%';
+                        x.eachCell(c => { c.border = border; c.alignment = { horizontal: 'center' }; c.font = { name: 'Arial' }; }); x.getCell(5).font = { bold: true, name: 'Arial', color: { argb: v.pts >= 0 ? 'FF15803D' : 'FFB91C1C' } }; });
+                    const top = W.vsSecond.filter(v => v.pts > 0.05)[0];
+                    if (top) { s2.addRow([]); const x = s2.addRow(['⭐ أهم سبب تقدّمه: «' + top.name + '» — كسب منه ' + top.pts.toFixed(1) + ' نقطة على الثاني']); s2.mergeCells(x.number, 1, x.number, 5); x.getCell(1).font = { bold: true, color: { argb: 'FF78350F' }, name: 'Arial' }; }
+                }
+                // 3) تفاصيل كل موظف
+                const s3 = wb.addWorksheet('تفاصيل الموظفين', { views: [{ rightToLeft: true }] });
+                title(s3, '👥 تفاصيل أداء كل موظف', 9);
+                [12, 12, 12, 12, 12, 12, 12, 12, 12].forEach((w, i) => s3.getColumn(i + 1).width = i === 0 ? 16 : w);
+                D.rows.forEach((r, i) => {
+                    const s = r.st; s3.addRow([]);
+                    const h = s3.addRow([(['🥇', '🥈', '🥉'][i] || '#' + (i + 1)) + ' ' + r.name + ' — ' + Math.round(r.total) + '%']); s3.mergeCells(h.number, 1, h.number, 9);
+                    h.getCell(1).fill = i === 0 ? GOLD : GREY; h.getCell(1).font = { bold: true, size: 13, name: 'Arial' };
+                    const kv = [['الحضور والالتزام', _fr1(r.att) + '%', 'البريك والاستراحة', _fr1(r.brk) + '%', 'ساعات الدوام', _fr1(r.hrs) + '%', 'مكافأة الطلبات', r.ord === null ? '-' : _fr1(r.ord) + '%'],
+                        ['أيام الدوام', s.work, 'غياب', s.absent, 'أيام التأخير', s.lateDays + ' (' + s.lateMin + ' د)', 'الالتزام بالوقت', s.onTime === null ? '-' : s.onTime + '%'],
+                        ['معدل البريك', s.brkAvg === null ? '-' : s.brkAvg + ' د', 'معدل الراحة', s.restAvg === null ? '-' : s.restAvg + ' د', 'ساعات العمل', _frH(s.secs), 'القبول والتوزيع', s.orders]];
+                    kv.forEach(a => { const x = s3.addRow(a); x.eachCell((c, ci) => { c.border = border; c.font = { name: 'Arial', bold: ci % 2 === 1, color: { argb: ci % 2 === 1 ? 'FF475569' : 'FF0F172A' } }; c.alignment = { horizontal: 'center' }; }); });
+                    const line = (lbl, arr, col) => { arr.forEach((t, j) => { const x = s3.addRow([j === 0 ? lbl : '', t]); s3.mergeCells(x.number, 2, x.number, 9); x.getCell(1).font = { bold: true, color: { argb: col }, name: 'Arial' }; x.getCell(2).font = { name: 'Arial' }; x.getCell(2).alignment = { wrapText: true }; }); };
+                    line('✅ نقاط القوة', r.notes.good, 'FF166534');
+                    line('⚠️ يحتاج تحسين', r.notes.bad.length ? r.notes.bad : ['ماكو ملاحظات سلبية'], 'FF991B1B');
+                    line('💡 نصيحة', r.notes.tip.length ? r.notes.tip : ['يستمر بنفس المستوى'], 'FF1E40AF');
+                    const dh = s3.addRow(['اليوم', 'الحالة', 'الدخول', 'التأخير (د)', 'البريك (د)', 'الراحة (د)', 'الساعات', 'الطلبات', 'التقييم']); styleHead(dh);
+                    (r.detail || []).filter(d => d.status !== 'لم يبدأ').forEach(d => { const w = d.status === 'دوام';
+                        const x = s3.addRow([d.date, d.status, w ? (d.start || '') : '-', w ? d.late : '-', w ? d.brk : '-', w ? d.rest : '-', w ? Math.round(d.secs / 360) / 10 : '-', w ? ((r.ordByDay || {})[d.date] || 0) : '-', w ? d.rating / 100 : '-']);
+                        if (w) x.getCell(9).numFmt = '0%';
+                        x.eachCell(c => { c.border = border; c.alignment = { horizontal: 'center' }; c.font = { name: 'Arial', color: { argb: (w && d.late && c.col === 4) ? 'FFDC2626' : 'FF0F172A' } }; }); });
+                });
+                const buf = await wb.xlsx.writeBuffer();
+                const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob), a = document.createElement('a');
+                a.href = url; a.download = 'Alsaree3_Full_Report_' + D.from + '_to_' + D.to + '.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+                if (msg) { msg.style.color = '#16a34a'; msg.textContent = '✅ تم تحميل Excel'; }
+            } catch (e) { console.error('[FullReportXLSX]', e); if (msg) { msg.style.color = '#dc2626'; msg.textContent = '❌ فشل إنشاء Excel: ' + ((e && e.message) || ''); } }
+        };
+
         // حفظ التقرير في السيرفر (داخل monthly_history لكل موظف تحت monthReports) — لا يغيّر أي حساب حالي
         window.saveMonthReport = async () => {
             if (loggedInId !== '__admin__') return;
@@ -7665,7 +7946,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.05-lastmonth</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.05-fullreport</div>
 </body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
