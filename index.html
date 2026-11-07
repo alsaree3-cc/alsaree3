@@ -5151,20 +5151,23 @@ button, [role="button"], select { touch-action: manipulation; }
         //   cfAmount       = رقم حقل Customer Compensation Amount (الرقم بعد cf بالـ name)
         // إذا تركتها '' راح يفتح التذكرة وتختار هذي الحقول يدوياً، وسعر التعويض ينكتب بنص التذكرة.
         //   cfAck / ackYesValue / ackNoValue = رقم حقل "اعتراف المطعم بالنقص او التلف" وقيمتا خيارَيه (يعترف / لا يعترف)
-        const JB_COMP = { classValue: '297597', callClassValue: '298313', cfAmount: '47506', cfAck: '51573', ackYesValue: '506287', ackNoValue: '506288' };
+        const JB_COMP = { classValue: '297597', callClassValue: '298313', cfAmount: '47506', cfAck: '51573', ackYesValue: '506287', ackNoValue: '506288', cfDriverName: '51575', cfCaptainId: '49463' };
+        // cfDriverName / cfCaptainId = رقم حقلَي Driver Name و Captain ID في Jitbit (الرقم بعد cf). إذا تركتهم '' ينكتبون بنص التذكرة.
         // خيارات سبب التعويض (عدّلها متى ما تريد؛ "أخرى" تفتح خانة كتابة)
         const COMP_REASONS = ['نقص صنف', 'تلف الطلب أو انسكابه', 'تأخر الطلب', 'طلب خاطئ', 'جودة سيئة أو الطلب بارد', 'تصرف سيئ من السائق'];
         const COMP_OTHER = 'أخرى';
         const COMP_ACK = { yes: 'المطعم يعترف بنقص او تلف الطلب', no: 'المطعم لا يعترف بنقص او تلف الطلب' };
         window.openCompTicket = () => {
             const g0 = id => { const e = document.getElementById(id); return e ? e.value.trim().replace(/\s+/g, ' ') : ''; };
-            const pre = { ord: g0('disp-input'), rest: g0('acc-rest') || g0('disp-rest') || window._accR || window._dispR || '', ph: g0('acc-ph') || window._accPh || '' };
+            const pre = { ord: g0('disp-input'), rest: g0('acc-rest') || g0('disp-rest') || window._accR || window._dispR || '', ph: g0('acc-ph') || window._accPh || '', drv: g0('disp-driver') };
             const f = 'width:100%;border:1px solid #cbd5e1;border-radius:12px;padding:9px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:.95rem;';
             _modal('comp-overlay', '💸 تذكرة تعويض زبون', `
                 <div style="display:grid;gap:10px;">
                     <label style="font-weight:800;">رقم الطلب<input id="comp-ord" maxlength="30" inputmode="numeric" value="${sanitize(pre.ord)}" style="${f}direction:ltr;text-align:center;"></label>
                     <label style="font-weight:800;">اسم المطعم<input id="comp-rest" maxlength="60" value="${sanitize(pre.rest)}" style="${f}"></label>
                     <label style="font-weight:800;">رقم هاتف الزبون<input id="comp-ph" type="tel" inputmode="tel" maxlength="20" value="${sanitize(pre.ph)}" style="${f}direction:ltr;text-align:center;"></label>
+                    <label style="font-weight:800;">اسم الكابتن (Driver Name)<input id="comp-drv" maxlength="60" value="${sanitize(pre.drv)}" style="${f}"></label>
+                    <label style="font-weight:800;">رقم الكابتن (Captain ID)<input id="comp-cid" maxlength="30" inputmode="numeric" style="${f}direction:ltr;text-align:center;"></label>
                     <label style="font-weight:800;">سبب التعويض
                         <select id="comp-sel" style="${f}cursor:pointer;" onchange="document.getElementById('comp-why-wrap').style.display = this.value === '${COMP_OTHER}' ? '' : 'none'">
                             <option value="">اختر السبب</option>${COMP_REASONS.concat([COMP_OTHER]).map(r => '<option value="' + sanitize(r) + '">' + sanitize(r) + '</option>').join('')}
@@ -5184,13 +5187,15 @@ button, [role="button"], select { touch-action: manipulation; }
         };
         window._compSubmit = () => {
             const g = id => { const e = document.getElementById(id); return e ? e.value.trim().replace(/\s+/g, ' ') : ''; };
-            const ord = g('comp-ord'), rest = g('comp-rest'), ph = g('comp-ph'), sel = g('comp-sel'), ack = g('comp-ack');
+            const ord = g('comp-ord'), rest = g('comp-rest'), ph = g('comp-ph'), sel = g('comp-sel'), ack = g('comp-ack'), drv = g('comp-drv'), cid = g('comp-cid').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
             const why = sel === COMP_OTHER ? g('comp-why') : sel;
             const amt = g('comp-amt').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[,\s٬،]/g, '');
             const msg = document.getElementById('comp-msg'), bad = t => { if (msg) msg.textContent = t; };
             if (!ord) return bad('⚠️ اكتب رقم الطلب');
             if (!rest) return bad('⚠️ اكتب اسم المطعم');
             if (!ph) return bad('⚠️ اكتب رقم هاتف الزبون');
+            if (!drv) return bad('⚠️ اكتب اسم الكابتن');
+            if (!/^\d+(\.\d+)?$/.test(cid)) return bad('⚠️ رقم الكابتن (Captain ID) بالأرقام فقط');
             if (!sel) return bad('⚠️ اختر سبب التعويض');
             if (!why) return bad('⚠️ اكتب تفاصيل السبب');
             if (!ack) return bad('⚠️ اختر: هل المطعم يعترف بالنقص او التلف؟');
@@ -5200,7 +5205,7 @@ button, [role="button"], select { touch-action: manipulation; }
             add('categoryId', JB_TICKET.categoryId);
             add('subject', ord);
             const ackId = JB_COMP.cfAck && (ack === 'yes' ? JB_COMP.ackYesValue : JB_COMP.ackNoValue);
-            add('body', 'الحالة :- ' + why + (JB_COMP.cfAmount ? '' : '\nسعر التعويض: ' + amt) + (ackId ? '' : '\nاعتراف المطعم: ' + COMP_ACK[ack]));
+            add('body', 'الحالة :- ' + why + (JB_COMP.cfAmount ? '' : '\nسعر التعويض: ' + amt) + (ackId ? '' : '\nاعتراف المطعم: ' + COMP_ACK[ack]) + (JB_COMP.cfDriverName ? '' : '\nDriver Name: ' + drv) + (JB_COMP.cfCaptainId ? '' : '\nCaptain ID: ' + cid));
             if (JB_TICKET.cfPhone) add('cf' + JB_TICKET.cfPhone, ph);
             if (JB_TICKET.cfOrder) add('cf' + JB_TICKET.cfOrder, ord);
             if (JB_TICKET.cfRest) add('cf' + JB_TICKET.cfRest, rest);
@@ -5208,6 +5213,8 @@ button, [role="button"], select { touch-action: manipulation; }
             if (JB_COMP.callClassValue) add('cf' + JB_TICKET.cfCallClass, JB_COMP.callClassValue);
             if (JB_COMP.cfAmount) add('cf' + JB_COMP.cfAmount, amt);
             if (ackId) add('cf' + JB_COMP.cfAck, ackId);
+            if (JB_COMP.cfDriverName) add('cf' + JB_COMP.cfDriverName, drv);
+            if (JB_COMP.cfCaptainId) add('cf' + JB_COMP.cfCaptainId, cid);
             window.open(HELPDESK_URL.replace(/\/+$/, '') + '/Tickets/New?' + q.join('&'), '_blank', 'noopener');
             const o = document.getElementById('comp-overlay'); if (o) o.remove();
             if (!JB_COMP.classValue || !JB_COMP.callClassValue) { try { _tkToast('ℹ️ اختر Class = زبون و Call Classification = اضافة محفظة للزبون داخل التذكرة'); } catch (e) {} }
