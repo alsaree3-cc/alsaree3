@@ -991,7 +991,10 @@
                 return { lat: la, lng: ln, radius };
             } catch (e) { return def; }
         }
+        // فحص الموقع عند تسجيل الحضور: false = معطّل (الموظف يسجّل من أي مكان) ، true = مفعّل
+        const GEO_CHECK_ENABLED = false;
         async function verifyWorkLocation(empKey) {
+            if (!GEO_CHECK_ENABLED) return { ok: true };
             const geo = await getEmployeeGeo(empKey);
             return new Promise(resolve => {
                 if (geo.lat === null || geo.lng === null) {
@@ -8049,7 +8052,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.05-winner</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.07-nogeo</div>
 </body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
