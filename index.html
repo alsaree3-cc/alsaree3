@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#16a34a">
     <script>if (window.top !== window.self) { document.documentElement.innerHTML = ""; throw new Error("framing blocked"); }</script>
     <script>
@@ -596,6 +596,46 @@
         /* لا نلمس الأزرار الملوّنة (نصها أبيض) ولا المشهد ولا بطاقة المطوّر */
         html.a3-dark [style*="color:#fff"] { color:#fff !important; }
     </style>
+<style id="a3-polish">
+/* ===== تحسينات الموبايل وإمكانية الوصول ===== */
+html { -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+img, svg, video { max-width: 100%; }
+:focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; border-radius: 8px; }
+button, [role="button"], select { touch-action: manipulation; }
+@media (max-width: 640px) {
+  body { padding: 10px; padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .system-container { padding: 16px; border-radius: 24px; }
+  .card-box { padding: 18px; border-radius: 20px; }
+  .card-box > .emp-brand { margin: -18px -18px 14px; }
+  .card-box:hover { transform: none; }
+}
+@media (pointer: coarse) {
+  .tk-btn, .btn-opt, .tk-dd-btn, .tk-dd-item, .act-toggle { min-height: 44px; }
+}
+/* شريط انقطاع الاتصال */
+#a3-offline { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; z-index: 100002; display: none; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; background: #b91c1c; color: #fff; font: 800 .85rem Cairo, sans-serif; text-align: center; direction: rtl; }
+#a3-offline.show { display: flex; }
+#a3-err-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(60px + env(safe-area-inset-bottom, 0px)); z-index: 100001; max-width: 92vw; background: #1e293b; color: #fff; padding: 10px 16px; border-radius: 14px; font: 700 .85rem Cairo, sans-serif; direction: rtl; box-shadow: 0 10px 25px rgba(0,0,0,.3); }
+/* ===== إصلاحات القائمة الجانبية للمسؤول ===== */
+.adm-side > button > span:first-child { width: 1.5em; flex: none; text-align: center; }
+.adm-side > .adm-grp-label { font-size: .78rem; display: flex; align-items: center; gap: 6px; }
+.adm-side > .adm-sec-label { font-size: .78rem; line-height: 1.5; }
+.adm-side > button:focus-visible { outline: 2px solid #d6fd26; outline-offset: -2px; }
+@media (min-width: 821px) {
+  .adm-side { max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #1f5a5f transparent; }
+  /* الساعة وزر الثيم كانا يغطيان شعار القائمة: ننقلهما لليسار عند ظهورها */
+  body:has(#admin-section:not(.hidden) > .adm-side) #live-clock,
+  body:has(#admin-section:not(.hidden) > .adm-side) #theme-btn { right: auto; left: 18px; }
+}
+@media (max-width: 820px) {
+  /* على الموبايل: عمودان بدل قائمة طويلة جداً */
+  .adm-side { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .adm-side > .adm-brand, .adm-side > .adm-grp-label, .adm-side > .adm-sec-label, .adm-side > span, .adm-side > button.adm-primary { grid-column: 1 / -1; }
+  .adm-side > button { padding: 10px 10px !important; font-size: .85rem !important; gap: 8px !important; }
+}
+@media print { #theme-btn, #live-clock, #ver-tag, #a3-offline, #a3-err-toast, .dev-card { display: none !important; } body { background: #fff; padding: 0; } .system-container { box-shadow: none; border: none; } }
+</style>
 </head>
 <body>
 
@@ -894,8 +934,7 @@
             _monthHistBusy = true;
             try {
                 const today = getTodayDateString(), start = today.slice(0, 7) + '-01';
-                const { data, error } = await supabaseClient.from('alsaree3_history')
-                    .select('employee_key,history_date,start_time_str,rating').gte('history_date', start).lte('history_date', today).limit(5000);
+                const { data, error } = await _pageAll(() => supabaseClient.from('alsaree3_history').select('employee_key,history_date,start_time_str,rating').gte('history_date', start).lte('history_date', today).order('history_date').order('employee_key'));
                 if (error) return;
                 try { await _loadEmpMeta(); } catch (e) {}
                 const leaveSet = {};
@@ -1366,6 +1405,19 @@
         function _bgMinOf(ms) { const p = _bgParts(ms); return p.h * 60 + p.mi; }
         function _bgDayStartMs(ms) { const t = (ms == null ? Date.now() : ms) + BG_OFFSET_MS; return t - (t % 86400000) - BG_OFFSET_MS; }
         function getTodayDateString() { return _bgYmdOf(Date.now()); }
+        function _bgStamp(ms) { const p = _bgParts(ms); return _bgYmdOf(ms) + ' ' + String(p.h).padStart(2, '0') + ':' + String(p.mi).padStart(2, '0'); }  // yyyy-mm-dd HH:MM بتوقيت بغداد
+        // جلب كل الصفوف على دفعات: السيرفر عادةً يقص الاستعلام الواحد عند 1000 صف حتى لو طلبنا limit أكبر، فكانت الأيام الأخيرة تختفي بصمت من التقارير
+        async function _pageAll(build, page) {
+            page = page || 1000; const out = [];
+            for (let o = 0; o < 200000;) {
+                const { data, error } = await build().range(o, o + page - 1);
+                if (error) return { data: null, error };
+                if (!data || !data.length) break;
+                out.push(...data); o += data.length;
+                if (data.length < 100) break;   // صفحة صغيرة = آخر صفحة
+            }
+            return { data: out, error: null };
+        }
 
         // ===== تسجيل الدخول عبر Supabase (اسم مستخدم + كلمة مرور) =====
         let _loginFails = 0, _loginLockUntil = 0;
@@ -1667,12 +1719,7 @@
 
                 <div class="adm-side">
                     <div class="adm-brand"><div class="adm-logo"></div><div><div class="adm-brand-t">Alsaree3</div><div class="adm-brand-s">Admin Panel</div></div></div>
-                    <div class="adm-grp-label"><span>📊</span> <span>Reports</span></div>
-                    <button onclick="window.openMonthReport()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100"><span class="text-sm">📈</span><span>Monthly Report</span></button>
-                    <button onclick="window.openScoreCard()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100"><span class="text-sm">🏆</span><span>Performance Card</span></button>
-                    <button onclick="window.openEmpReport()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-rose-50 border-rose-200 text-rose-800 hover:bg-rose-100"><span class="text-sm">👤</span><span>Employee Report (Excel)</span></button>
-                    <button onclick="window.waDailySummary()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition"><span class="text-sm">📤</span><span>WhatsApp Summary</span></button>
-                    <button onclick="window.openRushMap()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition"><span class="text-sm">🔥</span><span>Rush Hours</span></button>
+                    <button onclick="window.openReportsHub()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition"><span class="text-sm">📊</span><span>Reports Center</span></button>
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
                     <div class="adm-grp-label"><span>⚙️</span> <span>Operations</span></div>
                     <button id="leave-admin-btn" onclick="window.openLeaveAdmin()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-purple-50 border-purple-200 text-purple-800 hover:bg-purple-100"><span class="text-sm">📥</span><span>Leaves &amp; Permissions</span><span id="leave-badge" class="hidden absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 leading-none">0</span></button>
@@ -2471,8 +2518,7 @@
             const start = ym + '-01';
             const end = ym + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0');
             try {
-                const { data, error } = await supabaseClient.from('alsaree3_history')
-                    .select('*').gte('history_date', start).lte('history_date', end).order('history_date').limit(5000);
+                const { data, error } = await _pageAll(() => supabaseClient.from('alsaree3_history').select('*').gte('history_date', start).lte('history_date', end).order('history_date').order('employee_key'));
                 if (error) throw error;
                 // الإجازات المعتمدة (إن لم يوجد الجدول بعد يستمر الملخص بدونها)
                 await _loadEmpMeta();
@@ -2562,7 +2608,7 @@
                     <button style="${_MR_BTN}background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8;" onclick="window.mrShowSaved()">📚 التقارير المحفوظة</button>
                 </div>
                 <div id="mr-msg" style="font-size:0.82rem;font-weight:800;margin-bottom:8px;min-height:1em;"></div>
-                <div style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:10px;">النسبة = متوسط التقييم اليومي لأيام الدوام الفعلية (أيام OFF والإجازات المعتمدة والغياب لا تُحتسب). بيانات اليوم الحالي تظهر حسب ما هو محفوظ في السجل.</div>
+                <div style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:10px;">النسبة = متوسط التقييم اليومي لأيام الدوام الفعلية (أيام OFF والإجازات المعتمدة والغياب لا تُحتسب). بيانات اليوم الحالي تظهر حسب ما هو محفوظ في السجل.<br>نسبة الحضور = أيام الدوام ÷ (أيام الدوام + أيام الغياب). اضغط على عنوان أي عمود لترتيب الجدول.</div>
                 <div id="mr-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div>`, 1100);
             window.loadMonthReport();
         };
@@ -2586,8 +2632,7 @@
             if ((new Date(to) - new Date(from)) / 86400000 > 366) { _mrMsg('⚠️ المدة أطول من سنة', '#d97706'); return; }
             _mrMsg(''); box.style.color = '#94a3b8'; box.innerHTML = '⏳ جاري التحميل...';
             try {
-                const { data, error } = await supabaseClient.from('alsaree3_history')
-                    .select('*').gte('history_date', from).lte('history_date', to).order('history_date').limit(5000);
+                const { data, error } = await _pageAll(() => supabaseClient.from('alsaree3_history').select('*').gte('history_date', from).lte('history_date', to).order('history_date').order('employee_key'));
                 if (error) throw error;
                 await _loadEmpMeta();
                 const { data: lvRows } = await supabaseClient.from('alsaree3_leave_requests')
@@ -2620,22 +2665,90 @@
                 if (window._isFullPastMonth(from, to)) { try { const sc = await window.loadScoreCard(from, to, true); win = await window._winnerFor(from, to, sc || []); } catch (e) { console.warn('[MonthWinner]', e); } }
                 window._mrLast = { from, to, rows, win };
                 if (!rows.length) { box.innerHTML = '<p>لا توجد بيانات لهذه المدة.</p>'; return; }
-                box.style.color = '#000'; box.style.padding = '0'; box.innerHTML = window._winnerBannerHtml(win, from, to) + _mrTableHtml(rows);
+                window._mrView.q = ''; box.style.color = '#000'; box.style.padding = '0'; box.innerHTML = window._winnerBannerHtml(win, from, to) + _mrKpiHtml(rows) + _mrSearchHtml() + '<div id="mr-tbl"></div>'; _mrRender();
             } catch (e) { console.error('[MonthReport]', e); box.style.color = '#dc2626'; box.innerHTML = '❌ فشل تحميل التقرير'; }
         };
-        function _mrTableHtml(rows) {
-            const th = 'padding:9px;', heads = ['الموظف', 'أيام الدوام', 'OFF', 'غياب', 'إجازة', 'إذن زمني (س)', 'نسبة الفترة', 'إجمالي البريك', 'إجمالي الراحة', 'ساعات العمل'];
-            let h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.88rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">'
-                + heads.map(x => '<th style="' + th + '">' + x + '</th>').join('') + '</tr></thead><tbody>';
+        // ---------- مساعدات تقرير الشهر ----------
+        window._mrView = { col: 'name', dir: 1, q: '' };
+        window._mrClr = (v) => (v === null || v === undefined) ? '#64748b' : v >= 90 ? '#16a34a' : v >= 75 ? '#d97706' : '#dc2626';
+        window._kpiHtml = (items) => '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:0 0 12px;">'
+            + items.map(i => '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:8px 10px;text-align:center;min-width:0;"><div style="font-size:0.7rem;color:#64748b;font-weight:800;">' + i[0] + '</div>'
+                + '<div style="font-size:1.25rem;font-weight:900;color:' + (i[2] || '#0f172a') + ';">' + sanitize(i[1]) + '</div>'
+                + (i[3] ? '<div style="font-size:0.68rem;color:#94a3b8;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + sanitize(i[3]) + '</div>' : '') + '</div>').join('') + '</div>';
+        // نسبة الحضور = أيام الدوام ÷ (أيام الدوام + أيام الغياب)
+        function _mrAtt(a) { const t = (a.days || 0) + (a.absent || 0); return t > 0 ? Math.round((a.days || 0) / t * 1000) / 10 : null; }
+        function _mrTotals(rows) {
+            const t = { n: rows.length, withData: 0, days: 0, off: 0, absent: 0, leave: 0, permH: 0, sum: 0, br: 0, rest: 0, secs: 0 };
             rows.forEach(a => {
-                const pct = a.pct !== undefined ? a.pct : _mrPct(a);
-                const color = pct === null ? '#64748b' : pct >= 90 ? '#16a34a' : pct >= 75 ? '#d97706' : '#dc2626';
-                h += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="' + th + 'font-weight:900;">' + sanitize(a.name || '-') + '</td>'
-                    + '<td style="' + th + '">' + a.days + '</td><td style="' + th + '">' + a.off + '</td><td style="' + th + '">' + a.absent + '</td><td style="' + th + '">' + a.leave + '</td><td style="' + th + '">' + a.permH + '</td>'
-                    + '<td style="' + th + 'font-weight:900;font-size:1.02rem;color:' + color + ';">' + (pct === null ? '-' : pct + '%') + '</td>'
+                t.days += a.days || 0; t.off += a.off || 0; t.absent += a.absent || 0; t.leave += a.leave || 0; t.permH += a.permH || 0;
+                t.br += a.br || 0; t.rest += a.rest || 0; t.secs += a.secs || 0; if ((a.days || 0) > 0) t.withData++;
+                t.sum += (a.sum !== undefined) ? a.sum : ((a.pct != null ? a.pct : 0) * (a.days || 0));   // التقارير المحفوظة ما فيها sum فنشتقها من النسبة
+            });
+            t.permH = Math.round(t.permH * 100) / 100;
+            t.pct = t.days > 0 ? Math.round(t.sum / t.days * 10) / 10 : null;
+            const tot = t.days + t.absent; t.att = tot > 0 ? Math.round(t.days / tot * 1000) / 10 : null;
+            return t;
+        }
+        const _MR_COLS = [['name', 'الموظف'], ['days', 'أيام الدوام'], ['off', 'OFF'], ['absent', 'غياب'], ['leave', 'إجازة'], ['permH', 'إذن زمني (س)'], ['att', 'نسبة الحضور'], ['pct', 'نسبة الفترة'], ['br', 'إجمالي البريك'], ['rest', 'إجمالي الراحة'], ['secs', 'ساعات العمل']];
+        function _mrSortVal(a, col) {
+            if (col === 'name') return String(a.name || a.k || '');
+            if (col === 'att') return _mrAtt(a);
+            if (col === 'pct') return a.pct !== undefined ? a.pct : _mrPct(a);
+            return Number(a[col]) || 0;
+        }
+        function _mrKpiHtml(rows) {
+            if (!rows.length) return '';
+            const T = _mrTotals(rows), clr = window._mrClr;
+            const el = rows.filter(a => _mrPct(a) !== null).sort((p, q) => _mrPct(q) - _mrPct(p));
+            const low = el.filter(a => _mrPct(a) < 75).length;
+            const items = [
+                ['عدد الموظفين', String(T.n), '#334155', T.withData + ' عندهم أيام دوام'],
+                ['متوسط نسبة الفترة', T.pct === null ? '-' : T.pct + '%', clr(T.pct), 'مرجّح بأيام الدوام'],
+                ['نسبة الحضور', T.att === null ? '-' : T.att + '%', clr(T.att), 'دوام ÷ (دوام + غياب)'],
+                ['إجمالي الغياب', String(T.absent), T.absent ? '#dc2626' : '#16a34a', 'يوم'],
+                ['إجمالي ساعات العمل', _mrHrs(T.secs), '#334155', '']
+            ];
+            if (el.length) items.push(['الأعلى نسبة', _mrPct(el[0]) + '%', clr(_mrPct(el[0])), el[0].name || el[0].k]);
+            if (el.length > 1) { const w = el[el.length - 1]; items.push(['الأقل نسبة', _mrPct(w) + '%', clr(_mrPct(w)), w.name || w.k]); }
+            items.push(['تحت 75%', String(low), low ? '#dc2626' : '#16a34a', low ? 'يحتاجون متابعة' : 'لا أحد']);
+            return window._kpiHtml(items);
+        }
+        function _mrSearchHtml() { return '<input id="mr-q" type="search" placeholder="🔎 بحث باسم الموظف..." oninput="window._mrSearch(this.value)" style="' + _MR_INP + 'width:100%;max-width:260px;margin-bottom:10px;">'; }
+        window._mrSortBy = (col) => { const v = window._mrView; if (v.col === col) v.dir = -v.dir; else { v.col = col; v.dir = (col === 'name') ? 1 : -1; } _mrRender(); };
+        window._mrSearch = (q) => { window._mrView.q = String(q || '').trim().toLowerCase(); _mrRender(); };
+        function _mrRender() {
+            const L = window._mrLast, box = document.getElementById('mr-tbl'); if (!L || !L.rows || !box) return;
+            const v = window._mrView;
+            const rows = L.rows.filter(a => !v.q || String(a.name || a.k || '').toLowerCase().includes(v.q)).sort((p, q) => {
+                const x = _mrSortVal(p, v.col), y = _mrSortVal(q, v.col);
+                if (x === null && y === null) return 0; if (x === null) return 1; if (y === null) return -1;   // الفارغ دائماً بالأسفل
+                return (typeof x === 'string' ? x.localeCompare(y) : x - y) * v.dir;
+            });
+            box.innerHTML = rows.length ? _mrTableHtml(rows, { interactive: true }) : '<p style="color:#64748b;font-weight:700;padding:12px;">لا توجد نتائج مطابقة.</p>';
+        }
+        function _mrTableHtml(rows, opt) {
+            const inter = !!(opt && opt.interactive), V = window._mrView || {}, th = 'padding:9px;', clr = window._mrClr;
+            const head = _MR_COLS.map(c => {
+                const on = inter && V.col === c[0];
+                return '<th style="' + th + (inter ? 'cursor:pointer;white-space:nowrap;user-select:none;' : '') + '"' + (inter ? ' onclick="window._mrSortBy(\'' + c[0] + '\')" title="ترتيب حسب هذا العمود"' : '') + '>' + c[1] + (on ? (V.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>';
+            }).join('');
+            const bar = (v, c) => v === null ? '' : '<div style="height:4px;min-width:56px;background:#e2e8f0;border-radius:4px;margin-top:3px;"><div style="height:100%;width:' + Math.max(0, Math.min(100, v)) + '%;background:' + c + ';border-radius:4px;"></div></div>';
+            let h = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.88rem;text-align:right;"><thead><tr style="background:#f1f5f9;font-weight:900;">' + head + '</tr></thead><tbody>';
+            rows.forEach(a => {
+                const pct = a.pct !== undefined ? a.pct : _mrPct(a), att = _mrAtt(a), color = clr(pct);
+                h += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="' + th + 'font-weight:900;">' + sanitize(a.name || a.k || '-') + '</td>'
+                    + '<td style="' + th + '">' + a.days + '</td><td style="' + th + '">' + a.off + '</td>'
+                    + '<td style="' + th + (a.absent > 0 ? 'font-weight:900;color:#dc2626;' : '') + '">' + a.absent + '</td>'
+                    + '<td style="' + th + '">' + a.leave + '</td><td style="' + th + '">' + a.permH + '</td>'
+                    + '<td style="' + th + 'font-weight:800;color:' + clr(att) + ';">' + (att === null ? '-' : att + '%') + bar(att, clr(att)) + '</td>'
+                    + '<td style="' + th + 'font-weight:900;font-size:1.02rem;color:' + color + ';">' + (pct === null ? '-' : pct + '%') + bar(pct, color) + '</td>'
                     + '<td style="' + th + '">' + a.br + ' min</td><td style="' + th + '">' + a.rest + ' min</td><td style="' + th + 'direction:ltr;text-align:right;">' + _mrHrs(a.secs) + '</td></tr>';
             });
-            return h + '</tbody></table></div>';
+            const T = _mrTotals(rows), tc = 'padding:9px;font-weight:900;background:#e0e7ff;';
+            h += '</tbody><tfoot><tr><td style="' + tc + '">الإجمالي / المتوسط</td><td style="' + tc + '">' + T.days + '</td><td style="' + tc + '">' + T.off + '</td><td style="' + tc + '">' + T.absent + '</td><td style="' + tc + '">' + T.leave + '</td><td style="' + tc + '">' + T.permH + '</td>'
+                + '<td style="' + tc + 'color:' + clr(T.att) + ';">' + (T.att === null ? '-' : T.att + '%') + '</td><td style="' + tc + 'color:' + clr(T.pct) + ';">' + (T.pct === null ? '-' : T.pct + '%') + '</td>'
+                + '<td style="' + tc + '">' + T.br + ' min</td><td style="' + tc + '">' + T.rest + ' min</td><td style="' + tc + 'direction:ltr;text-align:right;">' + _mrHrs(T.secs) + '</td></tr></tfoot></table></div>';
+            return h;
         }
         // ===== 🏅 التقرير الشامل: كل تفاصيل كل موظف + ليش الأول صار الأول وبشنو تفوّق =====
         const _FR_CRIT = [
@@ -2935,7 +3048,7 @@
             if (loggedInId !== '__admin__') return;
             const L = window._mrLast; if (!L || !L.rows || !L.rows.length) { _mrMsg('⚠️ اعرض التقرير أولاً', '#d97706'); return; }
             if (!confirm('💾 حفظ تقرير الفترة (' + L.from + ' ← ' + L.to + ') في السيرفر؟\n(إن وُجد تقرير محفوظ لنفس الفترة سيُستبدل)')) return;
-            const at = new Date().toISOString().slice(0, 16).replace('T', ' '), key = L.from + '_' + L.to, snaps = {};
+            const at = _bgStamp(Date.now()), key = L.from + '_' + L.to, snaps = {};
             L.rows.forEach(a => { snaps[a.k] = { from: L.from, to: L.to, name: a.name, days: a.days, off: a.off, absent: a.absent, leave: a.leave, permH: a.permH, pct: _mrPct(a), br: a.br, rest: a.rest, secs: a.secs, savedAt: at }; });
             _mrMsg('⏳ جاري الحفظ...');
             try {
@@ -2982,9 +3095,14 @@
                 await loadPdfLibs();
                 const { jsPDF } = window.jspdf, doc = new jsPDF({ orientation: 'landscape' });
                 doc.setFontSize(14); doc.text('Alsaree3 Morning Call Center - Monthly Report: ' + L.from + ' to ' + L.to, 14, 15);
-                const body = L.rows.map(a => { const p = _mrPct(a); return [a.name || a.k, a.days, a.off, a.absent, a.leave, a.permH, p === null ? '-' : p + '%', a.br + ' min', a.rest + ' min', _mrHrs(a.secs)]; });
-                doc.autoTable({ head: [['Name', 'Work days', 'OFF', 'Absent', 'Leave', 'Permission (h)', 'Avg Rating', 'Break', 'Rest', 'Work hours']], body, startY: 22,
-                    styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [238, 242, 255] } });
+                // خط PDF الافتراضي ما يدعم العربي: الاسم العربي يُستبدل بمفتاح الموظف (نفس أسلوب تقرير PDF الرئيسي)
+                const hasAr = x => /[\u0600-\u06FF]/.test(String(x || '')), nm = a => { const n = String(a.name || ''); return (n && !hasAr(n)) ? n : String(a.k || n); };
+                const T = _mrTotals(L.rows), pc = v => (v === null || v === undefined) ? '-' : v + '%';
+                const body = L.rows.map(a => [nm(a), a.days, a.off, a.absent, a.leave, a.permH, pc(_mrAtt(a)), pc(_mrPct(a)), a.br + ' min', a.rest + ' min', _mrHrs(a.secs)]);
+                body.push(['TOTAL / AVG', T.days, T.off, T.absent, T.leave, T.permH, pc(T.att), pc(T.pct), T.br + ' min', T.rest + ' min', _mrHrs(T.secs)]);
+                doc.autoTable({ head: [['Name', 'Work days', 'OFF', 'Absent', 'Leave', 'Permission (h)', 'Attendance', 'Avg Rating', 'Break', 'Rest', 'Work hours']], body, startY: 22,
+                    styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [238, 242, 255] },
+                    didParseCell: d => { if (d.section === 'body' && d.row.index === body.length - 1) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [224, 231, 255]; } } });
                 doc.save('Alsaree3_Monthly_Report_' + L.from + '_to_' + L.to + '.pdf');
                 _mrMsg('✅ تم تحميل PDF', '#16a34a');
             } catch (e) { console.error('[MonthReportPDF]', e); _mrMsg('❌ فشل إنشاء PDF', '#dc2626'); }
@@ -2998,7 +3116,7 @@
                 const ExcelJS = await _loadExcelJS();
                 const wb = new ExcelJS.Workbook(); wb.creator = 'Alsaree3';
                 const ws = wb.addWorksheet('تقرير الشهر', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 3 }] });
-                const H = ['الموظف', 'أيام الدوام', 'OFF', 'غياب', 'إجازة', 'إذن زمني (س)', 'نسبة الفترة', 'البريك (د)', 'الراحة (د)', 'ساعات العمل'];
+                const H = ['الموظف', 'أيام الدوام', 'OFF', 'غياب', 'إجازة', 'إذن زمني (س)', 'نسبة الحضور', 'نسبة الفترة', 'البريك (د)', 'الراحة (د)', 'ساعات العمل'];
                 const bd = { top: { style: 'thin', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }, left: { style: 'thin', color: { argb: 'FFE2E8F0' } }, right: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
                 ws.mergeCells(1, 1, 1, H.length); const t = ws.getCell(1, 1); t.value = '📈 تقرير الشهر — عالسريع   (' + L.from + ' ← ' + L.to + ')'; t.font = { bold: true, size: 14, name: 'Arial', color: { argb: 'FF1E1B4B' } }; t.alignment = { horizontal: 'center' }; ws.getRow(1).height = 26;
                 if (L.win) { ws.mergeCells(2, 1, 2, H.length); const wc = ws.getCell(2, 1); wc.value = '🏆 موظف شهر ' + window._ymLabel(L.win.ym) + ' — الفائز بالجائزة: ' + L.win.name + '   ·   الدرجة: ' + Math.round(Number(L.win.total) || 0) + '%';
@@ -3007,11 +3125,14 @@
                 hr.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } }; c.font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Arial' }; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; c.border = bd; });
                 L.rows.forEach((a, i) => {
                     const p = _mrPct(a);
-                    const r = ws.addRow([a.name || a.k, a.days, a.off, a.absent, a.leave, a.permH, p === null ? null : p / 100, a.br, a.rest, _mrHrs(a.secs)]);
+                    const at = _mrAtt(a); const r = ws.addRow([a.name || a.k, a.days, a.off, a.absent, a.leave, a.permH, at === null ? null : at / 100, p === null ? null : p / 100, a.br, a.rest, _mrHrs(a.secs)]);
                     r.eachCell({ includeEmpty: true }, c => { c.border = bd; c.alignment = { horizontal: 'center', vertical: 'middle' }; c.font = { name: 'Arial' }; if (i % 2) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2FF' } }; });
-                    r.getCell(1).font = { name: 'Arial', bold: true }; r.getCell(7).numFmt = '0.0%';
-                    if (p !== null) r.getCell(7).font = { name: 'Arial', bold: true, color: { argb: p >= 90 ? 'FF16A34A' : p >= 75 ? 'FFD97706' : 'FFDC2626' } };
+                    r.getCell(1).font = { name: 'Arial', bold: true }; r.getCell(7).numFmt = '0.0%'; r.getCell(8).numFmt = '0.0%'; if (a.absent > 0) r.getCell(4).font = { name: 'Arial', bold: true, color: { argb: 'FFDC2626' } };
+                    if (p !== null) r.getCell(8).font = { name: 'Arial', bold: true, color: { argb: p >= 90 ? 'FF16A34A' : p >= 75 ? 'FFD97706' : 'FFDC2626' } };
                 });
+                { const T = _mrTotals(L.rows); const tr = ws.addRow(['الإجمالي / المتوسط', T.days, T.off, T.absent, T.leave, T.permH, T.att === null ? null : T.att / 100, T.pct === null ? null : T.pct / 100, T.br, T.rest, _mrHrs(T.secs)]);
+                  tr.eachCell({ includeEmpty: true }, c => { c.border = bd; c.alignment = { horizontal: 'center', vertical: 'middle' }; c.font = { name: 'Arial', bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } }; });
+                  tr.getCell(7).numFmt = '0.0%'; tr.getCell(8).numFmt = '0.0%'; }
                 ws.columns.forEach((c, i) => { c.width = i === 0 ? 22 : 14; });
                 const buf = await wb.xlsx.writeBuffer();
                 const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -3143,7 +3264,7 @@
         function _scDayName(ds) { const p = String(ds).split('-').map(Number); return _SC_DN[new Date(p[0], p[1] - 1, p[2]).getDay()]; }
         function _scDescHtml() {
             return 'الأوزان: الحضور والتأخير ' + SC_WEIGHTS.att + ' · البريك والاستراحة ' + SC_WEIGHTS.brk + ' · سرعة حل الطلبات ' + SC_WEIGHTS.tkt + ' · ساعات الحضور ' + SC_WEIGHTS.hrs + '<br>مكافأة الطلبات: حتى +' + SC_WEIGHTS.ord + ' نقطة تُضاف للدرجة (كاملة عند ' + SC_ORDERS_DAILY_TARGET + ' طلب باليوم) — من لا طلبات له لا يُخصم منه شيء. ساعات الحضور تُقاس بعد استثناء البريك المسموح ودقائق التأخير (التأخير يُخصم مرة واحدة فقط في بند الحضور)'
-                + '<br>الأفضلية: عند تساوي الدرجة يتقدّم من أخذ بريكاً واستراحة أقل. الخصم على البريك يبدأ بعد 5:00 في الساعة (من 5:01).'
+                + '<br>الأفضلية: عند تساوي الدرجة يتقدّم من أخذ بريكاً واستراحة أقل. الخصم على البريك يبدأ بعد ' + SC_BREAK_ALLOW_PER_HOUR_MIN + ':00 في الساعة (من ' + SC_BREAK_ALLOW_PER_HOUR_MIN + ':01).'
                 + '<br>لا تُحتسب أيام OFF والإجازات المعتمدة والأيام المستثناة. اضغط على اسم الموظف لرؤية تفصيل كل يوم وتعديل دوامه ويوم الأوف.';
         }
 
@@ -3172,10 +3293,12 @@
                 + '<button onclick="window.scClearReset(null)" style="' + qb + '">↩️ إلغاء التصفير</button>'
                 + '<button onclick="window.scSaveNow()" style="' + qb + '">💾 حفظ نسخة</button>'
                 + '<button onclick="window.scShowArchive()" style="' + qb + 'background:#eff6ff;border-color:#93c5fd;color:#1d4ed8;">📚 الأرشيف</button>'
+                + '<button onclick="window.scXlsx()" style="' + qb + 'background:#f0fdf4;border-color:#86efac;color:#166534;">📊 Excel</button>'
                 + '<button onclick="window.openEmpEval()" style="' + qb + 'background:#f0fdf4;border-color:#86efac;color:#166534;">📈 تقييم ونواقص الموظفين</button></div>'
                 + '<div id="sc-settings" style="display:none;margin-bottom:12px;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;"></div>'
                 + '<div id="sc-resetinfo" style="font-size:0.75rem;color:#b45309;font-weight:800;margin-bottom:6px;"></div>'
                 + '<div id="sc-desc" style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:12px;line-height:1.8;">' + _scDescHtml() + '</div>'
+                + '<input id="sc-q" type="search" placeholder="🔎 بحث باسم الموظف..." oninput="window.scFilter(this.value)" style="' + inp + 'width:100%;max-width:260px;margin-bottom:10px;">'
                 + '<div id="score-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div></div>';
             document.body.appendChild(o);
             window.scReload();
@@ -3244,6 +3367,77 @@
             try { await window.excludeFromRating(date, key); } catch (e) { console.warn(e); }
             window.scReload();
         };
+        window._scKpi = (rows, detail) => {
+            const el = rows.filter(r => r.hasData); if (!el.length) return '';
+            const clr = window._mrClr, avg = el.reduce((a, r) => a + r.total, 0) / el.length, low = el.filter(r => r.total < 75).length;
+            const abs = rows.reduce((a, r) => a + (r.absent || 0), 0);
+            let late = 0; Object.keys(detail || {}).forEach(k => (detail[k] || []).forEach(d => { if (d.status === 'دوام' && d.late > 0) late++; }));
+            const best = el[0], worst = el.length > 1 ? el[el.length - 1] : null;
+            const items = [['متوسط الدرجة', String(Math.round(avg)), clr(avg), el.length + ' موظف مُقيَّم'], ['الأعلى', String(Math.round(best.total)), clr(best.total), best.name]];
+            if (worst) items.push(['الأقل', String(Math.round(worst.total)), clr(worst.total), worst.name]);
+            items.push(['تحت 75', String(low), low ? '#dc2626' : '#16a34a', low ? 'يحتاجون متابعة' : 'لا أحد']);
+            items.push(['أيام الغياب', String(abs), abs ? '#dc2626' : '#16a34a', 'مجموع كل الموظفين']);
+            items.push(['مرات التأخير', String(late), late ? '#d97706' : '#16a34a', 'أيام دوام فيها تأخير']);
+            return window._kpiHtml(items);
+        };
+        window.scFilter = (q) => {
+            q = String(q || '').trim().toLowerCase();
+            document.querySelectorAll('#score-content tr[data-sn]').forEach(tr => {
+                const hit = !q || tr.dataset.sn.includes(q); tr.style.display = hit ? '' : 'none';
+                const d = document.getElementById('scd-' + tr.dataset.i); if (d && !hit) d.style.display = 'none';
+            });
+        };
+        // تصدير بطاقة الأداء إلى Excel: ورقة الترتيب + ورقة التفصيل اليومي لكل موظف
+        window.scXlsx = async () => {
+            if (loggedInId !== '__admin__') return;
+            const S = window._scLast, D = window._scDetail || {};
+            if (!S || !S.rows || !S.rows.length) { alert('⚠️ اعرض بطاقة الأداء أولاً'); return; }
+            try {
+                const ExcelJS = await _loadExcelJS();
+                const wb = new ExcelJS.Workbook(); wb.creator = 'Alsaree3';
+                const ln = { style: 'thin', color: { argb: 'FFE2E8F0' } }, bd = { top: ln, bottom: ln, left: ln, right: ln };
+                const fill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+                const colr = v => v === null || v === undefined ? 'FF64748B' : v >= 90 ? 'FF16A34A' : v >= 75 ? 'FFD97706' : 'FFDC2626';
+                const mk = (ws, H, title, tint) => {
+                    ws.mergeCells(1, 1, 1, H.length); const t = ws.getCell(1, 1); t.value = title; t.font = { bold: true, size: 14, name: 'Arial', color: { argb: 'FF1E1B4B' } }; t.alignment = { horizontal: 'center' }; ws.getRow(1).height = 26;
+                    const hr = ws.getRow(2); hr.values = H; hr.height = 26;
+                    hr.eachCell(c => { c.fill = fill(tint); c.font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Arial' }; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; c.border = bd; });
+                };
+                const style = (r, i) => r.eachCell({ includeEmpty: true }, c => { c.border = bd; c.alignment = { horizontal: 'center', vertical: 'middle' }; c.font = { name: 'Arial' }; if (i % 2) c.fill = fill('FFF8FAFC'); });
+                const pc = v => v === null || v === undefined ? null : v / 100;
+                const ws = wb.addWorksheet('بطاقة الأداء', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 2 }] });
+                const H1 = ['#', 'الموظف', 'الدرجة النهائية', 'الحضور والتأخير', 'البريك والاستراحة', 'سرعة الطلبات', 'مكافأة القبول والتوزيع (نقاط)', 'ساعات الحضور', 'أيام الدوام', 'أيام الغياب'];
+                mk(ws, H1, '🏆 بطاقة الأداء — ' + S.from + ' ← ' + S.to, 'FF4F46E5');
+                S.rows.forEach((r, i) => {
+                    const row = ws.addRow([r.hasData ? i + 1 : '-', r.name, r.hasData ? Math.round(r.total) / 100 : null, pc(r.att), pc(r.brk), pc(r.tkt), r.ord === null ? null : Math.round(r.ord / 100 * SC_WEIGHTS.ord * 10) / 10, pc(r.hrs), r.days, r.absent]);
+                    style(row, i); row.getCell(2).font = { name: 'Arial', bold: true };
+                    [3, 4, 5, 6, 8].forEach(ci => row.getCell(ci).numFmt = '0%');
+                    if (r.hasData) row.getCell(3).font = { name: 'Arial', bold: true, color: { argb: colr(r.total) } };
+                    [['att', 4], ['brk', 5], ['tkt', 6], ['hrs', 8]].forEach(x => { if (r[x[0]] !== null && r[x[0]] !== undefined) row.getCell(x[1]).font = { name: 'Arial', color: { argb: colr(r[x[0]]) } }; });
+                    if (r.absent > 0) row.getCell(10).font = { name: 'Arial', bold: true, color: { argb: 'FFDC2626' } };
+                });
+                ws.columns.forEach((c, i) => { c.width = i === 1 ? 24 : 15; });
+                const w2 = wb.addWorksheet('التفصيل اليومي', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 2 }] });
+                const H2 = ['الموظف', 'التاريخ', 'اليوم', 'الحالة', 'الدخول', 'التأخير (د)', 'البريك (د)', 'الراحة (د)', 'ساعات العمل', 'تقييم اليوم'];
+                mk(w2, H2, 'التفصيل اليومي — ' + S.from + ' ← ' + S.to, 'FF0F766E');
+                let n = 0;
+                S.rows.forEach(r => (D[r.k] || []).forEach(d => {
+                    const work = d.status === 'دوام', secs = Number(d.secs) || 0;
+                    const row = w2.addRow([r.name, d.date, _scDayName(d.date), d.status, work ? (d.start || '') : '', work ? (d.late || 0) : '', work ? (d.brk || 0) : '', work ? (d.rest || 0) : '', work ? Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm' : '', work && d.rating != null ? d.rating / 100 : null]);
+                    style(row, n++); row.getCell(1).font = { name: 'Arial', bold: true }; row.getCell(10).numFmt = '0%';
+                    if (d.status === 'غياب') for (let ci = 1; ci <= 10; ci++) { row.getCell(ci).fill = fill('FFFEE2E2'); row.getCell(ci).font = { name: 'Arial', bold: true, color: { argb: 'FFB91C1C' } }; }
+                    else if (d.status === 'OFF' || d.status === 'إجازة') for (let ci = 1; ci <= 10; ci++) row.getCell(ci).font = { name: 'Arial', color: { argb: 'FF94A3B8' } };
+                    if (work && d.late > 0) row.getCell(6).font = { name: 'Arial', bold: true, color: { argb: 'FFDC2626' } };
+                    if (work && d.rating != null) row.getCell(10).font = { name: 'Arial', bold: true, color: { argb: colr(d.rating) } };
+                }));
+                w2.columns.forEach((c, i) => { c.width = i === 0 ? 24 : 14; });
+                if (n) w2.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: H2.length } };
+                const buf = await wb.xlsx.writeBuffer();
+                const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })), a = document.createElement('a');
+                a.href = url; a.download = 'Alsaree3_ScoreCard_' + S.from + '_to_' + S.to + '.xlsx';
+                document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+            } catch (e) { console.error('[ScoreCardXLSX]', e); alert('❌ فشل إنشاء Excel: ' + ((e && e.message) || '')); }
+        };
         // تعديل بداية الدوام ويوم الأوف لموظف (يُحفظ في جدول الموظفين)
         window.saveEmpSchedule = async (key) => {
             if (loggedInId !== '__admin__') return;
@@ -3290,7 +3484,7 @@
         }
         function _scSnapshotRows(rows, from, to, auto) {
             const rd = v => (v === null || v === undefined) ? null : Math.round(v), m = {};
-            const at = new Date().toISOString().slice(0, 16).replace('T', ' ');
+            const at = _bgStamp(Date.now());
             rows.forEach(r => { m[r.k] = { from, to, name: r.name, total: r.hasData ? Math.round(r.total) : null, raw: r.hasData ? Math.round((Number(r.raw) || 0) * 100) / 100 : null, used: r.usedAvg == null ? null : Math.round(r.usedAvg), att: rd(r.att), brk: rd(r.brk), tkt: rd(r.tkt), ord: rd(r.ord), hrs: rd(r.hrs), days: r.days, absent: r.absent, auto: !!auto, savedAt: at }; });
             return m;
         }
@@ -3653,7 +3847,7 @@
             const _crOf = k => (to >= today ? _cardResetOf(k) : null);
             const dates = []; for (let i = 0; i < nDays; i++) dates.push(_ymd(new Date(pf[0], pf[1] - 1, pf[2] + i)));
             try {
-                const { data, error } = await supabaseClient.from('alsaree3_history').select('*').gte('history_date', from).lte('history_date', to).order('history_date').limit(5000);
+                const { data, error } = await _pageAll(() => supabaseClient.from('alsaree3_history').select('*').gte('history_date', from).lte('history_date', to).order('history_date').order('employee_key'));
                 if (error) throw error;
                 await _loadEmpMeta();
                 const { data: lvRows } = await supabaseClient.from('alsaree3_leave_requests').select('employee_key,kind,start_date,days,hours,from_time,to_time').eq('status', 'approved');
@@ -3780,18 +3974,19 @@
                             + ((work || d.status === 'غياب') ? '<button data-d="' + sanitize(d.date) + '" data-k="' + sanitize(r.k) + '" onclick="window.scExclude(this.dataset.d,this.dataset.k)" style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;border-radius:8px;padding:1px 8px;font-weight:800;font-size:0.72rem;cursor:pointer;font-family:Cairo,sans-serif;">🚫 استثناء</button>' : '') + '</td></tr>';
                     });
                     dt += '</tbody></table>';
-                    html += '<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + (r.hasData ? (medals[i] || (i + 1)) : '-') + '</td>'
+                    html += '<tr data-sn="' + sanitize(String(r.name).toLowerCase()) + '" data-i="' + i + '" style="border-bottom:1px solid #e2e8f0;"><td style="padding:9px;font-weight:900;">' + (r.hasData ? (medals[i] || (i + 1)) : '-') + '</td>'
                         + '<td style="padding:9px;font-weight:900;cursor:pointer;" onclick="window.scToggle(' + i + ')" title="تفصيل الأيام والتحكم">' + sanitize(r.name) + ' <span style="color:#94a3b8;font-size:0.75rem;">▾</span></td>'
-                        + '<td style="padding:9px;font-weight:900;font-size:1.1rem;color:' + (r.hasData ? c(r.total) : '#94a3b8') + ';">' + (r.hasData ? Math.round(r.total) : '-') + '</td>'
+                        + '<td style="padding:9px;font-weight:900;font-size:1.1rem;color:' + (r.hasData ? c(r.total) : '#94a3b8') + ';">' + (r.hasData ? Math.round(r.total) + '<div style="height:4px;width:70px;background:#e2e8f0;border-radius:4px;margin-top:3px;"><div style="height:100%;width:' + Math.max(0, Math.min(100, Math.round(r.total))) + '%;background:' + c(r.total) + ';border-radius:4px;"></div></div>' : '-') + '</td>'
                         + [['att', r.att], ['brk', r.brk], ['tkt', r.tkt], ['ord', r.ord], ['hrs', r.hrs]].map(p => { const v = p[1]; if (p[0] === 'ord') return '<td style="padding:9px;font-weight:900;color:' + (v ? '#15803d' : '#94a3b8') + ';">' + (v === null ? '-' : '+' + (Math.round(v / 100 * SC_WEIGHTS.ord * 10) / 10) + ' نقطة') + '</td>'; return '<td style="padding:9px;font-weight:800;color:' + c(v) + ';">' + f(v) + '</td>'; }).join('')
                         + '<td style="padding:9px;direction:ltr;text-align:right;">' + r.days + ' / ' + r.absent + '</td></tr>'
                         + '<tr id="scd-' + i + '" style="display:none;background:#f8fafc;"><td colspan="9" style="padding:10px 12px;">' + ctrl + '<div style="overflow-x:auto;">' + dt + '</div></td></tr>';
                 });
                 const _win = window._isFullPastMonth(from, to) ? await window._winnerFor(from, to, rows).catch(() => null) : null;
                 box.style.cssText = 'padding:0;color:#000;';
-                box.innerHTML = (_win ? window._winnerBannerHtml(_win) : '') + '<div style="overflow-x:auto;">' + html + '</tbody></table></div>'
+                box.innerHTML = (_win ? window._winnerBannerHtml(_win) : '') + window._scKpi(rows, detail) + '<div style="overflow-x:auto;">' + html + '</tbody></table></div>'
                     + (tkOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل الطلبات، فحُسبت الدرجة بدون معيار سرعة الطلبات. (السبب: ' + sanitize(tkErr) + ')</p>')
                     + (ordOk ? '' : '<p style="color:#b45309;font-weight:700;margin-top:10px;">⚠️ تعذّر تحميل القبول والتوزيع، فحُسبت الدرجة بدونه. (السبب: ' + sanitize(ordErr) + ')</p>');
+                window.scFilter((document.getElementById('sc-q') || {}).value);
             } catch (e) {
                 console.error('[ScoreCard]', e);
                 box.style.cssText = 'padding:20px;';
@@ -3995,7 +4190,7 @@
                 br = Number(d.totalBreakMinutes) || 0; rest = Number(d.totalRestMinutes) || 0; rating = d.rating == null ? 100 : Number(d.rating) || 0;
             }
             const txt = '📋 تقرير ' + name + '\n📅 ' + date + '\n🕘 الدخول: ' + start + '\n⏱️ ساعات العمل: ' + hrs + '\n☕ البريك: ' + br + ' د\n🛋️ الراحة: ' + rest + ' د\n⭐ تقييم اليوم: ' + rating + '%';
-            window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
+            window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank', 'noopener');
         };
 
         // ===== مهام واتساب: المسؤول يرسل مهمة، والموظف يضغط "قرأت" ثم "تم الحل" =====
@@ -4018,7 +4213,7 @@
             if (!_checkWriteRate()) return;
             const { error } = await supabaseClient.rpc('alsaree3_ticket_create', { p_key: id, p_body: txt.trim() });
             if (error) { console.error('[Ticket]', error); alert('❌ تعذّر إنشاء المهمة. تأكد أنك شغّلت ملف tickets.sql في Supabase.'); return; }
-            window.open('https://wa.me/?text=' + encodeURIComponent('📨 ' + emp.name + '\n' + txt.trim() + '\n\n(اضغط "قرأت" ثم "تم الحل" في النظام)'), '_blank');
+            window.open('https://wa.me/?text=' + encodeURIComponent('📨 ' + emp.name + '\n' + txt.trim() + '\n\n(اضغط "قرأت" ثم "تم الحل" في النظام)'), '_blank', 'noopener');
         };
 
         window._ocFilter = (el) => {   // بحث داخل بطاقة الطلبات
@@ -4948,6 +5143,74 @@
             if (JB_TICKET.cfRest) add('cf' + JB_TICKET.cfRest, rest);
             if (JB_TICKET.cfCallClass) add('cf' + JB_TICKET.cfCallClass, callClass || JB_TICKET.callClassValue);
             window.open(HELPDESK_URL.replace(/\/+$/, '') + '/Tickets/New?' + q.join('&'), '_blank', 'noopener');
+        };
+        // ===== 💸 تذكرة تعويض زبون: يملي اسم المطعم + رقم الطلب + السبب + سعر التعويض ويفتح التذكرة معبّأة =====
+        // ⚠️ الأرقام التالية تؤخذ من Jitbit (صفحة تذكرة جديدة ← كليك يمين على الحقل ← Inspect):
+        //   classValue     = قيمة (value) الخيار "زبون" داخل قائمة Class
+        //   callClassValue = قيمة الخيار "اضافة محفظة للزبون" داخل Call Classification
+        //   cfAmount       = رقم حقل Customer Compensation Amount (الرقم بعد cf بالـ name)
+        // إذا تركتها '' راح يفتح التذكرة وتختار هذي الحقول يدوياً، وسعر التعويض ينكتب بنص التذكرة.
+        //   cfAck / ackYesValue / ackNoValue = رقم حقل "اعتراف المطعم بالنقص او التلف" وقيمتا خيارَيه (يعترف / لا يعترف)
+        const JB_COMP = { classValue: '297597', callClassValue: '298313', cfAmount: '47506', cfAck: '51573', ackYesValue: '506287', ackNoValue: '506288' };
+        // خيارات سبب التعويض (عدّلها متى ما تريد؛ "أخرى" تفتح خانة كتابة)
+        const COMP_REASONS = ['نقص صنف', 'تلف الطلب أو انسكابه', 'تأخر الطلب', 'طلب خاطئ', 'جودة سيئة أو الطلب بارد', 'تصرف سيئ من السائق'];
+        const COMP_OTHER = 'أخرى';
+        const COMP_ACK = { yes: 'المطعم يعترف بنقص او تلف الطلب', no: 'المطعم لا يعترف بنقص او تلف الطلب' };
+        window.openCompTicket = () => {
+            const g0 = id => { const e = document.getElementById(id); return e ? e.value.trim().replace(/\s+/g, ' ') : ''; };
+            const pre = { ord: g0('disp-input'), rest: g0('acc-rest') || g0('disp-rest') || window._accR || window._dispR || '', ph: g0('acc-ph') || window._accPh || '' };
+            const f = 'width:100%;border:1px solid #cbd5e1;border-radius:12px;padding:9px 12px;font-family:Cairo,sans-serif;font-weight:800;font-size:.95rem;';
+            _modal('comp-overlay', '💸 تذكرة تعويض زبون', `
+                <div style="display:grid;gap:10px;">
+                    <label style="font-weight:800;">رقم الطلب<input id="comp-ord" maxlength="30" inputmode="numeric" value="${sanitize(pre.ord)}" style="${f}direction:ltr;text-align:center;"></label>
+                    <label style="font-weight:800;">اسم المطعم<input id="comp-rest" maxlength="60" value="${sanitize(pre.rest)}" style="${f}"></label>
+                    <label style="font-weight:800;">رقم هاتف الزبون<input id="comp-ph" type="tel" inputmode="tel" maxlength="20" value="${sanitize(pre.ph)}" style="${f}direction:ltr;text-align:center;"></label>
+                    <label style="font-weight:800;">سبب التعويض
+                        <select id="comp-sel" style="${f}cursor:pointer;" onchange="document.getElementById('comp-why-wrap').style.display = this.value === '${COMP_OTHER}' ? '' : 'none'">
+                            <option value="">اختر السبب</option>${COMP_REASONS.concat([COMP_OTHER]).map(r => '<option value="' + sanitize(r) + '">' + sanitize(r) + '</option>').join('')}
+                        </select></label>
+                    <div id="comp-why-wrap" style="display:none;"><input id="comp-why" maxlength="150" placeholder="اكتب السبب" style="${f}"></div>
+                    <label style="font-weight:800;">اعتراف المطعم بالنقص او التلف
+                        <select id="comp-ack" style="${f}cursor:pointer;">
+                            <option value="">اختر</option>
+                            <option value="no">${COMP_ACK.no}</option>
+                            <option value="yes">${COMP_ACK.yes}</option>
+                        </select></label>
+                    <label style="font-weight:800;">سعر التعويض (دينار)<input id="comp-amt" inputmode="numeric" maxlength="12" placeholder="مثال: 5000" style="${f}direction:ltr;text-align:center;"></label>
+                    <div id="comp-msg" style="min-height:1.2em;font-size:.85rem;font-weight:800;color:#b91c1c;"></div>
+                    <button type="button" class="login-btn" onclick="window._compSubmit()">🎫 فتح التذكرة معبّأة</button>
+                </div>`, 440);
+            const first = document.getElementById(pre.ord ? (pre.rest ? 'comp-ph' : 'comp-rest') : 'comp-ord'); if (first) first.focus();
+        };
+        window._compSubmit = () => {
+            const g = id => { const e = document.getElementById(id); return e ? e.value.trim().replace(/\s+/g, ' ') : ''; };
+            const ord = g('comp-ord'), rest = g('comp-rest'), ph = g('comp-ph'), sel = g('comp-sel'), ack = g('comp-ack');
+            const why = sel === COMP_OTHER ? g('comp-why') : sel;
+            const amt = g('comp-amt').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[,\s٬،]/g, '');
+            const msg = document.getElementById('comp-msg'), bad = t => { if (msg) msg.textContent = t; };
+            if (!ord) return bad('⚠️ اكتب رقم الطلب');
+            if (!rest) return bad('⚠️ اكتب اسم المطعم');
+            if (!ph) return bad('⚠️ اكتب رقم هاتف الزبون');
+            if (!sel) return bad('⚠️ اختر سبب التعويض');
+            if (!why) return bad('⚠️ اكتب تفاصيل السبب');
+            if (!ack) return bad('⚠️ اختر: هل المطعم يعترف بالنقص او التلف؟');
+            if (!/^\d{1,9}$/.test(amt)) return bad('⚠️ اكتب سعر التعويض بالأرقام فقط');
+            const q = [];
+            const add = (k, v) => { if (k && v !== '' && v != null) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(v)); };
+            add('categoryId', JB_TICKET.categoryId);
+            add('subject', ord);
+            const ackId = JB_COMP.cfAck && (ack === 'yes' ? JB_COMP.ackYesValue : JB_COMP.ackNoValue);
+            add('body', 'الحالة :- ' + why + (JB_COMP.cfAmount ? '' : '\nسعر التعويض: ' + amt) + (ackId ? '' : '\nاعتراف المطعم: ' + COMP_ACK[ack]));
+            if (JB_TICKET.cfPhone) add('cf' + JB_TICKET.cfPhone, ph);
+            if (JB_TICKET.cfOrder) add('cf' + JB_TICKET.cfOrder, ord);
+            if (JB_TICKET.cfRest) add('cf' + JB_TICKET.cfRest, rest);
+            if (JB_COMP.classValue) add('cf' + JB_TICKET.cfClass, JB_COMP.classValue);
+            if (JB_COMP.callClassValue) add('cf' + JB_TICKET.cfCallClass, JB_COMP.callClassValue);
+            if (JB_COMP.cfAmount) add('cf' + JB_COMP.cfAmount, amt);
+            if (ackId) add('cf' + JB_COMP.cfAck, ackId);
+            window.open(HELPDESK_URL.replace(/\/+$/, '') + '/Tickets/New?' + q.join('&'), '_blank', 'noopener');
+            const o = document.getElementById('comp-overlay'); if (o) o.remove();
+            if (!JB_COMP.classValue || !JB_COMP.callClassValue) { try { _tkToast('ℹ️ اختر Class = زبون و Call Classification = اضافة محفظة للزبون داخل التذكرة'); } catch (e) {} }
         };
         window._accWhyHtml = () => {
             const sel = window._accSel || '', other = sel === ACCEPT_OTHER;
@@ -6096,8 +6359,7 @@
             try {
                 await loadPdfLibs();
                 await _loadEmpMeta();
-                const { data, error } = await supabaseClient.from('alsaree3_history').select('*')
-                    .gte('history_date', from).lte('history_date', to).order('history_date').order('employee_key').limit(5000);
+                const { data, error } = await _pageAll(() => supabaseClient.from('alsaree3_history').select('*').gte('history_date', from).lte('history_date', to).order('history_date').order('employee_key'));
                 if (error) throw error;
                 const { data: lvRows } = await supabaseClient.from('alsaree3_leave_requests').select('employee_key,kind,start_date,days').eq('status', 'approved');
                 const leaveSet = {};
@@ -6565,7 +6827,7 @@
                         taskExtra = `${_k === 'accept' ? `<div style="margin-bottom:6px;"><button type="button" onclick="window.toggleAcc()" style="display:block;width:100%;font-family:inherit;cursor:pointer;font-weight:900;font-size:0.85rem;color:#166534;text-align:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:${_accOpen ? '12px 12px 0 0' : '12px'};padding:7px;">📞 قبول طلب كول سنتر ${_accOpen ? '▴' : '▾'}</button>${_accOpen ? `<div style="border:1px solid #bbf7d0;border-top:none;border-radius:0 0 12px 12px;padding:6px;background:#f7fef9;">
                         <div class="tk-row" style="margin-bottom:6px;"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-input');if(d&&!d.value.trim()){d.focus();}else{window.addOrder();}}"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{var w=document.getElementById('acc-why');if(w&&!w.value.trim()){w.focus();}else{window.addOrder();}}}"></div>
                         ${window._accWhyHtml()}
-                        <div class="tk-row" style="gap:6px;"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:1;">➕ إضافة</button><button type="button" onclick="window.openAccTicket()" class="tk-btn" style="flex:0 0 40%;background:#eef2ff;color:#4338ca;border-color:#c7d2fe;">🎫 تذكرة</button></div></div>` : ''}</div>
+                        <div class="tk-row" style="gap:6px;"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:1;">➕ إضافة</button><button type="button" onclick="window.openAccTicket()" class="tk-btn" style="flex:1;background:#eef2ff;color:#4338ca;border-color:#c7d2fe;">🎫 تذكرة</button><button type="button" onclick="window.openCompTicket()" class="tk-btn" style="flex:1;background:#fff7ed;color:#c2410c;border-color:#fdba74;">💸 تعويض</button></div></div>` : ''}</div>
                         ${window._accStackHtml()}
                         ${window._cnlBlockHtml()}` : `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب (توزيع يدوي)" class="tk-input" onkeydown="if(event.key==='Enter')window.addOrder()"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:0 0 auto;">➕ إضافة</button></div>
                         <div class="tk-row" style="gap:6px;margin-bottom:6px;"><button type="button" class="tk-btn" onclick="window.toggleCap()" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;">🚴 كفالة الكابتن ${_capOpen ? '▴' : '▾'}</button><button type="button" class="tk-btn" onclick="window.toggleLateBox()" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;">⏱️ متأخر ${_lateOpen ? '▴' : '▾'}</button></div>${_capOpen ? `<div class="tk-row" style="margin-bottom:6px;"><input id="disp-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._dispR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-order');if(d)d.focus();}"><input id="disp-order" type="text" maxlength="30" autocomplete="off" inputmode="text" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" oninput="window._dispO=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-driver');if(d)d.focus();}"></div>
@@ -6583,7 +6845,7 @@
                             const _tabName = { acc: '📞 قبول طلب', cnl: '❌ إلغاء طلب', cap: '🚴 كفالة الكابتن', late: '⏱️ طلب متأخر', x80: '🚨 متأخر +80 دقيقة' }[_tab] || '';
                             if (_tab === 'acc') _panel = `<div class="ord-panel" style="--c:#16a34a;"><div class="op-t">📞 قبول طلب كول سنتر</div>` + `                        <div class="tk-row" style="margin-bottom:6px;"><input id="acc-rest" type="text" maxlength="60" autocomplete="off" placeholder="اسم المطعم *" class="tk-input" style="direction:rtl;" oninput="window._accR=this.value" onkeydown="if(event.key==='Enter'){var d=document.getElementById('disp-input');if(d&&!d.value.trim()){d.focus();}else{window.addOrder();}}"><input id="disp-input" type="text" inputmode="numeric" maxlength="30" autocomplete="off" placeholder="رقم الطلب *" class="tk-input" style="flex:0 0 38%;" onkeydown="if(event.key==='Enter'){var r=document.getElementById('acc-rest');if(r&&!r.value.trim()){r.focus();}else{var w=document.getElementById('acc-why');if(w&&!w.value.trim()){w.focus();}else{window.addOrder();}}}"></div>
                         ${window._accWhyHtml()}
-                        <div class="tk-row" style="gap:6px;"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:1;">➕ إضافة</button><button type="button" onclick="window.openAccTicket()" class="tk-btn" style="flex:0 0 40%;background:#eef2ff;color:#4338ca;border-color:#c7d2fe;">🎫 تذكرة</button></div>` + `</div>` + window._accStackHtml();
+                        <div class="tk-row" style="gap:6px;"><button onclick="window.addOrder(this)" class="tk-btn tk-in" style="flex:1;">➕ إضافة</button><button type="button" onclick="window.openAccTicket()" class="tk-btn" style="flex:1;background:#eef2ff;color:#4338ca;border-color:#c7d2fe;">🎫 تذكرة</button><button type="button" onclick="window.openCompTicket()" class="tk-btn" style="flex:1;background:#fff7ed;color:#c2410c;border-color:#fdba74;">💸 تعويض</button></div>` + `</div>` + window._accStackHtml();
                             else if (_tab === 'cnl') _panel = '<div class="ord-panel" style="--c:#ea580c;"><div class="op-t">❌ سبب إلغاء الطلب</div>' + window._cnlFormHtml() + '</div>' + window._cnlStackHtml();
                             else if (_tab === 'cap') _panel = `<div class="ord-panel" style="--c:#2563eb;"><div class="op-t">🚴 كفالة الكابتن</div>${_capInner}</div>`;
                             else if (_tab === 'late') _panel = _lateHtml;
@@ -6600,7 +6862,7 @@
                     taskExtra += window._myPerfHtml(i, d);
                 }
                 const waBox = (i === loggedInId && !isAdmin) ? `
-                        <div class="mb-3 flex gap-2"><button onclick="window.openWA()" class="tk-btn tk-wa tk-small">💬 واتساب الزبائن</button></div>` : '';
+                        <div class="mb-3 flex gap-2"><button onclick="window.openWA()" class="tk-btn tk-wa tk-small">💬 واتساب الزبائن</button><button type="button" onclick="window.openCompTicket()" class="tk-btn tk-small" style="background:#fff7ed;color:#c2410c;border-color:#fdba74;">💸 تعويض زبون</button></div>` : '';
                 const taskButtonsHtml = canControl ? `
                         <div class="block mb-3 text-xs font-bold text-black text-right pr-1">المهمة الحالية (Current Task):</div>
                         <div class="grid grid-cols-3 gap-2 mb-5">
@@ -7507,7 +7769,7 @@
                 window._waSumTxt = txt;
                 body.innerHTML = '<div style="font-family:Cairo,sans-serif;"><div style="background:#e7fbe9;border:1px solid #bbf7d0;border-radius:16px;padding:12px 14px;white-space:pre-wrap;font-weight:700;font-size:.86rem;line-height:1.8;color:#0f2e31;max-height:52vh;overflow:auto;">' + sanitize(txt).replace(/\*([^*\n]+)\*/g, '<b>$1</b>') + '</div>'
                     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">'
-                    + '<button onclick="window.open(\'https://wa.me/?text=\' + encodeURIComponent(window._waSumTxt), \'_blank\')" style="border:0;border-radius:12px;padding:11px;background:#16a34a;color:#fff;font:900 .9rem Cairo,sans-serif;cursor:pointer;">💬 فتح واتساب</button>'
+                    + '<button onclick="window.open(\'https://wa.me/?text=\' + encodeURIComponent(window._waSumTxt), \'_blank\', \'noopener\')" style="border:0;border-radius:12px;padding:11px;background:#16a34a;color:#fff;font:900 .9rem Cairo,sans-serif;cursor:pointer;">💬 فتح واتساب</button>'
                     + '<button onclick="navigator.clipboard && navigator.clipboard.writeText(window._waSumTxt).then(() => { this.textContent = \'✅ انتسخ\'; })" style="border:1px solid #cbd5e1;border-radius:12px;padding:11px;background:#fff;color:#334155;font:900 .9rem Cairo,sans-serif;cursor:pointer;">📋 نسخ النص</button></div></div>';
             } catch (e) { console.error('[WaSummary]', e); body.innerHTML = '<div style="text-align:center;color:#dc2626;font-weight:800;padding:20px;">❌ تعذّر تجهيز الملخص</div>'; }
         };
@@ -8053,7 +8315,7 @@
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
 <div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.07-nogeo</div>
-</body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
+<!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
 <script>
@@ -8172,7 +8434,7 @@
     const DICT = [
         // القائمة الجانبية ولوحة المسؤول
         ['Admin Panel', 'لوحة المسؤول'], ['Employee', 'موظف'],
-        ['Monthly Summary', 'الملخص الشهري'], ['Monthly Report', 'التقرير الشهري'], ['Performance Card', 'بطاقة الأداء'], ['PDF Report', 'تقرير PDF'],
+        ['Monthly Summary', 'الملخص الشهري'], ['Monthly Report', 'التقرير الشهري'], ['Reports Center', 'مركز التقارير'], ['Employee Report (Excel)', 'تقرير الموظف (Excel)'], ['Performance Card', 'بطاقة الأداء'], ['PDF Report', 'تقرير PDF'],
         ['Leaves & Permissions', 'الإجازات والأذونات'], ['Captain', 'الكباتن'], ['WhatsApp Tasks', 'مهام واتساب'],
         ['Add Employee', 'إضافة موظف'], ['Work Schedules', 'أوقات الدوام'], ['Employee Locations', 'مواقع الموظفين'], ['Device Log', 'سجل الأجهزة'], ['Login Accounts', 'حسابات الدخول'],
         ['Rating Check', 'فحص التقييم'], ['End Day & Save Report', 'إنهاء اليوم وحفظ التقرير'], ['Sensitive Area · PIN required', 'منطقة حساسة · تتطلب كلمة المرور'],
@@ -8694,20 +8956,24 @@
                         <label style="font-weight:800;">إلى<input id="er-to" type="date" value="${today}" style="${f}"></label>
                     </div>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <button type="button" onclick="window._erRange('today')" style="flex:1;border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:6px;font-family:Cairo,sans-serif;font-weight:800;cursor:pointer;">اليوم</button>
                         <button type="button" onclick="window._erRange('month')" style="flex:1;border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:6px;font-family:Cairo,sans-serif;font-weight:800;cursor:pointer;">هذا الشهر</button>
                         <button type="button" onclick="window._erRange('last')" style="flex:1;border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:6px;font-family:Cairo,sans-serif;font-weight:800;cursor:pointer;">الشهر الماضي</button>
                         <button type="button" onclick="window._erRange('week')" style="flex:1;border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:6px;font-family:Cairo,sans-serif;font-weight:800;cursor:pointer;">آخر 7 أيام</button>
+                        <button type="button" onclick="window._erRange('m30')" style="flex:1;border:1px solid #cbd5e1;background:#f8fafc;border-radius:10px;padding:6px;font-family:Cairo,sans-serif;font-weight:800;cursor:pointer;">آخر 30 يوم</button>
                     </div>
                     <div id="er-msg" style="font-size:.85rem;font-weight:800;min-height:1.2em;color:#475569;"></div>
                     <button id="er-go" class="login-btn" onclick="window.exportEmpReport()">📥 تحميل تقرير الأداء</button>
-                    <p style="margin:0;font-size:.75rem;font-weight:700;color:#94a3b8;line-height:1.7;">الملف بيه: تقييمه وترتيبه، وين مقصّر وشنو لازم يسوي، تفاصيل كل يوم (الحضور، التأخير، البريك، الساعات، الطلبات)، والطلبات المتأخرة والملغاة.</p>
+                    <p style="margin:0;font-size:.75rem;font-weight:700;color:#94a3b8;line-height:1.7;">الملف بيه: تقييمه وترتيبه، وين مقصّر وشنو لازم يسوي، تفاصيل كل يوم (الحضور، التأخير، البريك، الساعات، الطلبات)، ومقارنته بمتوسط الفريق، والطلبات المتأخرة والملغاة.</p>
                 </div>`, 460);
         };
         window._erRange = (m) => {
             const d = new Date(), y = d.getFullYear(), mo = d.getMonth();
             let a, b;
-            if (m === 'month') { a = new Date(y, mo, 1); b = d; }
+            if (m === 'today') { a = d; b = d; }
+            else if (m === 'month') { a = new Date(y, mo, 1); b = d; }
             else if (m === 'last') { a = new Date(y, mo - 1, 1); b = new Date(y, mo, 0); }
+            else if (m === 'm30') { b = d; a = new Date(d); a.setDate(a.getDate() - 29); }
             else { b = d; a = new Date(d); a.setDate(a.getDate() - 6); }
             document.getElementById('er-from').value = _ymd(a); document.getElementById('er-to').value = _ymd(b);
         };
@@ -8754,6 +9020,7 @@
             let from = document.getElementById('er-from').value, to = document.getElementById('er-to').value;
             if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) { say('⚠️ اختر التاريخ', true); return; }
             if (from > to) { const t = from; from = to; to = t; }
+            if ((new Date(to) - new Date(from)) / 864e5 + 1 > 62) { say('⚠️ المدة أطول من 62 يوم — قلّلها حتى يشتغل التقرير', true); return; }
             btn.disabled = true; say('⏳ جاري تجهيز التقرير...');
             try {
                 const [lib, rows, late, cnl] = await Promise.all([
@@ -8777,7 +9044,7 @@
 
         async function buildOne(lib, r, A, from, to, lateAll, cnlAll) {
             const nm = r.name, clean = s => String(s || '').replace(/\s*\(أضافه المسؤول\)\s*$/, '').trim();
-            const lateRows = lateAll.filter(x => x[1] === nm), cnlRows = cnlAll.filter(x => clean(x[5]) === nm);
+            const lateRows = lateAll.filter(x => clean(x[1]) === nm), cnlRows = cnlAll.filter(x => clean(x[5]) === nm);
             const R = analyze(r, A, A.minDays, lateRows, cnlRows);
             const wb = new lib.Workbook(); wb.creator = 'Alsaree3';
             const F = { name: 'Arial', size: 11 }, B = { style: 'thin', color: { argb: 'FFE2E8F0' } }, BOX = { top: B, bottom: B, left: B, right: B };
@@ -8799,7 +9066,7 @@
 
             // ---------- الورقة 1: الأداء ----------
             const s1 = wb.addWorksheet('الأداء', { views: [{ rightToLeft: true }], properties: { tabColor: { argb: 'FF103D42' } } });
-            s1.columns = [{ width: 26 }, { width: 14 }, { width: 12 }, { width: 16 }, { width: 46 }, { width: 14 }];
+            s1.columns = [{ width: 26 }, { width: 14 }, { width: 12 }, { width: 16 }, { width: 46 }, { width: 14 }, { width: 16 }];
             s1.mergeCells('A1:F1'); s1.getCell('A1').value = 'تقرير أداء: ' + nm;
             s1.getCell('A1').font = { name: 'Arial', size: 18, bold: true, color: { argb: 'FF103D42' } }; s1.getCell('A1').alignment = { horizontal: 'center' };
             s1.mergeCells('A2:F2'); s1.getCell('A2').value = 'الفترة: من ' + from + ' إلى ' + to + '   ·   Alsaree3 — Morning Call Center';
@@ -8807,9 +9074,18 @@
             // البطاقة الرئيسية
             const total = Math.round(r.total);
             const rankTxt = R.it && R.it.ok ? ('#' + R.it.rank + ' من ' + A.items.filter(x => x.ok).length) : 'غير مؤهل للترتيب (دوام أقل من ' + A.minDays + ' أيام)';
+            const okItems = (A.items || []).filter(x => x.ok);
+            const teamAvg = c => { const vs = okItems.map(x => x.r[c]).filter(v => v != null); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; };
+            const teamTotal = okItems.length ? okItems.reduce((a, x) => a + (x.r.total || 0), 0) / okItems.length : null;
+            const totSecs = (r.detail || []).filter(x => x.status === 'دوام').reduce((a, x) => a + (x.secs || 0), 0);
+            const totOrd = Object.values(r.ordByDay || {}).reduce((a, n) => a + n, 0);
+            const diffTeam = teamTotal == null ? null : Math.round(r.total - teamTotal);
             let row = 4;
             [['التقييم العام', total + '%', colOf(total)], ['الترتيب', rankTxt, '334155'], ['أيام الدوام', r.days + ' يوم', '334155'], ['أيام الغياب', (r.absent || 0) + ' يوم', r.absent ? 'DC2626' : '16A34A'],
              ['مرات التأخير', R.lates.length + ' مرة (' + R.lateMin + ' د)', R.lates.length ? 'DC2626' : '16A34A'],
+             ['ساعات العمل الكلية', fmtH(totSecs) + ' ساعة', '334155'],
+             ['الطلبات والتكتات', totOrd + ' (' + (r.days ? Math.round(totOrd / r.days * 10) / 10 : 0) + ' باليوم)', '334155'],
+             ['مقارنة بمتوسط الفريق', diffTeam == null ? '—' : (diffTeam >= 0 ? '+' : '') + diffTeam + ' نقطة (المتوسط ' + Math.round(teamTotal) + '%)', diffTeam == null ? '64748B' : diffTeam >= 0 ? '16A34A' : 'DC2626'],
              ['الفرق عن الأول', R.isLead ? '👑 هو الأول' : (R.it ? (Math.round(R.it.gapTotal * 10) / 10) + ' نقطة' : '—'), R.isLead ? '16A34A' : 'B45309']
             ].forEach(([k, v, c]) => {
                 const a = s1.getCell(row, 1), b = s1.getCell(row, 2);
@@ -8819,9 +9095,9 @@
                 s1.getRow(row).height = 22; row++;
             });
             row++;
-            row = title(s1, row, '📊 تفاصيل التقييم', '103D42', 6);
-            row = table(s1, row, ['البند', 'النتيجة', 'الوزن', 'النقاط الضايعة', 'التفاصيل', 'التقدير'],
-                R.items.map(x => [x.name, x.v == null ? '—' : (x.bonus ? '+' + (Math.round(x.v / 100 * x.w * 10) / 10) + ' نقطة' : Math.round(x.v) + '%'), x.bonus ? 'مكافأة ' + x.w : x.w + '%', x.lost, x.detail, x.bonus ? '' : grade(x.v)]),
+            row = title(s1, row, '📊 تفاصيل التقييم', '103D42', 7);
+            row = table(s1, row, ['البند', 'النتيجة', 'الوزن', 'النقاط الضايعة', 'التفاصيل', 'التقدير', 'متوسط الفريق'],
+                R.items.map(x => [x.name, x.v == null ? '—' : (x.bonus ? '+' + (Math.round(x.v / 100 * x.w * 10) / 10) + ' نقطة' : Math.round(x.v) + '%'), x.bonus ? 'مكافأة ' + x.w : x.w + '%', x.lost, x.detail, x.bonus ? '' : grade(x.v), teamAvg(x.c) == null ? '—' : (x.bonus ? '+' + (Math.round(teamAvg(x.c) / 100 * x.w * 10) / 10) + ' نقطة' : Math.round(teamAvg(x.c)) + '%')]),
                 '103D42', { rowStyle: (rw, d) => { const v = R.items.find(x => x.name === d[0]); if (v && !v.bonus && v.v != null) rw.getCell(2).font = { ...F, bold: true, color: { argb: 'FF' + colOf(v.v) } }; if (d[3] > 0.5) rw.getCell(4).font = { ...F, bold: true, color: { argb: 'FFDC2626' } }; } });
             row = title(s1, row, '⚠️ وين مقصّر — وشنو لازم يسوي', 'DC2626', 6);
             if (R.weak.length) {
@@ -8854,6 +9130,13 @@
                     if (d[3] > 0) rw.getCell(4).font = { ...F, bold: true, color: { argb: 'FFDC2626' } };
                     if (typeof d[8] === 'number') rw.getCell(9).font = { ...F, bold: true, color: { argb: 'FF' + colOf(d[8]) } };
                 } });
+            if (days.length) {
+                const wk = days.filter(d => d[1] === 'دوام'), sum = i => wk.reduce((a, d) => a + (Number(d[i]) || 0), 0), tr = s2.getRow(days.length + 3);
+                const rt = wk.filter(d => typeof d[8] === 'number');
+                [['المجموع', 0], [wk.length + ' يوم دوام', 1], ['', 2], [sum(3), 3], [fmtH(totSecs), 4], [sum(5), 5], [sum(6), 6], [sum(7), 7], [rt.length ? Math.round(rt.reduce((a, d) => a + d[8], 0) / rt.length) : '', 8]].forEach(([v, i]) => {
+                    const c = tr.getCell(i + 1); c.value = v; c.font = { ...F, bold: true, color: { argb: 'FF103D42' } }; c.fill = fill('E2E8F0'); c.border = BOX; c.alignment = { horizontal: 'center', vertical: 'middle' };
+                });
+            }
             if (days.length) s2.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 9 } };
 
             // ---------- الورقة 3: الطلبات المتأخرة والملغاة ----------
@@ -8877,4 +9160,125 @@
     })();
 </script>
 
+<script>
+/* ===== a3-polish: استقرار وإمكانية وصول (لا يغيّر منطق النظام) ===== */
+(function () {
+    'use strict';
+    // 1) شريط انقطاع الإنترنت
+    var bar = document.createElement('div');
+    bar.id = 'a3-offline'; bar.setAttribute('role', 'status'); bar.setAttribute('aria-live', 'polite');
+    bar.textContent = '📡 لا يوجد اتصال بالإنترنت — ستتحدّث البيانات تلقائياً عند عودته';
+    document.body.appendChild(bar);
+    function syncNet() { bar.classList.toggle('show', navigator.onLine === false); }
+    window.addEventListener('online', syncNet); window.addEventListener('offline', syncNet); syncNet();
+
+    // 2) التقاط الأخطاء غير المعالجة: تسجيل + تنبيه مهذّب (مرة كل 30 ثانية)
+    var lastToast = 0;
+    function report(msg) {
+        try { console.error('[a3-error]', msg); } catch (e) {}
+        var now = Date.now(); if (now - lastToast < 30000) return; lastToast = now;
+        var t = document.getElementById('a3-err-toast'); if (t) t.remove();
+        t = document.createElement('div'); t.id = 'a3-err-toast'; t.setAttribute('role', 'alert');
+        t.textContent = '⚠️ حدث خطأ غير متوقع. إذا استمرت المشكلة حدّث الصفحة.';
+        document.body.appendChild(t); setTimeout(function () { t.remove(); }, 6000);
+    }
+    window.addEventListener('error', function (e) {
+        if (!e || !e.message || /ResizeObserver|^Script error/i.test(e.message)) return;
+        report(e.message);
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+        var r = e && e.reason, m = String((r && r.message) || r || '');
+        if (/AbortError|NetworkError|Failed to fetch|Load failed/i.test(m)) return;
+        report(m);
+    });
+
+    // 3) إمكانية الوصول: اسم للأزرار الأيقونية + دور النوافذ المنبثقة
+    var pending = false;
+    function a11y() {
+        pending = false;
+        document.querySelectorAll('button:not([aria-label]), [role="button"]:not([aria-label])').forEach(function (b) {
+            var label = b.getAttribute('title');
+            if (label) b.setAttribute('aria-label', label);
+        });
+        document.querySelectorAll('[id$="-overlay"]:not([role])').forEach(function (o) {
+            o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true');
+        });
+        document.querySelectorAll('input:not([aria-label]):not([type="hidden"])').forEach(function (i) {
+            var l = i.getAttribute('placeholder') || i.getAttribute('title');
+            if (l && !i.labels.length) i.setAttribute('aria-label', l);
+        });
+    }
+    new MutationObserver(function () { if (!pending) { pending = true; setTimeout(a11y, 300); } })
+        .observe(document.body, { childList: true, subtree: true });
+    a11y();
+
+    // 4) Escape يغلق آخر نافذة منبثقة عبر زر الإلغاء/الإغلاق الموجود فيها
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        var all = document.querySelectorAll('[id$="-overlay"]'), top = all[all.length - 1];
+        if (!top || top.offsetParent === null && getComputedStyle(top).position !== 'fixed') return;
+        var btn = top.querySelector('[id$="cancel"], [id$="close"], [id*="-cancel"], [id*="-close"], .close, [aria-label*="إغلاق"], [aria-label*="Close"]');
+        if (btn) btn.click();
+    });
+})();
+</script>
+<script>
+/* ===== مركز التقارير: زر واحد بدل خمسة، مرتّب حسب الفترة ===== */
+(function () {
+    var TABS = [['day', 'يومي'], ['week', 'أسبوعي'], ['month', 'شهري']];
+    var ACT = {};
+    function empReport(range) { return function () { window.openEmpReport(); setTimeout(function () { try { window._erRange(range); } catch (e) {} }, 0); }; }
+    var CARDS = {
+        day: [
+            ['📤', 'ملخص واتساب', 'رسالة جاهزة بأداء اليوم تنرسل للفريق', function () { window.waDailySummary(); }],
+            ['👤', 'تقرير موظف (Excel)', 'أداء موظف أو كل الموظفين لليوم', empReport('today')]
+        ],
+        week: [
+            ['👤', 'تقرير موظف (Excel)', 'أداء آخر 7 أيام ووين مقصّر', empReport('week')],
+            ['🏆', 'بطاقة الأداء', 'تقييم وترتيب الموظفين', function () { window.openScoreCard(); }],
+            ['🔥', 'خريطة الضغط', 'أوقات الضغط آخر 7 أيام', function () { window.openRushMap(7); }]
+        ],
+        month: [
+            ['📈', 'التقرير الشهري', 'ملخص الشهر لكل الفريق', function () { window.openMonthReport(); }],
+            ['🏆', 'بطاقة الأداء', 'تقييم وترتيب الموظفين', function () { window.openScoreCard(); }],
+            ['👤', 'تقرير موظف (Excel)', 'أداء الموظف من بداية الشهر', empReport('month')],
+            ['🔥', 'خريطة الضغط', 'أوقات الضغط آخر 30 يوم', function () { window.openRushMap(30); }]
+        ]
+    };
+    function render(tab) {
+        var body = document.getElementById('rhub-overlay-body'); if (!body) return;
+        body.textContent = '';
+        var bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:6px;margin-bottom:14px;background:#f1f5f9;padding:4px;border-radius:14px;';
+        TABS.forEach(function (t) {
+            var b = document.createElement('button'); b.type = 'button'; b.textContent = t[1];
+            b.setAttribute('aria-pressed', String(t[0] === tab));
+            b.style.cssText = 'flex:1;border:0;border-radius:10px;padding:9px;font:900 .9rem Cairo,sans-serif;cursor:pointer;' + (t[0] === tab ? 'background:#103d42;color:#d6fd26;' : 'background:transparent;color:#475569;');
+            b.onclick = function () { render(t[0]); };
+            bar.appendChild(b);
+        });
+        body.appendChild(bar);
+        var grid = document.createElement('div'); grid.style.cssText = 'display:grid;gap:8px;';
+        CARDS[tab].forEach(function (c) {
+            var b = document.createElement('button'); b.type = 'button';
+            b.style.cssText = 'display:flex;align-items:center;gap:12px;width:100%;text-align:right;padding:12px 14px;border-radius:16px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;font-family:Cairo,sans-serif;';
+            var ic = document.createElement('span'); ic.textContent = c[0]; ic.style.cssText = 'font-size:1.4rem;width:1.8em;text-align:center;';
+            var tx = document.createElement('span'); tx.style.cssText = 'flex:1;display:flex;flex-direction:column;';
+            var t1 = document.createElement('b'); t1.textContent = c[1]; t1.style.cssText = 'font-weight:900;color:#0f172a;font-size:.95rem;';
+            var t2 = document.createElement('small'); t2.textContent = c[2]; t2.style.cssText = 'font-weight:700;color:#64748b;font-size:.78rem;';
+            tx.appendChild(t1); tx.appendChild(t2); b.appendChild(ic); b.appendChild(tx);
+            b.onmouseenter = function () { b.style.borderColor = '#22c55e'; }; b.onmouseleave = function () { b.style.borderColor = '#cbd5e1'; };
+            b.onclick = function () { var o = document.getElementById('rhub-overlay'); if (o) o.remove(); c[3](); };
+            grid.appendChild(b);
+        });
+        body.appendChild(grid);
+        window._rhubTab = tab;
+    }
+    window.openReportsHub = function () {
+        if (typeof loggedInId === 'undefined' || loggedInId !== '__admin__') return;
+        _modal('rhub-overlay', '📊 مركز التقارير', '', 460);
+        render(window._rhubTab || 'month');
+    };
+})();
+</script>
+</body>
 </html>
