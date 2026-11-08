@@ -1424,6 +1424,16 @@
                     await supabaseClient.auth.signOut();
                     resetBtn(); passEl.value = ''; return;
                 }
+                // 🏢 الدخول بس من شبكة (إنترنت) الشركة — نفس فحص السيرفر بتسجيل الحضور
+                btn.textContent = 'Checking network...';
+                try {
+                    const { data: netOk, error: netErr } = await supabaseClient.rpc('alsaree3_ip_allowed');
+                    if (!netErr && netOk === false) {
+                        errorEl.textContent = '🏢 لازم تكون داخل الشركة ومتصل بإنترنت (واي فاي) الشركة حتى تسجّل دخول.';
+                        await supabaseClient.auth.signOut();
+                        resetBtn(); passEl.value = ''; return;
+                    }
+                } catch (e) { console.warn('[NetCheck]', e); }
             }
 
             // الآن فقط (بعد المصادقة) نجلب بيانات الموظفين ونفتح الاتصال اللحظي
@@ -8080,7 +8090,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.08-companynet</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.08-netlogin</div>
 </body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
