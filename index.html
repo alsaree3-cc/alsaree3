@@ -763,7 +763,7 @@
             if (used <= 0) return 0;
             const hrs = Math.min(12, Math.max(1, (now - d.startTime) / 3600000));
             const allow = BREAK_SCORE_ALLOW_PER_HOUR * hrs + (id ? permMinutesToday(id) : 0);
-            return Math.round(BREAK_SCORE_MAX_PENALTY * Math.min(1, used / allow));
+            return Math.round(BREAK_SCORE_MAX_PENALTY * Math.min(1, Math.max(0, used - allow) / allow));   // عادل: لا خصم ضمن المسموح، الخصم فقط على التجاوز
         }
         let VIOLATION_POINTS = 3;             // خصم كل مخالفة (ساعة بريك زائدة / استراحة زائدة)
         let REST_SCORE_MAX_PENALTY = 5;        // أقصى خصم متدرج على استهلاك الاستراحة (المسموح 20 د). من يأخذ استراحة أقل تقييمه أعلى. 0 للتعطيل
@@ -774,7 +774,7 @@
             const live = (d.status === 'راحة' && d.lastActionTime) ? Math.max(0, Math.floor((now - d.lastActionTime) / 60000)) : 0;
             const used = (Number(d.totalRestMinutes) || 0) + live;
             if (used <= 0) return 0;
-            return Math.round(REST_SCORE_MAX_PENALTY * Math.min(1, used / (REST_SCORE_ALLOW_MIN + (id ? permMinutesToday(id) : 0))));
+            { const _ra = REST_SCORE_ALLOW_MIN + (id ? permMinutesToday(id) : 0); return Math.round(REST_SCORE_MAX_PENALTY * Math.min(1, Math.max(0, used - _ra) / _ra)); }   // عادل: لا خصم ضمن المسموح
         }
         // جلب طلبات يوم للمسؤول: الدالة الأحدث alsaree3_orders_admin ثم القديمة alsaree3_dispatch_admin كاحتياط (نفس منطق نافذة المهام)
         async function _ordersAdminRpc(date) {
@@ -866,6 +866,8 @@
             } catch (e) { console.warn('[OrderCounts]', e); }
             finally { _ordCountBusy = false; }
         }
+        // عادل: مكافأة الطلبات تعوّض فقط خصم البريك/الاستراحة الخفيف، ولا تمحو خصم التأخير أو المخالفات أو خصم المجموعة
+        function _fairDaily(hard, soft, bonus) { return Math.max(0, Math.min(100 - hard, 100 - hard - soft + bonus)); }
         function ordersBonus(id) {
             if (!ORDERS_BONUS_MAX || _ordCountDate !== getTodayDateString()) return 0;
             const n = _ordCountToday[id] || 0;
@@ -915,8 +917,13 @@
                     if (rd && r.history_date <= rd) return;                          // قبل التصفير
                     if (leaveSet[k] && leaveSet[k].has(r.history_date)) return;      // إجازة معتمدة
                     const st = String(r.start_time_str || '');
-                    if (!st || st === 'EXCLUDED' || st === 'Absent' || st === 'لم يحضر' || st.toUpperCase().startsWith('OFF')) return;
+                    if (st === 'EXCLUDED' || st.toUpperCase().startsWith('OFF')) return;
                     if (isOffDay(k, r.history_date)) return;
+                    if (st === 'Absent' || st === 'لم يحضر') {   // عادل: الغياب (بدون إجازة/أوف/استثناء) يدخل بصفر
+                        if (r.history_date !== today) { const ab = agg[k] = agg[k] || { sum: 0, days: 0 }; ab.days++; }
+                        return;
+                    }
+                    if (!st) return;
                     const rt = r.rating == null ? 100 : (Number(r.rating) || 0);
                     if (r.history_date === today) { tod[k] = rt; return; }
                     const a = agg[k] = agg[k] || { sum: 0, days: 0 };
@@ -1625,7 +1632,7 @@
                 let groupPen = hourlyBreaks.groupPenalty || 0;
                 const _lwp = lateWithPerm(i, d);
                 let latePen = _lwp !== null ? _lwp : ((Number(hourlyBreaks.latePenalty) || 0) || lateFallbackPenalty(i, d));
-                let calcRating = Math.max(0, Math.min(100, 100 - (totalViolations * VIOLATION_POINTS) - groupPen - latePen - breakUsagePenalty(d, now, i) - restUsagePenalty(d, now, i) + ordersBonus(i)));
+                let calcRating = _fairDaily(totalViolations * VIOLATION_POINTS + groupPen + latePen, breakUsagePenalty(d, now, i) + restUsagePenalty(d, now, i), ordersBonus(i));
                 // تحديث محلي فقط — بدون كتابة للسيرفر لتجنب إطلاق تحديث لحظي
                 employeesData[i].rating = calcRating;
             }
@@ -2492,7 +2499,7 @@
                         <button onclick="document.getElementById('month-overlay').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:8px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button>
                     </div>
                 </div>
-                <div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:12px;">النسبة = متوسط التقييم اليومي لأيام الدوام الفعلية (أيام OFF والإجازات المعتمدة والغياب لا تُحتسب).</div>
+                <div style="font-size:0.8rem;color:#64748b;font-weight:700;margin-bottom:12px;">النسبة = متوسط التقييم اليومي لأيام الدوام الفعلية (أيام OFF والإجازات المعتمدة لا تُحتسب، والغياب يُحتسب بصفر).</div>
                 <div id="month-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div>
             </div>`;
             document.body.appendChild(overlay);
@@ -2555,7 +2562,7 @@
                         <th style="padding:10px;">نسبة الشهر حتى الآن</th><th style="padding:10px;">إجمالي البريك</th><th style="padding:10px;">إجمالي الراحة</th><th style="padding:10px;">ساعات العمل</th>
                     </tr></thead><tbody>`;
                 rows.forEach(a => {
-                    const pct = a.days > 0 ? Math.round((a.sum / a.days) * 10) / 10 : null;
+                    const pct = (a.days + (a.absent || 0)) > 0 ? Math.round((a.sum / (a.days + (a.absent || 0))) * 10) / 10 : null;
                     const color = pct === null ? '#64748b' : pct >= 90 ? '#16a34a' : pct >= 75 ? '#d97706' : '#dc2626';
                     html += `<tr style="border-bottom:1px solid #e2e8f0;">
                         <td style="padding:9px;font-weight:900;">${sanitize(a.name || '-')}</td>
@@ -2600,7 +2607,7 @@
                     <button style="${_MR_BTN}background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8;" onclick="window.mrShowSaved()">📚 التقارير المحفوظة</button>
                 </div>
                 <div id="mr-msg" style="font-size:0.82rem;font-weight:800;margin-bottom:8px;min-height:1em;"></div>
-                <div style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:10px;">النسبة = متوسط التقييم اليومي لأيام الدوام الفعلية (أيام OFF والإجازات المعتمدة والغياب لا تُحتسب). بيانات اليوم الحالي تظهر حسب ما هو محفوظ في السجل.</div>
+                <div style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:10px;">النسبة = متوسط التقييم اليومي لأيام الدوام الفعلية (أيام OFF والإجازات المعتمدة لا تُحتسب، والغياب يُحتسب بصفر). بيانات اليوم الحالي تظهر حسب ما هو محفوظ في السجل.</div>
                 <div id="mr-content" style="text-align:center;color:#94a3b8;font-weight:700;padding:20px;">⏳ جاري التحميل...</div>`, 1100);
             window.loadMonthReport();
         };
@@ -2613,7 +2620,7 @@
             window.loadMonthReport();
         };
         function _mrMsg(txt, color) { const e = document.getElementById('mr-msg'); if (e) { e.style.color = color || '#64748b'; e.textContent = txt || ''; } }
-        function _mrPct(a) { return a.days > 0 ? Math.round((a.sum / a.days) * 10) / 10 : null; }
+        function _mrPct(a) { const t = a.days + (a.absent || 0); return t > 0 ? Math.round((a.sum / t) * 10) / 10 : null; }
         function _mrHrs(secs) { return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm'; }
         window.loadMonthReport = async () => {
             if (loggedInId !== '__admin__') return;
@@ -2795,7 +2802,7 @@
             const A = W.champ, B = W.second;
             let h = '<div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:2px solid #fbbf24;border-radius:18px;padding:16px;margin-bottom:14px;">'
                 + '<div style="font-size:1.15rem;font-weight:900;color:#78350f;margin-bottom:6px;">🏆 الأول: ' + sanitize(A.name) + ' — ' + _fr1(A.total) + '%</div>'
-                + '<div style="font-size:0.85rem;font-weight:800;color:#92400e;margin-bottom:10px;">' + (B ? ('الثاني: ' + sanitize(B.name) + ' (' + _fr1(B.total) + '%) — الفرق ' + (W.margin).toFixed(1) + ' نقطة' + (W.tie ? ' · الدرجة متساوية تقريباً، فتقدّم الأول لأن البريك والاستراحة عنده أقل' : '')) : '') + '</div>'
+                + '<div style="font-size:0.85rem;font-weight:800;color:#92400e;margin-bottom:10px;">' + (B ? ('الثاني: ' + sanitize(B.name) + ' (' + _fr1(B.total) + '%) — الفرق ' + (W.margin).toFixed(1) + ' نقطة' + (W.tie ? ' · الدرجة متساوية تقريباً، فتقدّم الأول لأن غيابه أقل أو التزامه بساعات الدوام أعلى' : '')) : '') + '</div>'
                 + '<div style="font-weight:900;color:#334155;margin-bottom:4px;">ليش صار الأول؟</div><ul style="margin:0 0 10px;padding-right:18px;line-height:1.9;font-weight:700;color:#334155;">'
                 + W.points.map(p => '<li>' + sanitize(p) + '</li>').join('') + '</ul>';
             if (B && W.vsSecond.length) {
@@ -2881,7 +2888,7 @@
                         + '<td style="padding:7px;direction:ltr;text-align:right;">' + r.st.work + ' / ' + r.st.absent + '</td><td style="padding:7px;">' + r.st.lateDays + ' (' + r.st.lateMin + ' د)</td><td style="padding:7px;">' + (r.st.usedAvg === null ? '-' : r.st.usedAvg + ' د') + '</td><td style="padding:7px;">' + r.st.orders + '</td></tr>').join('')
                     + '<tr style="border-top:2px solid #cbd5e1;background:#f8fafc;font-weight:900;color:#475569;"><td></td><td style="padding:7px;">معدل الفريق</td><td style="padding:7px;">' + _fr1(T.total) + '%</td><td style="padding:7px;">' + _fr1(T.att) + '%</td><td style="padding:7px;">' + _fr1(T.brk) + '%</td><td style="padding:7px;">' + _fr1(T.hrs) + '%</td><td style="padding:7px;">' + (T.ord === null ? '-' : _fr1(T.ord) + '%') + '</td><td></td><td style="padding:7px;">' + (T.lateDays === null ? '-' : T.lateDays.toFixed(1)) + ' (' + _fr1(T.lateMin) + ' د)</td><td style="padding:7px;">' + _fr1(T.usedAvg) + ' د</td><td style="padding:7px;">' + _fr1(T.orders) + '</td></tr>'
                     + '</tbody></table></div>';
-                const how = '<div style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:8px 10px;">📐 شلون تنحسب الدرجة: الحضور والالتزام ' + SC_WEIGHTS.att + '% + البريك والاستراحة ' + SC_WEIGHTS.brk + '% + ساعات الدوام ' + SC_WEIGHTS.hrs + '%، وفوكاها مكافأة القبول والتوزيع لحد ' + SC_WEIGHTS.ord + ' نقاط. إذا تساوت الدرجة، يتقدّم الأقل بريكاً واستراحة.</div>';
+                const how = '<div style="font-size:0.78rem;color:#64748b;font-weight:700;margin-bottom:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:8px 10px;">📐 شلون تنحسب الدرجة: الحضور والالتزام ' + SC_WEIGHTS.att + '% + البريك والاستراحة ' + SC_WEIGHTS.brk + '% + ساعات الدوام ' + SC_WEIGHTS.hrs + '%، وفوكاها مكافأة القبول والتوزيع لحد ' + SC_WEIGHTS.ord + ' نقاط. إذا تساوت الدرجة، يتقدّم الأقل غياباً ثم الأعلى التزاماً بساعات الدوام. ✔ العدالة: البريك والاستراحة ضمن المسموح = 100% بلا خصم، الغياب يُحتسب، الإجازة المعتمدة وOFF والأيام المستثناة لا تؤثر، التأخير يُخصم مرة واحدة فقط، ومكافأة الطلبات تُقسم على كل أيام الدوام.</div>';
                 box.style.cssText = 'padding:0;color:#000;text-align:right;';
                 box.innerHTML = window._winnerBannerHtml(D.win, from, to) + _frWhyHtml(D.why, T) + how + '<div style="font-weight:900;color:#334155;margin:6px 0;">📊 الترتيب</div>' + rk + '<div style="font-weight:900;color:#334155;margin:6px 0;">👥 تفاصيل كل موظف</div>' + D.rows.map((r, i) => _frEmpHtml(r, i, T)).join('');
             } catch (e) { console.error('[FullReport]', e); box.style.color = '#dc2626'; box.innerHTML = '❌ فشل تحميل التقرير'; }
@@ -3181,7 +3188,7 @@
         function _scDayName(ds) { const p = String(ds).split('-').map(Number); return _SC_DN[new Date(p[0], p[1] - 1, p[2]).getDay()]; }
         function _scDescHtml() {
             return 'الأوزان: الحضور والتأخير ' + SC_WEIGHTS.att + ' · البريك والاستراحة ' + SC_WEIGHTS.brk + ' · سرعة حل الطلبات ' + SC_WEIGHTS.tkt + ' · ساعات الحضور ' + SC_WEIGHTS.hrs + '<br>مكافأة الطلبات: حتى +' + SC_WEIGHTS.ord + ' نقطة تُضاف للدرجة (كاملة عند ' + SC_ORDERS_DAILY_TARGET + ' طلب باليوم) — من لا طلبات له لا يُخصم منه شيء. ساعات الحضور تُقاس بعد استثناء البريك المسموح ودقائق التأخير (التأخير يُخصم مرة واحدة فقط في بند الحضور)'
-                + '<br>الأفضلية: عند تساوي الدرجة يتقدّم من أخذ بريكاً واستراحة أقل. الخصم على البريك يبدأ بعد 5:00 في الساعة (من 5:01).'
+                + '<br>الأفضلية: عند تساوي الدرجة يتقدّم الأقل غياباً ثم الأعلى التزاماً بساعات الدوام. الخصم على البريك يبدأ بعد 5:00 في الساعة (من 5:01).'
                 + '<br>لا تُحتسب أيام OFF والإجازات المعتمدة والأيام المستثناة. اضغط على اسم الموظف لرؤية تفصيل كل يوم وتعديل دوامه ويوم الأوف.';
         }
 
@@ -3740,7 +3747,7 @@
                         a.usedMin += used;   // مجموع البريك+الاستراحة: يُستعمل للأفضلية عند تساوي الدرجة
                         const allow = SC_BREAK_ALLOW_PER_HOUR_MIN * (secs / 3600) + SC_REST_ALLOW_MIN + permMin;
                         const _P = BREAK_SCORE_MAX_PENALTY;   // أقل بريك = درجة أعلى (متدرج داخل المسموح ثم يستمر بالنزول عند التجاوز)
-                        a.brkDay.push(used <= allow ? 100 - _P * (used / allow) : Math.max(0, (100 - _P) - (used - allow) / allow * (100 - _P)));
+                        a.brkDay.push(used <= allow ? 100 : Math.max(0, 100 - (used - allow) / allow * 100));   // عادل: ضمن المسموح = 100%، التجاوز فقط ينزّل
                         if (!isToday) { a.hrDays++; a.hrSecs += secs; a.hrPermMin += permMin; a.hrReqSecs += Math.max(3600, SC_DAILY_HOURS * 3600 - (SC_BREAK_ALLOW_PER_HOUR_MIN * SC_DAILY_HOURS + SC_REST_ALLOW_MIN + permMin + Math.max(0, late || 0)) * 60); }   // ساعات اليوم الحالي ناقصة: لا تُحتسب بعد
                         push('دوام', { start: st, late: (late !== null && late > LATE_GRACE_MIN) ? late : 0, brk: brkM, rest: restM, secs, rating: r.rating == null ? 100 : (Number(r.rating) || 0) });
                     });
@@ -3773,13 +3780,13 @@
                     const hrs = a.hrDays > 0 ? Math.min(100, a.hrSecs / Math.max(3600, reqSecs) * 100) : null;
                     const tkt = tkOk ? avg(tk[k] || []) : null;
                     const od = Object.values(ordCnt[k] || {}).filter(n => n > 0);
-                    const ord = (ordOk && od.length) ? avg(od.map(n => Math.min(100, n / SC_ORDERS_DAILY_TARGET * 100))) : null;
+                    const ord = (ordOk && od.length) ? Math.min(100, od.reduce((s, n) => s + Math.min(100, n / SC_ORDERS_DAILY_TARGET * 100), 0) / Math.max(a.days, od.length)) : null;   // عادل: يُقسم على كل أيام الدوام الفعلية، لا على الأيام التي فيها طلبات فقط
                     const comps = { att, brk, tkt, ord, hrs };
                     let ws = 0, tot = 0;
                     ['att', 'brk', 'tkt', 'hrs'].forEach(c => { if (comps[c] !== null) { ws += SC_WEIGHTS[c]; tot += comps[c] * SC_WEIGHTS[c]; } });
                     const _bonus = (comps.ord !== null) ? comps.ord / 100 * SC_WEIGHTS.ord : 0;
                     return { k, name: a.name || k, att, brk, tkt, ord, hrs, raw: (ws ? tot / ws : 0) + (ws ? _bonus : 0), total: Math.min(100, (ws ? tot / ws : 0) + (ws ? _bonus : 0)), hasData, days: a.days, absent: a.absent, usedAvg: a.days > 0 ? a.usedMin / a.days : 0 };
-                }).sort((p, q) => (q.hasData - p.hasData) || (Math.round((q.raw || 0) * 10) - Math.round((p.raw || 0) * 10)) || (p.usedAvg - q.usedAvg));   // تساوي الدرجة: الأقل بريكاً واستراحة يتقدّم
+                }).sort((p, q) => (q.hasData - p.hasData) || (Math.round((q.raw || 0) * 10) - Math.round((p.raw || 0) * 10)) || (p.absent - q.absent) || ((q.hrs || 0) - (p.hrs || 0)) || String(p.name).localeCompare(String(q.name)));   // عادل: عند التساوي يتقدّم الأقل غياباً ثم الأعلى التزاماً بساعات الدوام (بدون معاقبة من استخدم بريكه المسموح)
                 if (silent) { rows.forEach(r => { r.detail = detail[r.k] || []; r.ordByDay = ordCnt[r.k] || {}; }); return rows; }
                 if (rows.length === 0) { box.style.cssText = 'padding:20px;color:#64748b;font-weight:700;'; box.innerHTML = '<p>لا يوجد موظفون.</p>'; return; }
                 window._scLast = { from, to, rows };
@@ -6179,10 +6186,10 @@
                 const task = TASK[r.current_task] || (hasAr(r.current_task) ? '-' : (r.current_task || '-'));
                 daily.push({ ds: r.history_date, name: a.name, st, kind, hrs, task, br: Number(r.total_break_minutes) || 0, rest: Number(r.total_rest_minutes) || 0, rating });
             });
-            const emps = Object.values(agg).map(a => Object.assign(a, { avg: a.days ? a.sum / a.days : null })).sort((p, q) => (q.avg == null ? -1 : q.avg) - (p.avg == null ? -1 : p.avg) || q.days - p.days);
+            const emps = Object.values(agg).map(a => Object.assign(a, { avg: (a.days + a.absent) ? a.sum / (a.days + a.absent) : null })).sort((p, q) => (q.avg == null ? -1 : q.avg) - (p.avg == null ? -1 : p.avg) || q.days - p.days);
             const worked = emps.filter(a => a.days);
             const totDays = emps.reduce((s, a) => s + a.days, 0), totAbs = emps.reduce((s, a) => s + a.absent, 0);
-            const avgAll = totDays ? emps.reduce((s, a) => s + a.sum, 0) / totDays : null;
+            const avgAll = (totDays + totAbs) ? emps.reduce((s, a) => s + a.sum, 0) / (totDays + totAbs) : null;   // عادل: الغياب يُحتسب بصفر
             const totSecs = emps.reduce((s, a) => s + a.secs, 0), totBr = emps.reduce((s, a) => s + a.br, 0);
 
             const { jsPDF } = window.jspdf;
@@ -8156,8 +8163,7 @@
             let groupPen = hourlyBreaks.groupPenalty || 0;
             const _lwp = lateWithPerm(i, d);
             let latePen = _lwp !== null ? _lwp : ((Number(hourlyBreaks.latePenalty) || 0) || lateFallbackPenalty(i, d));
-            employeesData[i].rating = Math.max(0, Math.min(100, 100 - (totalViolations * VIOLATION_POINTS) - groupPen - latePen
-                - breakUsagePenalty(d, now, i) - restUsagePenalty(d, now, i) + ordersBonus(i)));
+            employeesData[i].rating = _fairDaily(totalViolations * VIOLATION_POINTS + groupPen + latePen, breakUsagePenalty(d, now, i) + restUsagePenalty(d, now, i), ordersBonus(i));
         }
         try { applyMonthlyRatings(); } catch (e) {}
     };
@@ -8877,6 +8883,24 @@
             s1.mergeCells(row, 1, row, 6);
             s1.getCell(row, 1).value = R.strong.length ? R.strong.map(x => '✅ ' + x.name + ' (' + Math.round(x.v) + '%)').join('    ') : 'يحتاج يحسّن كل البنود حتى تصير عنده نقاط قوة واضحة.';
             s1.getCell(row, 1).font = { ...F, bold: true, color: { argb: 'FF15803D' } }; s1.getCell(row, 1).alignment = { horizontal: 'right', indent: 1, wrapText: true }; s1.getRow(row).height = 24;
+            row += 2;
+            row = title(s1, row, 'ℹ️ كيف انحسب التقييم (شرح كامل وعادل)', '334155', 6);
+            [
+                '1) الدرجة النهائية = الحضور × ' + SC_WEIGHTS.att + '% + البريك والاستراحة × ' + SC_WEIGHTS.brk + '% + ساعات الدوام × ' + SC_WEIGHTS.hrs + '% + مكافأة الطلبات (حتى +' + SC_WEIGHTS.ord + ' نقاط) وبحد أقصى 100%.',
+                '2) الحضور والالتزام = متوسط درجة الالتزام بوقت الدوام × (أيام الدوام ÷ (أيام الدوام + أيام الغياب)). السماحية ' + LATE_GRACE_MIN + ' د؛ بعدها خصم ' + LATE_BASE_POINTS + ' نقاط + ' + LATE_EXTRA_POINTS + ' لكل ' + LATE_EXTRA_STEP_MIN + ' د إضافية بحد أقصى ' + LATE_MAX_POINTS + ' نقطة باليوم.',
+                '3) الغياب يُحسب فقط إذا لم يكن يوم OFF ولا إجازة معتمدة ولا يوماً مستثنى. هذه الأيام الثلاثة لا تزيد ولا تنقص.',
+                '4) الإذن الزمني أو الإجازة المعتمدة التي تغطي بداية الدوام لا تُحتسب تأخيراً، ويُضاف وقت الإذن إلى المسموح.',
+                '5) البريك والاستراحة: المسموح = ' + SC_BREAK_ALLOW_PER_HOUR_MIN + ' د لكل ساعة عمل + ' + SC_REST_ALLOW_MIN + ' د استراحة + وقت الإذن. ضمن المسموح = 100% بلا أي خصم، والخصم فقط على التجاوز بنسبة التجاوز.',
+                '6) ساعات الدوام = ساعات العمل الفعلية ÷ الساعات المطلوبة، والمطلوب = ' + SC_DAILY_HOURS + ' ساعات ناقص المسموح ودقائق التأخير والإذن (حتى لا يُخصم التأخير مرتين)، وبحد أقصى 100%.',
+                '7) مكافأة الطلبات = مجموع نقاط الأيام (كل يوم: عدد الطلبات ÷ ' + SC_ORDERS_DAILY_TARGET + ' بحد 100%) ÷ كل أيام الدوام. من لا طلبات له لا يُخصم منه شيء، ومن سجّل طلبات يوماً واحداً لا يأخذ المكافأة كاملة.',
+                '8) التقييم اليومي: المكافأة لا تمحو خصم التأخير أو المخالفات، وتعوّض فقط خصم البريك الخفيف. والتقييم الشهري يحتسب أيام الغياب بصفر.',
+                '9) الترتيب: بحسب الدرجة، وعند التساوي يتقدّم الأقل غياباً ثم الأعلى التزاماً بساعات الدوام. لا يدخل الترتيب من داوم أقل من ' + A.minDays + ' أيام.'
+            ].forEach(t => {
+                s1.mergeCells(row, 1, row, 6);
+                const c = s1.getCell(row, 1); c.value = t; c.font = { ...F, color: { argb: 'FF334155' } };
+                c.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true, indent: 1 }; c.border = BOX; c.fill = fill('F8FAFC');
+                s1.getRow(row).height = 34; row++;
+            });
 
             // ---------- الورقة 2: الأيام ----------
             const s2 = wb.addWorksheet('الأيام', { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }], properties: { tabColor: { argb: 'FF2563EB' } } });
