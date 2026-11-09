@@ -8118,7 +8118,7 @@
             window._isRealAdmin = false;
             const bar = document.createElement('div');
             bar.id = 'adm-viewas';
-            bar.style.cssText = 'display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom,0px));z-index:9995;width:min(94vw,560px);background:#103d42;color:#fff;border-radius:18px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-family:Cairo,sans-serif;direction:rtl;align-items:center;gap:8px;flex-wrap:wrap;';
+            bar.style.cssText = 'display:none;position:fixed;left:0;right:0;margin:0 auto;bottom:calc(28px + env(safe-area-inset-bottom,0px));z-index:9995;width:min(94vw,560px);min-height:56px;box-sizing:border-box;background:#103d42;color:#fff;border-radius:18px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-family:Cairo,sans-serif;direction:rtl;align-items:center;gap:8px;flex-wrap:wrap;';
             bar.innerHTML =
                 '<span id="vas-lbl" style="font-weight:800;font-size:.85rem;">👤 دخول كموظف</span>' +
                 '<input id="vas-in" list="vas-list" autocomplete="off" placeholder="اكتب اسم الموظف" style="flex:1;min-width:140px;padding:8px 12px;border-radius:12px;border:none;font-family:inherit;font-weight:700;color:#000;direction:rtl;">' +
@@ -8129,7 +8129,11 @@
             const $ = id => document.getElementById(id);
             let viewing = null;
 
+            let _listSig = '';
             function fillList() {
+                const sig = Object.keys(employeesData || {}).map(k => k + ':' + ((employeesData[k] || {}).name || '')).join('|');
+                if (sig === _listSig) return;            // لا نلمس القائمة إلا إذا تغيّرت الأسماء، وإلا تُغلق وهي مفتوحة
+                _listSig = sig;
                 const dl = $('vas-list'); dl.innerHTML = '';
                 Object.keys(employeesData || {}).forEach(k => {
                     const o = document.createElement('option');
@@ -8179,6 +8183,11 @@
             };
             $('vas-go').onclick = () => window.adminViewAs($('vas-in').value);
             $('vas-in').addEventListener('keydown', e => { if (e.key === 'Enter') window.adminViewAs($('vas-in').value); });
+            $('vas-in').addEventListener('input', () => {
+                const v = $('vas-in').value.trim().toLowerCase(); if (!v) return;
+                const hit = Object.keys(employeesData || {}).filter(k => k.toLowerCase() === v || String((employeesData[k] || {}).name || '').toLowerCase() === v);
+                if (hit.length === 1) window.adminViewAs(hit[0]);     // اختار الاسم من القائمة → يدخل مباشرة
+            });
             $('vas-back').onclick = () => window.adminBackToAdmin();
             setInterval(sync, 700);   // يظهر بعد دخول المسؤول ويختفي عند الخروج
         })();
