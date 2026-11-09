@@ -8118,7 +8118,7 @@
             window._isRealAdmin = false;
             const bar = document.createElement('div');
             bar.id = 'adm-viewas';
-            bar.style.cssText = 'display:none;position:fixed;left:0;right:0;margin:0 auto;bottom:calc(28px + env(safe-area-inset-bottom,0px));z-index:9995;width:min(94vw,560px);min-height:56px;box-sizing:border-box;background:#103d42;color:#fff;border-radius:18px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-family:Cairo,sans-serif;direction:rtl;align-items:center;gap:8px;flex-wrap:wrap;';
+            bar.style.cssText = 'display:none;position:fixed;top:106px;left:18px;right:auto;bottom:auto;margin:0;z-index:9995;width:min(calc(100vw - 36px),380px);min-height:56px;box-sizing:border-box;background:#103d42;color:#fff;border-radius:18px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-family:Cairo,sans-serif;direction:rtl;align-items:center;gap:8px;flex-wrap:wrap;';
             bar.innerHTML =
                 '<span id="vas-lbl" style="font-weight:800;font-size:.85rem;">👤 دخول كموظف</span>' +
                 '<input id="vas-in" list="vas-list" autocomplete="off" placeholder="اكتب اسم الموظف" style="flex:1;min-width:140px;padding:8px 12px;border-radius:12px;border:none;font-family:inherit;font-weight:700;color:#000;direction:rtl;">' +
