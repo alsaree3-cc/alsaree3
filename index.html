@@ -1442,26 +1442,22 @@
                 resetBtn(); passEl.value = ''; return;
             }
 
-            // الموظف (غير المسؤول) لا يدخل إلا إذا كان داخل نطاق موقع العمل
+            // 🏢 الموظف (غير المسؤول) لا يدخل إلا من شبكة (إنترنت) الشركة — بدون فحص موقع.
+            //    الفحص يتم على السيرفر، وإذا فشل الفحص أو تعذّر الاتصال يُمنع الدخول (لا يُسمح به افتراضياً).
             if (profile.role !== 'admin') {
-                btn.textContent = 'Checking location...';
-                const loc = await verifyWorkLocation(profile.employee_key);
-                _mark('geo');
-                if (!loc.ok) {
-                    errorEl.textContent = '📍 ' + loc.msg;
+                btn.textContent = 'Checking network...';
+                let netOk = null, netFailed = false;
+                try {
+                    const r = await supabaseClient.rpc('alsaree3_ip_allowed');
+                    if (r.error) netFailed = true; else netOk = r.data;
+                } catch (e) { console.warn('[NetCheck]', e); netFailed = true; }
+                if (netFailed || netOk !== true) {
+                    errorEl.textContent = netFailed
+                        ? '⚠️ تعذّر التحقق من شبكة الشركة، حاول مرة ثانية.'
+                        : '🏢 لازم تكون داخل الشركة ومتصل بإنترنت (واي فاي) الشركة حتى تسجّل دخول.';
                     await supabaseClient.auth.signOut();
                     resetBtn(); passEl.value = ''; return;
                 }
-                // 🏢 الدخول بس من شبكة (إنترنت) الشركة — نفس فحص السيرفر بتسجيل الحضور
-                btn.textContent = 'Checking network...';
-                try {
-                    const { data: netOk, error: netErr } = await supabaseClient.rpc('alsaree3_ip_allowed');
-                    if (!netErr && netOk === false) {
-                        errorEl.textContent = '🏢 لازم تكون داخل الشركة ومتصل بإنترنت (واي فاي) الشركة حتى تسجّل دخول.';
-                        await supabaseClient.auth.signOut();
-                        resetBtn(); passEl.value = ''; return;
-                    }
-                } catch (e) { console.warn('[NetCheck]', e); }
             }
 
             // الآن فقط (بعد المصادقة) نجلب بيانات الموظفين ونفتح الاتصال اللحظي
