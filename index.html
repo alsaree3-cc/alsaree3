@@ -1376,6 +1376,20 @@
 
         // ===== تسجيل الدخول عبر Supabase (اسم مستخدم + كلمة مرور) =====
         let _loginFails = 0, _loginLockUntil = 0;
+
+        // 📵 كشف الهاتف / التابلت (حتى لو فعّل "نسخة الكمبيوتر" في المتصفح)
+        const _isPhoneOrTablet = () => {
+            try {
+                const ua = navigator.userAgent || '';
+                const touch = navigator.maxTouchPoints || 0;
+                if (/Android|iPhone|iPad|iPod|Mobile|Windows Phone|webOS|BlackBerry|Opera Mini|IEMobile/i.test(ua)) return true;
+                if (navigator.userAgentData && navigator.userAgentData.mobile) return true;
+                if (/Macintosh/i.test(ua) && touch > 1) return true;                       // iPad بوضع "موقع سطح المكتب"
+                if (window.matchMedia && matchMedia('(pointer:coarse)').matches && !matchMedia('(any-pointer:fine)').matches) return true;
+                if (touch > 0 && Math.min(screen.width, screen.height) <= 600) return true; // شاشة صغيرة تعمل باللمس
+            } catch (e) {}
+            return false;
+        };
         const _doLoginInner = async () => {
             const userEl = document.getElementById('login-username');
             const passEl = document.getElementById('login-password');
@@ -1421,6 +1435,13 @@
                 resetBtn(); return;
             }
 
+            // 🖥️ الموظف يدخل من الحاسبة فقط — المسؤول (admin) يدخل من أي جهاز: هاتف أو حاسبة
+            if (profile.role !== 'admin' && _isPhoneOrTablet()) {
+                errorEl.textContent = '🖥️ تسجيل دخول الموظفين متاح من الحاسبة فقط، ولا يمكن الدخول من الهاتف.';
+                await supabaseClient.auth.signOut();
+                resetBtn(); passEl.value = ''; return;
+            }
+
             // الموظف (غير المسؤول) لا يدخل إلا إذا كان داخل نطاق موقع العمل
             if (profile.role !== 'admin') {
                 btn.textContent = 'Checking location...';
@@ -1446,6 +1467,7 @@
             // الآن فقط (بعد المصادقة) نجلب بيانات الموظفين ونفتح الاتصال اللحظي
             try {
                 loggedInId = (profile.role === 'admin') ? '__admin__' : profile.employee_key;
+                window._isRealAdmin = (profile.role === 'admin');   // يفعّل شريط «دخول كموظف» للمسؤول فقط
                 _serverEmployees = await employeesPromise;
                 _mark('employees');
                 employeesData = _snapshotClone();
@@ -8093,6 +8115,76 @@
                 try { document.getElementById('lc-date').textContent = dFmt.format(d); } catch (e) {}
             }
             tick(); setInterval(tick, 1000);
+        })();
+
+        // ===== 👤 دخول المسؤول كأي موظف (من الهاتف أو الحاسبة) — بدون كلمة مرور، والجلسة تبقى جلسة المسؤول =====
+        (function () {
+            window._isRealAdmin = false;
+            const bar = document.createElement('div');
+            bar.id = 'adm-viewas';
+            bar.style.cssText = 'display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom,0px));z-index:9995;width:min(94vw,560px);background:#103d42;color:#fff;border-radius:18px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-family:Cairo,sans-serif;direction:rtl;align-items:center;gap:8px;flex-wrap:wrap;';
+            bar.innerHTML =
+                '<span id="vas-lbl" style="font-weight:800;font-size:.85rem;">👤 دخول كموظف</span>' +
+                '<input id="vas-in" list="vas-list" autocomplete="off" placeholder="اكتب اسم الموظف" style="flex:1;min-width:140px;padding:8px 12px;border-radius:12px;border:none;font-family:inherit;font-weight:700;color:#000;direction:rtl;">' +
+                '<datalist id="vas-list"></datalist>' +
+                '<button id="vas-go" style="padding:8px 14px;border-radius:12px;background:#22c55e;color:#fff;font-weight:900;font-family:inherit;border:none;cursor:pointer;">دخول</button>' +
+                '<button id="vas-back" style="display:none;padding:8px 14px;border-radius:12px;background:#fff;color:#103d42;font-weight:900;font-family:inherit;border:none;cursor:pointer;">↩ رجوع للمسؤول</button>';
+            document.body.appendChild(bar);
+            const $ = id => document.getElementById(id);
+            let viewing = null;
+
+            function fillList() {
+                const dl = $('vas-list'); dl.innerHTML = '';
+                Object.keys(employeesData || {}).forEach(k => {
+                    const o = document.createElement('option');
+                    o.value = (employeesData[k] && employeesData[k].name) ? employeesData[k].name : k;
+                    dl.appendChild(o);
+                });
+            }
+            function findKey(q) {
+                q = String(q || '').trim().toLowerCase(); if (!q) return null;
+                const keys = Object.keys(employeesData || {});
+                const nm = k => String((employeesData[k] && employeesData[k].name) || '').toLowerCase();
+                let m = keys.filter(k => k.toLowerCase() === q || nm(k) === q);
+                if (!m.length) m = keys.filter(k => k.toLowerCase().includes(q) || nm(k).includes(q));
+                return m.length === 1 ? m[0] : (m.length > 1 ? 'MANY' : null);
+            }
+            function sync() {
+                const on = !!(window._isRealAdmin && loggedInId);
+                bar.style.display = on ? 'flex' : 'none';
+                if (!on) { viewing = null; return; }
+                const asEmp = viewing && loggedInId === viewing;
+                $('vas-in').style.display = asEmp ? 'none' : '';
+                $('vas-go').style.display = asEmp ? 'none' : '';
+                $('vas-back').style.display = asEmp ? '' : 'none';
+                $('vas-lbl').textContent = asEmp ? ('👁️ تشاهد كـ: ' + ((employeesData[viewing] || {}).name || viewing)) : '👤 دخول كموظف';
+                if (!asEmp) fillList();
+            }
+            window.adminViewAs = function (q) {
+                if (!window._isRealAdmin || loggedInId !== '__admin__') return;
+                const k = findKey(q);
+                if (k === 'MANY') { alert('يوجد أكثر من موظف بهذا الاسم، اكتب الاسم بشكل أدق.'); return; }
+                if (!k) { alert('لم يتم العثور على موظف بهذا الاسم.'); return; }
+                viewing = k; loggedInId = k;
+                const sec = $('admin-section'); if (sec) { sec.classList.add('hidden'); sec.innerHTML = ''; }
+                $('leave-btn').style.display = 'block';
+                $('logout-btn').textContent = '🚪 خروج';
+                $('vas-in').value = '';
+                try { if (window.pollMyTickets) window.pollMyTickets(); } catch (e) {}
+                render(); sync();
+            };
+            window.adminBackToAdmin = function () {
+                if (!window._isRealAdmin) return;
+                viewing = null; loggedInId = '__admin__';
+                $('leave-btn').style.display = 'none';
+                $('logout-btn').textContent = '🚪 خروج المسؤول';
+                render(); sync();
+                setTimeout(() => { try { window.lockAdmin(); } catch (e) {} }, 100);
+            };
+            $('vas-go').onclick = () => window.adminViewAs($('vas-in').value);
+            $('vas-in').addEventListener('keydown', e => { if (e.key === 'Enter') window.adminViewAs($('vas-in').value); });
+            $('vas-back').onclick = () => window.adminBackToAdmin();
+            setInterval(sync, 700);   // يظهر بعد دخول المسؤول ويختفي عند الخروج
         })();
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
