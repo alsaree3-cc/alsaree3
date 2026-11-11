@@ -9268,7 +9268,13 @@
         } catch (e) {
             if (seq !== _auSeq) return;
             const m = String((e && e.message) || e);
-            box.innerHTML = '<p style="color:#dc2626;padding:20px;">❌ فشل تحميل السجل' + (/alsaree3_audit|does not exist|schema cache/i.test(m) ? '<br><span style="font-size:0.8rem;color:#64748b;">شغّل ملف alsaree3-settings-audit.sql بـ Supabase أولاً</span>' : '') + '</p>';
+            const hint = /permission denied/i.test(m) ? 'شغّل ملف fix-grants.sql بـ Supabase (صلاحيات)'
+                : /schema cache|does not exist|Could not find/i.test(m) ? 'الجدول مو موجود أو Supabase ما حدّث القائمة — شغّل fix-grants.sql'
+                : /JWT|auth|401/i.test(m) ? 'انتهت الجلسة — اطلع وادخل من جديد' : '';
+            box.innerHTML = '<p style="color:#dc2626;padding:20px;">❌ فشل تحميل السجل'
+                + (hint ? '<br><span style="font-size:0.85rem;color:#334155;font-weight:800;">' + hint + '</span>' : '')
+                + '<br><span style="font-size:0.72rem;color:#94a3b8;direction:ltr;unicode-bidi:isolate;display:inline-block;margin-top:6px;">' + _auEsc(m) + '</span></p>';
+            console.warn('[Audit]', e);
         }
     };
 
