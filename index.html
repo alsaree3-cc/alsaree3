@@ -32,7 +32,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src https://alsaree3.jitbit.com; worker-src 'none'; manifest-src 'none'">
     <meta name="referrer" content="no-referrer">
-    <title>Alsaree3 - Digital Monitoring System v6.6</title>
+    <title>Alsaree3 - Digital Monitoring System v6.8</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
@@ -8205,7 +8205,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.11-v6.6</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.11-v6.8</div>
 <!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
@@ -9345,6 +9345,185 @@
 
     window._a3NetCheck(false);
     console.log('[Alsaree3] v6.6 loaded: shared settings + audit log + offline guard');
+})();
+</script>
+
+
+<!-- ===== Alsaree3 v6.7 — بريك تلقائي إذا الماوس ما تحرك (للموظف الداخل من جهازه فقط) ===== -->
+<style>
+    #a3-idle-ov{position:fixed;inset:0;z-index:2147482000;background:rgba(15,23,42,.72);display:flex;align-items:center;justify-content:center;padding:16px;direction:rtl;font-family:Cairo,sans-serif;}
+    #a3-idle-ov .a3-idle-box{background:#fff;border-radius:24px;padding:26px 24px;max-width:420px;width:100%;text-align:center;box-shadow:0 30px 80px -10px rgba(0,0,0,.5);}
+    #a3-idle-ov .a3-idle-num{font-size:3.2rem;font-weight:900;color:#dc2626;line-height:1.1;margin:8px 0;}
+    #a3-idle-ov button{border:none;border-radius:14px;padding:12px 22px;font-family:Cairo,sans-serif;font-weight:900;font-size:1rem;cursor:pointer;}
+    html.a3-dark #a3-idle-ov .a3-idle-box{background:#0f172a;color:#e2e8f0;}
+</style>
+<script>
+(function () {
+    let IDLE_MIN = 5;          // دقائق بدون حركة قبل التنبيه (0 = إيقاف)
+    const WARN_SEC = 60;       // مهلة التنبيه قبل البريك التلقائي
+
+    // الإعداد يصير ضمن «التحكم بالتقييم» وينحفظ بالسيرفر ويه باقي الإعدادات
+    try {
+        RS_DEFS.push(['البريك التلقائي عند الخمول', [
+            ['idle_min', 'دقائق بدون حركة ماوس/كيبورد قبل البريك التلقائي (0 = إيقاف)', 5, 0, v => { IDLE_MIN = v; }, () => IDLE_MIN]
+        ]]);
+        let raw = null; try { raw = localStorage.getItem(RS_KEY); } catch (e) {}
+        if (raw) rsApply(JSON.parse(raw));
+    } catch (e) { console.warn('[Idle] settings', e); }
+
+    let _lastAct = Date.now(), _warnAt = 0, _warnTimer = null, _beepTimer = null, _ntf = null, _busy = false, _autoBreakFor = null;
+
+    const _me = () => (loggedInId && loggedInId !== '__admin__' && !window._isRealAdmin && employeesData[loggedInId]) ? loggedInId : null;
+    const _offline = () => document.documentElement.classList.contains('a3-offline');
+
+    function _activity() {
+        _lastAct = Date.now();
+        if (_warnAt) _cancelWarn();
+    }
+    ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll'].forEach(ev => document.addEventListener(ev, _activity, { capture: true, passive: true }));
+    window.addEventListener('focus', _activity);
+
+    // صوت تنبيه بسيط
+    let _ac = null;
+    function _beep() {
+        try {
+            _ac = _ac || new (window.AudioContext || window.webkitAudioContext)();
+            const o = _ac.createOscillator(), g = _ac.createGain();
+            o.type = 'square'; o.frequency.value = 880; g.gain.value = 0.08;
+            o.connect(g); g.connect(_ac.destination); o.start(); o.stop(_ac.currentTime + 0.25);
+        } catch (e) {}
+    }
+
+    function _overlay(html) {
+        let o = document.getElementById('a3-idle-ov');
+        if (!o) { o = document.createElement('div'); o.id = 'a3-idle-ov'; document.body.appendChild(o); }
+        o.innerHTML = '<div class="a3-idle-box">' + html + '</div>';
+        return o;
+    }
+    function _closeOverlay() { const o = document.getElementById('a3-idle-ov'); if (o) o.remove(); }
+
+    function _startWarn() {
+        _warnAt = Date.now();
+        const render = () => {
+            const left = Math.max(0, WARN_SEC - Math.floor((Date.now() - _warnAt) / 1000));
+            const o = document.getElementById('a3-idle-ov');
+            const el = o && o.querySelector('.a3-idle-num');
+            if (el) el.textContent = left;
+            if (left <= 0) _doAutoBreak();
+        };
+        _overlay('<div style="font-size:2.2rem;">👀</div>'
+            + '<div style="font-size:1.2rem;font-weight:900;margin-top:4px;">انت موجود؟</div>'
+            + '<div style="font-size:.9rem;font-weight:700;color:#64748b;margin-top:6px;">' + (_sysDet ? 'ما لمست الماوس ولا الكيبورد بأي برنامج من ' : 'ما تحرّك الماوس على الداشبورد من ') + IDLE_MIN + ' دقائق. إذا ما ضغطت، راح ينسجل لك بريك تلقائي بعد</div>'
+            + '<div class="a3-idle-num">' + WARN_SEC + '</div>'
+            + '<button type="button" data-net-ok onclick="window._a3IdleHere()" style="background:#16a34a;color:#fff;width:100%;">✋ أنا موجود</button>');
+        _warnTimer = setInterval(render, 500);
+        _beep(); _beepTimer = setInterval(_beep, 4000);
+        try {
+            if ('Notification' in window && Notification.permission === 'granted' && (document.hidden || !document.hasFocus())) {
+                _ntf = new Notification('👀 انت موجود؟', { body: 'ما تحرّك الماوس من ' + IDLE_MIN + ' دقائق — اضغط هنا وإلا ينسجل بريك تلقائي', tag: 'alsaree3-idle', requireInteraction: true, dir: 'rtl', lang: 'ar' });
+                _ntf.onclick = () => { try { window.focus(); } catch (e) {} window._a3IdleHere(); };
+            }
+        } catch (e) {}
+    }
+    function _cancelWarn() {
+        _warnAt = 0;
+        clearInterval(_warnTimer); clearInterval(_beepTimer); _warnTimer = _beepTimer = null;
+        try { _ntf && _ntf.close(); } catch (e) {} _ntf = null;
+        const o = document.getElementById('a3-idle-ov');
+        if (o && !o.hasAttribute('data-break')) _closeOverlay();
+    }
+    window._a3IdleHere = () => { _lastAct = Date.now(); _cancelWarn(); };
+
+    async function _doAutoBreak() {
+        const id = _me();
+        clearInterval(_warnTimer); clearInterval(_beepTimer); _warnTimer = _beepTimer = null; _warnAt = 0;
+        try { _ntf && _ntf.close(); } catch (e) {} _ntf = null;
+        if (!id || _busy || _offline() || employeesData[id].status !== 'حضور') { _closeOverlay(); return; }
+        _busy = true;
+        try { await window.updateStatus(id, 'بريك', true); } catch (e) { console.warn('[Idle] break', e); }
+        _busy = false;
+        if (employeesData[id] && employeesData[id].status === 'بريك') {
+            _autoBreakFor = id;
+            const o = _overlay('<div style="font-size:2.2rem;">☕</div>'
+                + '<div style="font-size:1.2rem;font-weight:900;margin-top:4px;">انسجل لك بريك تلقائي</div>'
+                + '<div style="font-size:.9rem;font-weight:700;color:#64748b;margin:6px 0 14px;">لأن الماوس ما تحرّك ' + IDLE_MIN + ' دقائق. البريك شغّال من هسه، ومن ترجع اضغط الزر حتى يوكف.</div>'
+                + '<button type="button" data-net-ok onclick="window._a3IdleBack()" style="background:#2563eb;color:#fff;width:100%;">↩️ رجعت للعمل</button>');
+            o.setAttribute('data-break', '1');
+        } else _closeOverlay();
+    }
+
+    window._a3IdleBack = async () => {
+        const id = _me();
+        if (!id || _busy) return;
+        if (_offline()) return;
+        _busy = true;
+        try { if (employeesData[id].status === 'بريك') await window.updateStatus(id, 'حضور'); } catch (e) { console.warn('[Idle] back', e); }
+        _busy = false;
+        _autoBreakFor = null; _lastAct = Date.now();
+        _closeOverlay();
+    };
+
+    // ===== كشف النشاط على كل الكمبيوتر (Idle Detection — Chrome/Edge) =====
+    // إذا الموظف وافق على الإذن: أي حركة ماوس/كيبورد بأي برنامج تنحسب، مو بس داخل الداشبورد
+    let _sysDet = null, _sysState = 'off';   // off | prompt | denied | on
+    const _sysSupported = ('IdleDetector' in window) && window.isSecureContext;
+    async function _sysPerm() {
+        try { const r = await navigator.permissions.query({ name: 'idle-detection' }); return r.state; } catch (e) { return 'prompt'; }
+    }
+    async function _sysStart() {
+        if (_sysDet || !_sysSupported) return;
+        try {
+            const det = new IdleDetector();
+            det.addEventListener('change', () => { if (det.userState === 'active' && det.screenState === 'unlocked') _activity(); });
+            await det.start({ threshold: 60000 });
+            _sysDet = det; _sysState = 'on'; _sysBanner();
+        } catch (e) { console.warn('[Idle] system detector', e); _sysState = 'denied'; _sysBanner(); }
+    }
+    function _sysBanner() {
+        const old = document.getElementById('a3-sys-idle'); if (old) old.remove();
+        if (!_me() || !_sysSupported || _sysState === 'on' || _sysState === 'off' || !IDLE_MIN) return;
+        const b = document.createElement('div'); b.id = 'a3-sys-idle';
+        b.style.cssText = 'position:fixed;bottom:calc(14px + env(safe-area-inset-bottom,0px));right:14px;z-index:2147481000;max-width:340px;background:#1e293b;color:#fff;border-radius:16px;padding:12px 14px;font-family:Cairo,sans-serif;direction:rtl;box-shadow:0 12px 30px rgba(0,0,0,.35);font-size:.82rem;font-weight:700;line-height:1.7;';
+        if (_sysState === 'prompt') {
+            b.innerHTML = '🖱️ <b>فعّل كشف النشاط</b> حتى يحس النظام بشغلك بكل البرامج (واتساب، لوحة الطلبات...) وما يطلعلك «انت موجود؟» على الفاضي.'
+                + '<button type="button" data-net-ok onclick="window._a3SysAllow()" style="display:block;width:100%;margin-top:8px;background:#16a34a;color:#fff;border:none;border-radius:10px;padding:8px;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;">✅ تفعيل</button>';
+        } else {
+            b.innerHTML = '⚠️ <b>كشف النشاط مرفوض</b> — النظام يحس بالماوس داخل الداشبورد بس.<br>للتفعيل: اضغط 🔒 جنب رابط الموقع ← إعدادات الموقع ← <b>استخدام جهازك (Your device use)</b> ← سماح، وبعدها حدّث الصفحة.'
+                + '<button type="button" data-net-ok onclick="this.parentNode.remove()" style="display:block;width:100%;margin-top:8px;background:#334155;color:#fff;border:none;border-radius:10px;padding:6px;font-family:Cairo,sans-serif;font-weight:800;cursor:pointer;">إخفاء</button>';
+        }
+        document.body.appendChild(b);
+    }
+    window._a3SysAllow = async () => {
+        try { const r = await IdleDetector.requestPermission(); _sysState = (r === 'granted') ? 'prompt' : 'denied'; if (r === 'granted') await _sysStart(); else _sysBanner(); }
+        catch (e) { console.warn('[Idle] permission', e); _sysState = 'denied'; _sysBanner(); }
+    };
+    let _sysFor = null;
+    async function _sysCheck() {
+        const id = _me();
+        if (!id) { _sysFor = null; const b = document.getElementById('a3-sys-idle'); if (b) b.remove(); return; }
+        if (!_sysSupported || _sysFor === id) return;
+        _sysFor = id;
+        const st = await _sysPerm();
+        if (st === 'granted') await _sysStart();
+        else { _sysState = (st === 'denied') ? 'denied' : 'prompt'; _sysBanner(); }
+    }
+    setInterval(_sysCheck, 3000);
+    window._a3SysIdleState = () => ({ supported: _sysSupported, state: _sysState, user: _sysDet && _sysDet.userState, screen: _sysDet && _sysDet.screenState });
+
+    // الفحص كل 5 ثواني
+    setInterval(() => {
+        const id = _me();
+        if (!id || !IDLE_MIN) { if (_warnAt) _cancelWarn(); return; }
+        const st = employeesData[id].status;
+        // إذا الموظف رجّع نفسه من البريك بزر البطاقة: نسد نافذة البريك التلقائي
+        if (_autoBreakFor && st !== 'بريك') { _autoBreakFor = null; _closeOverlay(); _lastAct = Date.now(); }
+        if (st !== 'حضور') { _lastAct = Date.now(); if (_warnAt) _cancelWarn(); return; }   // بريك/راحة/أوف: ما نحسب خمول
+        if (_offline()) { _lastAct = Date.now(); return; }                                    // بدون نت ما نسجّل شي
+        if (_sysDet && _sysDet.userState === 'active' && _sysDet.screenState === 'unlocked') _lastAct = Date.now();   // شغّال ببرنامج ثاني
+        if (!_warnAt && Date.now() - _lastAct >= IDLE_MIN * 60000) _startWarn();
+    }, 5000);
+
+    console.log('[Alsaree3] v6.7 loaded: idle auto-break');
 })();
 </script>
 
