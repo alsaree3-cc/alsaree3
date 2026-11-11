@@ -32,7 +32,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src https://alsaree3.jitbit.com; worker-src 'none'; manifest-src 'none'">
     <meta name="referrer" content="no-referrer">
-    <title>Alsaree3 - Digital Monitoring System v6.5</title>
+    <title>Alsaree3 - Digital Monitoring System v6.6</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
@@ -1721,6 +1721,7 @@
                     <button onclick="window.openEmpSchedules()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-teal-50 border-teal-200 text-teal-800 hover:bg-teal-100"><span class="text-sm">🕘</span><span>Work Schedules</span></button>
                     <button onclick="window.openEmpLocations()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100"><span class="text-sm">📍</span><span>Employee Locations</span></button>
                     <button onclick="window.openDeviceLog()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">📱</span><span>Device Log</span></button>
+                    <button onclick="window.openAuditLog()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">📜</span><span>Audit Log</span></button>
                     <button onclick="window.openLoginAccounts()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">🔑</span><span>Login Accounts</span></button>
                     <button onclick="window.toggleLang()" data-noi18n class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">🌐</span><span class="a3-lang-lbl">${window._langLabel ? window._langLabel() : 'Language / اللغة'}</span></button>
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
@@ -8204,8 +8205,8 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.08-netlogin</div>
-</body><!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.11-v6.6</div>
+<!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
 <script>
@@ -9046,4 +9047,300 @@
     })();
 </script>
 
+<!-- ===== Alsaree3 v6.6 — إعدادات مشتركة + سجل التعديلات + تنبيه انقطاع النت =====
+     يحتاج ملف alsaree3-settings-audit.sql يكون متشغّل بـ Supabase -->
+<style>
+    #a3-net-bar{position:fixed;top:0;left:0;right:0;z-index:2147483000;display:none;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;
+        padding:calc(9px + env(safe-area-inset-top,0px)) 14px 9px;background:#dc2626;color:#fff;font-family:Cairo,sans-serif;font-weight:800;font-size:.9rem;
+        direction:rtl;text-align:center;box-shadow:0 6px 20px rgba(220,38,38,.35);}
+    #a3-net-bar .a3-net-dot{width:9px;height:9px;border-radius:50%;background:#fff;animation:a3NetPulse 1.2s infinite;}
+    @keyframes a3NetPulse{0%,100%{opacity:1}50%{opacity:.25}}
+    @keyframes a3NetShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+    html.a3-offline #a3-net-bar{display:flex;}
+    html.a3-offline body button, html.a3-offline body [onclick]{opacity:.5;filter:grayscale(.6);}
+    html.a3-offline #a3-net-bar button{opacity:1;filter:none;}
+    #a3-net-ok{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:2147483000;background:#16a34a;color:#fff;
+        font-family:Cairo,sans-serif;font-weight:800;font-size:.9rem;padding:8px 18px;border-radius:999px;box-shadow:0 8px 24px rgba(22,163,74,.35);direction:rtl;}
+    .a3-au-tbl{width:100%;border-collapse:collapse;font-size:.8rem;}
+    .a3-au-tbl th{background:#f1f5f9;font-weight:900;padding:8px;text-align:right;position:sticky;top:0;}
+    .a3-au-tbl td{padding:8px;border-bottom:1px solid #e2e8f0;vertical-align:top;}
+    .a3-au-ch{display:block;margin-bottom:3px;line-height:1.6;}
+    .a3-au-k{font-weight:900;color:#334155;}
+    .a3-au-from,.a3-au-to,.a3-au-v{unicode-bidi:isolate;direction:ltr;display:inline-block;}
+    .a3-au-from{color:#b91c1c;text-decoration:line-through;word-break:break-word;}
+    .a3-au-to{color:#15803d;font-weight:800;word-break:break-word;}
+</style>
+<div id="a3-net-bar" role="alert" aria-live="assertive">
+    <span class="a3-net-dot"></span>
+    <span>⚠️ ماكو اتصال بالإنترنت — أي ضغطة هسه ما راح تنحفظ. انتظر لحد ما يرجع الاتصال</span>
+    <button type="button" onclick="window._a3NetCheck(true)" style="background:#fff;color:#b91c1c;border:none;border-radius:999px;padding:3px 12px;font-family:Cairo,sans-serif;font-weight:900;font-size:.8rem;cursor:pointer;">🔄 فحص</button>
+</div>
+<script>
+(function () {
+    // ================================================================
+    // 1) إعدادات التقييم بالسيرفر — كل الأجهزة (المسؤول والموظفين) تقرأ نفس القيم
+    // ================================================================
+    const SET_KEY = 'rating';
+    let _setLastJson = null, _setUser = null, _setBusy = false;
+
+    async function _setPush(o) {
+        const { error } = await supabaseClient.from('alsaree3_settings')
+            .upsert({ key: SET_KEY, value: o || {}, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+        if (!error) _setLastJson = JSON.stringify(o || {});
+        else console.warn('[Settings] push', error.message);
+        return error;
+    }
+
+    async function _setPull() {
+        if (!loggedInId || _setBusy) return;
+        _setBusy = true;
+        try {
+            const { data, error } = await supabaseClient.from('alsaree3_settings').select('value').eq('key', SET_KEY).maybeSingle();
+            if (error) { console.warn('[Settings] pull', error.message); return; }
+            if (!data) {
+                // أول مرة: إذا المسؤول عنده إعدادات محفوظة على جهازه، نرفعها للسيرفر حتى تصير للكل
+                if (window._isRealAdmin) {
+                    let raw = null; try { raw = localStorage.getItem(RS_KEY); } catch (e) {}
+                    if (raw) { try { await _setPush(JSON.parse(raw)); } catch (e) {} }
+                }
+                return;
+            }
+            const v = (data.value && typeof data.value === 'object') ? data.value : {};
+            const j = JSON.stringify(v);
+            if (j === _setLastJson) return;
+            _setLastJson = j;
+            rsApply(v);
+            try { localStorage.setItem(RS_KEY, j); } catch (e) {}
+            try { checkAndApplyRatings(); } catch (e) {}
+            try { render(); } catch (e) {}
+            const dd = document.getElementById('sc-desc'); if (dd) dd.innerHTML = _scDescHtml();
+        } catch (e) { console.warn('[Settings]', e); }
+        finally { _setBusy = false; }
+    }
+    window._a3SettingsPull = _setPull;
+
+    // حفظ: نفس الحفظ القديم + رفع للسيرفر
+    const _origScSave = window.scSaveSettings;
+    window.scSaveSettings = async function () {
+        _origScSave.apply(this, arguments);
+        const msg = document.getElementById('rs-msg');
+        if (msg && msg.textContent.indexOf('قيمة غير صحيحة') !== -1) return;   // القيم غلط، ما انحفظ شي
+        let o = {}; try { o = JSON.parse(localStorage.getItem(RS_KEY) || '{}'); } catch (e) {}
+        if (msg) { msg.style.color = '#64748b'; msg.textContent = '⏳ جاري الحفظ لكل الأجهزة...'; }
+        const err = await _setPush(o);
+        if (msg) {
+            msg.style.color = err ? '#b45309' : '#16a34a';
+            msg.textContent = err ? '⚠️ تطبّقت على هذا الجهاز بس — ما انحفظت بالسيرفر (تأكد من تشغيل ملف SQL)' : '✅ انحفظت وتطبّقت على كل الأجهزة';
+        }
+    };
+
+    const _origScReset = window.scResetSettings;
+    window.scResetSettings = async function () {
+        let before = null; try { before = localStorage.getItem(RS_KEY); } catch (e) {}
+        _origScReset.apply(this, arguments);
+        let after = null; try { after = localStorage.getItem(RS_KEY); } catch (e) {}
+        if (before !== null && after === null) {   // المسؤول وافق على الاستعادة
+            const err = await _setPush({});
+            const msg = document.getElementById('rs-msg');
+            if (msg) { msg.style.color = err ? '#b45309' : '#16a34a'; msg.textContent = err ? '⚠️ رجعت الافتراضي على هذا الجهاز بس' : '✅ رجعت القيم الافتراضية لكل الأجهزة'; }
+        }
+    };
+
+    // تعديل النص التوضيحي تحت الإعدادات
+    const _origScRender = window.scRenderSettings;
+    window.scRenderSettings = function () {
+        _origScRender.apply(this, arguments);
+        const el = document.getElementById('sc-settings'); if (!el) return;
+        el.querySelectorAll('div').forEach(d => {
+            if (d.children.length === 0 && d.textContent.indexOf('تُحفظ هذه القيم على هذا الجهاز') === 0) {
+                d.textContent = 'تُحفظ هذه القيم بالسيرفر وتُطبَّق على كل الأجهزة (المسؤول والموظفين) خلال دقيقتين. تغيير قيم التأخير أو المسموح يعيد حساب الأيام السابقة في هذه البطاقة. كل تغيير ينسجل بـ «سجل التعديلات».';
+            }
+        });
+    };
+
+    // تحميل الإعدادات عند الدخول، وكل دقيقتين، ولما ترجع للصفحة
+    setInterval(() => {
+        if (loggedInId && loggedInId !== _setUser) { _setUser = loggedInId; _setPull(); }
+        else if (!loggedInId) { _setUser = null; }
+    }, 1500);
+    setInterval(() => { if (loggedInId && !document.hidden) _setPull(); }, 120000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && loggedInId) _setPull(); });
+
+
+    // ================================================================
+    // 2) سجل التعديلات — منو غيّر شنو، ومتى، وشنو كانت القيمة القديمة
+    // ================================================================
+    const AU_TABLES = {
+        alsaree3_employees: 'بيانات الموظف', alsaree3_leave_requests: 'الإجازات', alsaree3_profiles: 'حسابات الدخول',
+        alsaree3_champion: 'نجم الشهر', alsaree3_settings: 'إعدادات التقييم'
+    };
+    const AU_ACTIONS = { insert: ['➕ إضافة', '#15803d'], update: ['✏️ تعديل', '#1d4ed8'], delete: ['🗑️ حذف', '#b91c1c'] };
+    const AU_FIELDS = {
+        name: 'الاسم', status: 'الحالة', start_time: 'وقت بداية الدوام', last_action_time: 'آخر حركة', last_active_date: 'آخر يوم نشاط',
+        total_break_minutes: 'دقائق البريك', total_rest_minutes: 'دقائق الاستراحة', total_work_seconds: 'ثواني العمل',
+        hourly_breaks: 'البريكات والخصومات', slot_breaks: 'بريكات الفترات', rating: 'التقييم اليومي', allowed_break_saved: 'البريك المسموح',
+        current_task: 'المهمة', monthly_rating: 'التقييم الشهري', monthly_history: 'سجل الأشهر', leave_adjust: 'تعديل رصيد الإجازة',
+        work_radius: 'نطاق الموقع', kind: 'النوع', days: 'عدد الأيام', start_date: 'تاريخ البداية', from_time: 'من', to_time: 'إلى',
+        hours: 'الساعات', reason: 'السبب', decided_at: 'وقت القرار', role: 'الدور', employee_key: 'رمز الموظف', month: 'الشهر',
+        total: 'المجموع', value: 'القيم', key: 'المفتاح', id: 'المعرّف', created_at: 'وقت الإنشاء', updated_by: 'عدّلها'
+    };
+    const _auEsc = v => (typeof sanitize === 'function') ? sanitize(String(v)) : String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const _auTime = ts => { try { return new Date(ts).toLocaleString('en-GB', { timeZone: 'Asia/Baghdad', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }); } catch (e) { return String(ts); } };
+    const _auEmpName = k => (k && employeesData[k] && employeesData[k].name) ? employeesData[k].name : (k || '—');
+    function _auVal(k, v) {
+        if (v === null || v === undefined || v === '') return '—';
+        if (typeof v === 'number' && /_time$/.test(k) && v > 1e12) return _auTime(v);
+        const s = (typeof v === 'object') ? JSON.stringify(v) : String(v);
+        return s.length > 140 ? s.slice(0, 140) + '…' : s;
+    }
+    function _auChanges(r) {
+        const ch = r.changes || {};
+        const keys = Object.keys(ch);
+        if (r.action !== 'update') {
+            // إضافة/حذف: نعرض ملخص مختصر بدل كل الأعمدة
+            const src = keys.reduce((o, k) => { o[k] = r.action === 'delete' ? ch[k].from : ch[k].to; return o; }, {});
+            const show = keys.filter(k => !['id', 'created_at', 'updated_by', 'employee_key'].includes(k)).slice(0, 6);
+            return show.map(k => '<span class="a3-au-ch"><span class="a3-au-k">' + _auEsc(AU_FIELDS[k] || k) + ':</span> <span class="a3-au-v">' + _auEsc(_auVal(k, src[k])) + '</span></span>').join('') || '—';
+        }
+        return keys.map(k => {
+            const f = _auVal(k, ch[k].from), t = _auVal(k, ch[k].to);
+            const full = JSON.stringify(ch[k].from) + '  ←  ' + JSON.stringify(ch[k].to);
+            return '<span class="a3-au-ch" title="' + _auEsc(full) + '"><span class="a3-au-k">' + _auEsc(AU_FIELDS[k] || k) + ':</span> '
+                + '<span class="a3-au-from">' + _auEsc(f) + '</span> ← <span class="a3-au-to">' + _auEsc(t) + '</span></span>';
+        }).join('');
+    }
+
+    window.openAuditLog = function () {
+        if (!window._isRealAdmin) return;
+        const old = document.getElementById('audit-overlay'); if (old) old.remove();
+        const o = document.createElement('div');
+        o.id = 'audit-overlay';
+        o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+        const sel = 'border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;font-size:0.8rem;font-family:Cairo,sans-serif;background:#fff;color:#334155;';
+        const empOpts = Object.keys(employeesData || {}).sort((a, b) => _auEmpName(a).localeCompare(_auEmpName(b), 'ar'))
+            .map(k => '<option value="' + _auEsc(k) + '">' + _auEsc(_auEmpName(k)) + '</option>').join('');
+        const tblOpts = Object.entries(AU_TABLES).map(([k, v]) => '<option value="' + k + '">' + v + '</option>').join('');
+        o.innerHTML = '<div style="background:#fff;border-radius:24px;padding:22px;width:100%;max-width:1040px;max-height:90vh;display:flex;flex-direction:column;direction:rtl;font-family:Cairo,sans-serif;">'
+            + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;">'
+            + '<h2 style="font-size:1.25rem;font-weight:900;color:#334155;">📜 سجل التعديلات</h2>'
+            + '<button onclick="document.getElementById(\'audit-overlay\').remove()" style="background:#f1f5f9;border:none;border-radius:10px;padding:6px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button></div>'
+            + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;">'
+            + '<select id="au-emp" onchange="window._auLoad()" style="' + sel + '"><option value="">👥 كل الموظفين</option>' + empOpts + '</select>'
+            + '<select id="au-tbl" onchange="window._auLoad()" style="' + sel + '"><option value="">📂 كل الأقسام</option>' + tblOpts + '</select>'
+            + '<input id="au-from" type="date" onchange="window._auLoad()" style="' + sel + '" title="من تاريخ">'
+            + '<button onclick="window._auLoad()" style="' + sel + 'cursor:pointer;background:#eff6ff;border-color:#93c5fd;color:#1d4ed8;font-weight:800;">🔄 تحديث</button>'
+            + '<span id="au-count" style="font-size:0.75rem;color:#64748b;font-weight:800;margin-inline-start:auto;"></span></div>'
+            + '<div style="font-size:0.72rem;color:#94a3b8;font-weight:700;margin-bottom:8px;">ينسجل هنا كل تغيير يسويه حساب المسؤول (تعديل بيانات موظف، إجازات، تقييم، حسابات، إعدادات). حركات الموظفين العادية (بريك/رجوع) ما تنسجل هنا. السجل ينحفظ 6 أشهر ولا أحد يكدر يمسحه من التطبيق.</div>'
+            + '<div id="au-content" style="overflow:auto;flex:1;text-align:center;color:#94a3b8;font-weight:700;padding:10px;">⏳ جاري التحميل...</div></div>';
+        o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+        document.body.appendChild(o);
+        window._auLoad();
+    };
+
+    let _auSeq = 0;
+    window._auLoad = async function () {
+        const box = document.getElementById('au-content'); if (!box) return;
+        const seq = ++_auSeq;
+        box.innerHTML = '⏳ جاري التحميل...';
+        try {
+            const emp = (document.getElementById('au-emp') || {}).value || '';
+            const tbl = (document.getElementById('au-tbl') || {}).value || '';
+            const from = (document.getElementById('au-from') || {}).value || '';
+            let q = supabaseClient.from('alsaree3_audit').select('*').order('ts', { ascending: false }).limit(300);
+            if (emp) q = q.eq('employee_key', emp);
+            if (tbl) q = q.eq('table_name', tbl);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(from)) q = q.gte('ts', from + 'T00:00:00+03:00');
+            const { data, error } = await q;
+            if (seq !== _auSeq) return;
+            if (error) throw error;
+            const cnt = document.getElementById('au-count'); if (cnt) cnt.textContent = (data || []).length >= 300 ? 'آخر 300 تعديل' : (data || []).length + ' تعديل';
+            if (!data || !data.length) { box.innerHTML = '<p style="color:#94a3b8;padding:20px;">ماكو تعديلات مسجّلة بعد</p>'; return; }
+            let h = '<table class="a3-au-tbl"><thead><tr><th style="width:130px;">الوقت</th><th style="width:150px;">منو عدّل</th><th style="width:120px;">القسم</th><th style="width:120px;">الموظف</th><th>التغيير</th></tr></thead><tbody>';
+            data.forEach(r => {
+                const a = AU_ACTIONS[r.action] || [r.action, '#334155'];
+                h += '<tr><td style="color:#475569;white-space:nowrap;">' + _auEsc(_auTime(r.ts)) + '</td>'
+                    + '<td style="color:#7c3aed;font-weight:700;word-break:break-all;">' + _auEsc(r.actor_email || '—') + '</td>'
+                    + '<td><span style="color:' + a[1] + ';font-weight:900;">' + a[0] + '</span><br><span style="color:#64748b;">' + _auEsc(AU_TABLES[r.table_name] || r.table_name) + '</span></td>'
+                    + '<td style="font-weight:900;color:#334155;">' + _auEsc(_auEmpName(r.employee_key)) + '</td>'
+                    + '<td style="text-align:right;">' + _auChanges(r) + '</td></tr>';
+            });
+            box.innerHTML = h + '</tbody></table>';
+        } catch (e) {
+            if (seq !== _auSeq) return;
+            const m = String((e && e.message) || e);
+            box.innerHTML = '<p style="color:#dc2626;padding:20px;">❌ فشل تحميل السجل' + (/alsaree3_audit|does not exist|schema cache/i.test(m) ? '<br><span style="font-size:0.8rem;color:#64748b;">شغّل ملف alsaree3-settings-audit.sql بـ Supabase أولاً</span>' : '') + '</p>';
+        }
+    };
+
+
+    // ================================================================
+    // 3) تنبيه انقطاع النت — شريط أحمر + منع الضغط لحد ما يرجع الاتصال
+    // ================================================================
+    const html = document.documentElement;
+    let _netFails = 0, _netTimer = null, _netWasOff = false, _netBusy = false;
+
+    function _netSet(off) {
+        if (off === html.classList.contains('a3-offline')) return;
+        html.classList.toggle('a3-offline', off);
+        if (off) { _netWasOff = true; return; }
+        if (_netWasOff) {
+            _netWasOff = false;
+            const t = document.createElement('div'); t.id = 'a3-net-ok'; t.textContent = '✅ رجع الاتصال';
+            const old = document.getElementById('a3-net-ok'); if (old) old.remove();
+            document.body.appendChild(t); setTimeout(() => t.remove(), 2500);
+            try { if (loggedInId && typeof resyncEmployees === 'function') resyncEmployees().catch(() => {}); } catch (e) {}
+            try { _setPull(); } catch (e) {}
+        }
+    }
+
+    // نفحص الوصول للسيرفر نفسه (مو بس الواي فاي) — أي رد من السيرفر = متصل
+    window._a3NetCheck = async function (manual) {
+        if (_netBusy) return; _netBusy = true;
+        let ok = false;
+        if (navigator.onLine === false) ok = false;
+        else {
+            const ctl = ('AbortController' in window) ? new AbortController() : null;
+            const tm = setTimeout(() => { try { ctl && ctl.abort(); } catch (e) {} }, 7000);
+            try {
+                await fetch(SUPABASE_URL + '/auth/v1/health', { method: 'GET', cache: 'no-store', headers: { apikey: SUPABASE_PUBLISHABLE_KEY }, signal: ctl ? ctl.signal : undefined });
+                ok = true;
+            } catch (e) { ok = false; }
+            clearTimeout(tm);
+        }
+        _netBusy = false;
+        if (ok) { _netFails = 0; _netSet(false); }
+        else { _netFails++; if (_netFails >= 2 || navigator.onLine === false || manual) _netSet(true); }
+        _netSchedule();
+        if (manual && !ok) { const bar = document.getElementById('a3-net-bar'); if (bar) { bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = 'a3NetShake .35s'; } }
+    };
+    function _netSchedule() {
+        clearTimeout(_netTimer);
+        const off = html.classList.contains('a3-offline');
+        _netTimer = setTimeout(() => window._a3NetCheck(false), off ? 5000 : (document.hidden ? 60000 : 20000));
+    }
+    window.addEventListener('offline', () => { _netFails = 2; _netSet(true); _netSchedule(); });
+    window.addEventListener('online', () => window._a3NetCheck(false));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) window._a3NetCheck(false); });
+
+    // وقت الانقطاع: نمنع الضغط على الأزرار حتى ما يظن الموظف إن حركته انسجلت
+    const _netBlock = e => {
+        if (!html.classList.contains('a3-offline')) return;
+        const t = e.target && e.target.closest ? e.target.closest('button, [onclick], input[type=submit], a[href]') : null;
+        if (!t || t.closest('#a3-net-bar')) return;
+        if (t.closest('[data-net-ok]')) return;
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        if (e.type === 'click') {
+            const bar = document.getElementById('a3-net-bar');
+            if (bar) { bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = 'a3NetShake .35s'; }
+            window._a3NetCheck(false);
+        }
+    };
+    ['click', 'pointerdown', 'touchstart', 'mousedown'].forEach(ev => document.addEventListener(ev, _netBlock, { capture: true, passive: false }));
+
+    window._a3NetCheck(false);
+    console.log('[Alsaree3] v6.6 loaded: shared settings + audit log + offline guard');
+})();
+</script>
+
+</body>
 </html>
