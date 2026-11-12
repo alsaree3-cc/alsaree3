@@ -8211,7 +8211,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.12-v7.1</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.12-v7.2</div>
 <!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
@@ -9849,7 +9849,7 @@
 <script>
 (function () {
     const URL_ = 'https://script.google.com/macros/s/AKfycbxhIxLuGajhpAMyQf_LO1Pf7jXDNXeJLIuuqEiywOGrlXI7JH6NdcNBkeH7w1vtB5J92Q/exec';
-    let st = null, busy = false, err = '', timer = null;
+    let st = null, err = '', timer = null;
     const esc = v => (typeof sanitize === 'function') ? sanitize(String(v == null ? '' : v)) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const tm = t => { try { return new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Asia/Baghdad', hour: '2-digit', minute: '2-digit', hour12: true }); } catch (e) { return ''; } };
 
@@ -9861,10 +9861,17 @@
         if (!j.ok) throw new Error({ forbidden: 'هذا الحساب مو مسموح', auth: 'انتهت الجلسة — اطلع وادخل', 'no-suggestion': 'الاقتراح انتهى' }[j.error] || j.error || 'خطأ');
         return j;
     }
-    async function refresh(extra) {
-        if (busy) return; busy = true;
-        try { st = await call(extra); err = ''; } catch (e) { err = String(e.message || e); }
-        finally { busy = false; render(); }
+    const LS = 'a3_aa_st_v1';
+    try { st = JSON.parse(localStorage.getItem(LS) || 'null'); } catch (e) { st = null; }
+    let inflight = 0, q = Promise.resolve();
+    // كل الأوامر تمشي بالدور (ما ينضاع ولا ضغطة) والواجهة تتحدّث فوراً قبل جواب السيرفر
+    function refresh(extra) {
+        if (!extra && inflight) return q;           // التحديث الدوري ما يزاحم أمر شغّال
+        inflight++;
+        q = q.then(() => call(extra)).then(j => { st = j; err = ''; try { localStorage.setItem(LS, JSON.stringify(j)); } catch (e) {} })
+            .catch(e => { err = String(e.message || e); })
+            .finally(() => { inflight--; if (!inflight) render(); });
+        return q;
     }
 
     function render() {
@@ -9887,9 +9894,9 @@
         body.innerHTML =
             '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">'
             + '<span style="display:inline-flex;align-items:center;gap:6px;font-weight:900;color:' + (c.running ? '#16a34a' : '#64748b') + ';"><span style="width:10px;height:10px;border-radius:50%;background:' + (c.running ? '#22c55e' : '#94a3b8') + ';"></span>' + (c.running ? 'شغّال' : 'واكف') + '</span>'
-            + (c.running ? '<button onclick="window._aaSet({running:false})" style="background:#ef4444;color:#fff;border:none;border-radius:10px;padding:6px 16px;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;">⏹️ وكّف</button>'
-                : '<button onclick="window._aaSet({running:true})" style="background:#22c55e;color:#04120a;border:none;border-radius:10px;padding:6px 16px;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;">▶️ ابدأ</button>')
-            + '<label style="font-weight:800;font-size:.85rem;color:#334155;display:inline-flex;align-items:center;gap:4px;"><input type="checkbox" ' + (c.auto ? 'checked' : '') + ' onchange="window._aaSet({auto:this.checked})"> تلقائي (يكعّد بنفسه)</label>'
+            + '<label class="aa-sw" title="شغّل / وكّف"><input type="checkbox" ' + (c.running ? 'checked' : '') + ' onchange="window._aaSet({running:this.checked})"><span></span></label>'
+            + '<span style="display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:.85rem;color:#334155;"><label class="aa-sw aa-sw-s" title="تلقائي"><input type="checkbox" ' + (c.auto ? 'checked' : '') + ' onchange="window._aaSet({auto:this.checked})"><span></span></label>تلقائي (يكعّد بنفسه)</span>'
+            + (inflight ? '<span style="font-size:.75rem;color:#94a3b8;font-weight:800;">⏳ يحفظ...</span>' : '')
             + '<label style="font-size:.78rem;font-weight:800;color:#64748b;">أبعد مسافة <input type="number" min="0.5" step="0.5" value="' + (c.maxKm || 5) + '" onchange="window._aaSet({maxKm:Number(this.value)})" style="width:60px;border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;"> كم</label>'
             + '<label style="font-size:.78rem;font-weight:800;color:#64748b;">انتظر <input type="number" min="0" step="10" value="' + (c.graceSec != null ? c.graceSec : 30) + '" onchange="window._aaSet({graceSec:Number(this.value)})" style="width:60px;border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;"> ث بعد ما يوكف</label>'
             + '</div>'
@@ -9902,9 +9909,19 @@
             + '<div style="border:1px solid #e2e8f0;border-radius:14px;overflow:auto;max-height:52vh;background:#fff;">' + ((st.log || []).map(row).join('') || '<p style="text-align:center;color:#94a3b8;padding:20px;font-weight:800;">ماكو شي بالسجل بعد</p>') + '</div>';
     }
 
-    window._aaSet = o => refresh(Object.assign({ op: 'set' }, o));
-    window._aaAssign = id => refresh({ op: 'assign', taskId: id });
-    window._aaDismiss = id => refresh({ op: 'dismiss', taskId: id });
+    const local = fn => { if (st) { fn(st); } render(); };
+    window._aaSet = o => { local(x => { x.cfg = Object.assign({}, x.cfg, o); }); refresh(Object.assign({ op: 'set' }, o)); render(); };
+    window._aaAssign = id => { local(x => { if (x.pending) delete x.pending[id]; (x.log = x.log || []).unshift({ t: Date.now(), type: 'info', text: '⏳ جاري التكعيد...', taskId: id }); }); refresh({ op: 'assign', taskId: id }); };
+    window._aaDismiss = id => { local(x => { if (x.pending) delete x.pending[id]; }); refresh({ op: 'dismiss', taskId: id }); };
+    if (!document.getElementById('aa-sw-css')) {
+        const cs = document.createElement('style'); cs.id = 'aa-sw-css';
+        cs.textContent = '.aa-sw{position:relative;display:inline-block;width:54px;height:30px;flex:none;cursor:pointer}.aa-sw input{opacity:0;width:0;height:0;position:absolute}'
+            + '.aa-sw span{position:absolute;inset:0;background:#cbd5e1;border-radius:999px;transition:background .2s}'
+            + '.aa-sw span:before{content:"";position:absolute;width:24px;height:24px;top:3px;right:3px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s}'
+            + '.aa-sw input:checked+span{background:#14b8a6}.aa-sw input:checked+span:before{transform:translateX(-24px)}'
+            + '.aa-sw-s{width:42px;height:24px}.aa-sw-s span:before{width:18px;height:18px}.aa-sw-s input:checked+span:before{transform:translateX(-18px)}';
+        document.head.appendChild(cs);
+    }
 
     window.openAutoAssign = async function () {
         if (!document.documentElement.classList.contains('a3-od-ok')) return;   // نفس شرط «لعمار فقط»
@@ -9919,9 +9936,9 @@
         document.body.appendChild(o);
         render(); refresh();
         clearInterval(timer);
-        timer = setInterval(() => { if (!document.getElementById('aa-overlay')) { clearInterval(timer); return; } if (!document.hidden) refresh(); }, 20000);
+        timer = setInterval(() => { if (!document.getElementById('aa-overlay')) { clearInterval(timer); return; } if (!document.hidden) refresh(); }, 10000);
     };
-    console.log('[Alsaree3] v7.1 loaded: auto-assign panel (owner only)');
+    console.log('[Alsaree3] v7.2 loaded: auto-assign panel (owner only)');
 })();
 </script>
 
