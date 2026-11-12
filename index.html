@@ -32,7 +32,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src https://alsaree3.jitbit.com; worker-src 'none'; manifest-src 'none'">
     <meta name="referrer" content="no-referrer">
-    <title>Alsaree3 - Digital Monitoring System v6.9</title>
+    <title>Alsaree3 - Digital Monitoring System v7.1</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
@@ -1725,6 +1725,8 @@
                     <button onclick="window.openEmpLocations()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100"><span class="text-sm">📍</span><span>Employee Locations</span></button>
                     <button onclick="window.openDeviceLog()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">📱</span><span>Device Log</span></button>
                     <button onclick="window.openAuditLog()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">📜</span><span>Audit Log</span></button>
+                    <button onclick="window.openAutoAssign()" class="a3-od-btn relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">🤖</span><span>التكعيد التلقائي</span></button>
+                    <button onclick="window.openOpenDeliveries()" class="a3-od-btn relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">🛵</span><span>الطلبات المفتوحة</span><span class="a3-od-badge a3-od-n" style="display:none"></span></button>
                     <button onclick="window.openLoginAccounts()" class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">🔑</span><span>Login Accounts</span></button>
                     <button onclick="window.toggleLang()" data-noi18n class="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-black whitespace-nowrap transition hover:-translate-y-0.5 hover:shadow-sm bg-white border-slate-300 text-slate-700 hover:bg-slate-100"><span class="text-sm">🌐</span><span class="a3-lang-lbl">${window._langLabel ? window._langLabel() : 'Language / اللغة'}</span></button>
                     <span class="hidden sm:block w-px h-5 bg-slate-300 mx-1"></span>
@@ -8209,7 +8211,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.11-v6.9</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.12-v7.1</div>
 <!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
@@ -9599,6 +9601,327 @@
     window.addEventListener('unhandledrejection', e => { try { console.warn('[Alsaree3] unhandled', e.reason); } catch (x) {} });
 
     console.log('[Alsaree3] v6.9 loaded');
+})();
+</script>
+
+
+<!-- ===== Alsaree3 v7.0 — 🛵 الطلبات المفتوحة (لحساب عمار فقط) ===== -->
+<style>
+    html:not(.a3-od-ok) .a3-od-btn { display: none !important; }
+    #od-overlay .od-tbl { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    #od-overlay .od-tbl th { background: #f1f5f9; font-weight: 900; padding: 7px 6px; text-align: right; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+    #od-overlay .od-tbl td { padding: 6px; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+    #od-overlay .od-tbl tr.od-warn td { background: #fff7ed; }
+    #od-overlay .od-tbl tr.od-late td { background: #fef2f2; }
+    #od-overlay .od-tbl tr.od-nodrv td:first-child { box-shadow: inset 4px 0 0 #7c3aed; }
+    #od-overlay .od-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-weight: 900; font-size: .7rem; white-space: nowrap; }
+    #od-overlay .od-tm { font-family: ui-monospace, monospace; font-weight: 900; padding: 2px 7px; border-radius: 8px; color: #fff; background: #334155; white-space: nowrap; }
+    #od-overlay .od-stat { flex: 1; min-width: 110px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 8px 10px; text-align: center; cursor: pointer; }
+    #od-overlay .od-stat b { display: block; font-size: 1.35rem; font-weight: 900; }
+    #od-overlay .od-stat span { font-size: .72rem; font-weight: 800; color: #64748b; }
+    #od-overlay .od-stat.on { outline: 2px solid #2563eb; }
+    #od-overlay a.od-ph { color: #2563eb; text-decoration: none; direction: ltr; unicode-bidi: isolate; font-size: .72rem; }
+    .a3-od-badge { background: #dc2626; color: #fff; border-radius: 999px; padding: 0 6px; font-size: .68rem; margin-inline-start: 4px; }
+</style>
+<script>
+(function () {
+    const OD_URL = 'https://script.google.com/macros/s/AKfycbxhIxLuGajhpAMyQf_LO1Pf7jXDNXeJLIuuqEiywOGrlXI7JH6NdcNBkeH7w1vtB5J92Q/exec';
+    const OD_ALLOW = ['ammaryasir19931993@gmail.com'];   // الواجهة فقط — السيرفر يتحقق بنفسه
+    const LS = 'a3_od_cfg';
+    let cfg = { late: 30, warn: 20, nodrv: 3, sound: true, bg: true };
+    try { Object.assign(cfg, JSON.parse(localStorage.getItem(LS) || '{}')); } catch (e) {}
+    const saveCfg = () => { try { localStorage.setItem(LS, JSON.stringify(cfg)); } catch (e) {} };
+
+    let rows = [], lastAt = 0, err = '', busy = false, allowed = false, filt = { q: '', group: '', st: '', quick: '' };
+    const alerted = new Set();
+    let _alertReady = false;   // أول تحميل بدون صوت
+
+    const ST = {   // delivery_status → [نص, لون]
+        0: ['بانتظار سايق', '#7c3aed'], 1: ['بانتظار سايق', '#7c3aed'], 3: ['بانتظار سايق', '#7c3aed'], 5: ['بانتظار سايق', '#7c3aed'],
+        7: ['معروض على السواق', '#f97316'], 9: ['معروض على السواق', '#f97316'],
+        11: ['السايق قبل', '#0ea5e9'], 13: ['السايق بالطريق للمطعم', '#0ea5e9'],
+        15: ['السايق وصل المطعم', '#1e293b'], 17: ['استلم الطلب', '#64748b'], 19: ['بالطريق للزبون', '#64748b'],
+        21: ['وصل للزبون', '#16a34a']
+    };
+    const stOf = ds => ST[ds] || (ds < 11 ? ['بانتظار سايق', '#7c3aed'] : ['حالة ' + ds, '#475569']);
+    const noDriver = r => r.ds < 11 || !r.driver;
+    const noDrvMins = r => Math.floor((Date.now() - (r.offered || r.created || Date.now())) / 60000);   // من متى بدون سايق
+    const esc = v => (typeof sanitize === 'function') ? sanitize(String(v == null ? '' : v)) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const mins = r => r.created ? Math.floor((Date.now() - r.created) / 60000) : 0;
+    const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); const m = Math.floor(s / 60); return m + ':' + String(s % 60).padStart(2, '0'); };
+    const fmtT = t => { try { return new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Asia/Baghdad', hour: '2-digit', minute: '2-digit', hour12: true }); } catch (e) { return ''; } };
+    const fmtN = n => (n === '' || n == null) ? '' : Number(n).toLocaleString('en-US');
+    const phone = p => p ? '<a class="od-ph" href="tel:' + esc(String(p).replace(/[^\d+]/g, '')) + '">' + esc(p) + '</a>' : '';
+
+    async function session() {
+        try { const { data } = await supabaseClient.auth.getSession(); return data && data.session; } catch (e) { return null; }
+    }
+
+    // من هو الداخل؟ نظهر الزر بس لعمار
+    async function checkAllowed() {
+        const s = await session();
+        const em = s && s.user && String(s.user.email || '').toLowerCase();
+        allowed = !!(em && OD_ALLOW.includes(em) && window._isRealAdmin);
+        document.documentElement.classList.toggle('a3-od-ok', allowed);
+        if (!allowed) { const o = document.getElementById('od-overlay'); if (o) o.remove(); }
+        return allowed;
+    }
+
+    async function load(force) {
+        if (busy || !allowed) return;
+        if (document.documentElement.classList.contains('a3-offline')) return;
+        busy = true;
+        try {
+            const s = await session();
+            if (!s) throw new Error('سجّل دخول من جديد');
+            const r = await fetch(OD_URL, { method: 'POST', body: JSON.stringify({ action: 'open', jwt: s.access_token }) });
+            const j = await r.json();
+            if (!j.ok) throw new Error({ forbidden: 'هذا الحساب مو مسموح', auth: 'انتهت الجلسة — اطلع وادخل', 'no-panel-token': 'المفتاح PANEL_TOKEN مو موجود بالبوت', panel: 'لوحة السريع رفضت — غالباً PANEL_TOKEN انتهى' }[j.error] || j.error || 'خطأ');
+            rows = j.rows || []; lastAt = j.at || Date.now(); err = '';
+            checkAlerts();
+        } catch (e) { err = String(e.message || e); }
+        finally { busy = false; render(); updateBadge(); }
+    }
+
+    function counts() {
+        const c = { all: rows.length, late: 0, warn: 0, nodrv: 0, multi: 0 };
+        const byDrv = {};
+        rows.forEach(r => { if (r.driverId && !noDriver(r)) byDrv[r.driverId] = (byDrv[r.driverId] || 0) + 1; });
+        rows.forEach(r => {
+            const m = mins(r);
+            if (m >= cfg.late) c.late++; else if (m >= cfg.warn) c.warn++;
+            if (noDriver(r)) c.nodrv++;
+            r._multi = r.driverId && !noDriver(r) ? byDrv[r.driverId] : 0;
+            if (r._multi > 1) c.multi++;
+        });
+        return c;
+    }
+
+    function checkAlerts() {
+        const fresh = rows.filter(r => (mins(r) >= cfg.late || (noDriver(r) && noDrvMins(r) >= cfg.nodrv)) && !alerted.has(r.inv + (noDriver(r) ? 'n' : 'l')));
+        fresh.forEach(r => alerted.add(r.inv + (noDriver(r) ? 'n' : 'l')));
+        const silent = !_alertReady; _alertReady = true;
+        if (fresh.length && !silent) {
+            if (cfg.sound) beep();
+            try {
+                if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+                    new Notification('🛵 ' + fresh.length + ' طلب يحتاج متابعة', { body: fresh.slice(0, 3).map(r => r.inv + ' — ' + r.store + ' (' + mins(r) + ' د)').join('\n'), tag: 'a3-od', dir: 'rtl', lang: 'ar' });
+                }
+            } catch (e) {}
+        }
+    }
+    let _ac = null;
+    function beep() {
+        try {
+            _ac = _ac || new (window.AudioContext || window.webkitAudioContext)();
+            [0, .3].forEach(dt => { const o = _ac.createOscillator(), g = _ac.createGain(); o.type = 'triangle'; o.frequency.value = 660; g.gain.value = .12; o.connect(g); g.connect(_ac.destination); o.start(_ac.currentTime + dt); o.stop(_ac.currentTime + dt + .2); });
+        } catch (e) {}
+    }
+
+    function updateBadge() {
+        const c = counts();
+        document.querySelectorAll('.a3-od-btn .a3-od-n').forEach(el => {
+            const n = c.late + c.nodrv;
+            el.textContent = n ? n : '';
+            el.style.display = n ? '' : 'none';
+        });
+    }
+
+    function filtered() {
+        const q = filt.q.trim().toLowerCase();
+        return rows.filter(r => {
+            if (filt.group && r.group !== filt.group) return false;
+            if (filt.st && stOf(r.ds)[0] !== filt.st) return false;
+            if (filt.quick === 'late' && mins(r) < cfg.late) return false;
+            if (filt.quick === 'warn' && (mins(r) < cfg.warn || mins(r) >= cfg.late)) return false;
+            if (filt.quick === 'nodrv' && !noDriver(r)) return false;
+            if (filt.quick === 'multi' && !(r._multi > 1)) return false;
+            if (q && ![r.inv, r.store, r.driver, r.customer, r.zone, r.hub].join(' ').toLowerCase().includes(q)) return false;
+            return true;
+        }).sort((a, b) => (noDriver(b) - noDriver(a)) || (mins(b) - mins(a)));
+    }
+
+    function render() {
+        const o = document.getElementById('od-overlay'); if (!o) return;
+        const c = counts();
+        const box = o.querySelector('#od-body'), stats = o.querySelector('#od-stats'), info = o.querySelector('#od-info');
+        const stat = (k, n, label, color) => '<div class="od-stat' + (filt.quick === k ? ' on' : '') + '" onclick="window._odQuick(\'' + k + '\')"><b style="color:' + color + '">' + n + '</b><span>' + label + '</span></div>';
+        stats.innerHTML = stat('', c.all, 'كل الطلبات المفتوحة', '#334155') + stat('late', c.late, 'متأخر (' + cfg.late + '+ د)', '#dc2626')
+            + stat('warn', c.warn, 'قريب يتأخر (' + cfg.warn + '+ د)', '#ea580c') + stat('nodrv', c.nodrv, 'بدون سايق (تنبيه بعد ' + cfg.nodrv + ' د)', '#7c3aed') + stat('multi', c.multi, 'سايق عنده أكثر من طلب', '#0369a1');
+        // قوائم الفلاتر
+        const gSel = o.querySelector('#od-group'), sSel = o.querySelector('#od-st');
+        const groups = [...new Set(rows.map(r => r.group).filter(Boolean))].sort();
+        const sts = [...new Set(rows.map(r => stOf(r.ds)[0]))];
+        const fill = (sel, arr, first, cur) => { const v = cur; sel.innerHTML = '<option value="">' + first + '</option>' + arr.map(x => '<option' + (x === v ? ' selected' : '') + '>' + esc(x) + '</option>').join(''); };
+        fill(gSel, groups, '🏷️ كل الكروبات', filt.group); fill(sSel, sts, '📍 كل الحالات', filt.st);
+        info.innerHTML = err ? '<span style="color:#dc2626;">❌ ' + esc(err) + '</span>'
+            : (busy && !lastAt ? '⏳ جاري التحميل...' : ('آخر تحديث ' + (lastAt ? fmtT(lastAt) : '—') + ' · يتحدث كل دقيقة'));
+        const list = filtered();
+        if (!list.length) { box.innerHTML = '<p style="text-align:center;color:#94a3b8;font-weight:800;padding:24px;">' + (lastAt ? 'ماكو طلبات بهالفلتر 👌' : (err ? '' : '⏳ جاري التحميل...')) + '</p>'; return; }
+        let h = '<table class="od-tbl"><thead><tr><th>رقم الطلب</th><th>الوقت</th><th>الحالة</th><th>المطعم</th><th>الزبون</th><th>السايق</th><th>الكروب / الهب</th><th>المنطقة</th><th>المبلغ</th><th>الإنشاء</th></tr></thead><tbody>';
+        list.forEach(r => {
+            const m = mins(r), st = stOf(r.ds);
+            const cls = (m >= cfg.late ? 'od-late' : m >= cfg.warn ? 'od-warn' : '') + (noDriver(r) ? ' od-nodrv' : '');
+            const tmBg = m >= cfg.late ? '#dc2626' : m >= cfg.warn ? '#ea580c' : '#334155';
+            h += '<tr class="' + cls + '">'
+                + '<td style="font-weight:900;direction:ltr;text-align:right;">' + esc(r.inv) + (r.track ? ' <a href="' + esc(r.track) + '" target="_blank" rel="noopener" title="تتبّع" style="text-decoration:none;">📍</a>' : '') + (r.waitCC ? '<br><span class="od-chip" style="background:#fef3c7;color:#92400e;">بانتظار CC</span>' : '') + '</td>'
+                + '<td><span class="od-tm" data-c="' + (r.created || '') + '" style="background:' + tmBg + '">' + mmss(Date.now() - (r.created || Date.now())) + '</span></td>'
+                + '<td><span class="od-chip" style="background:' + st[1] + ';color:#fff;">' + esc(st[0]) + '</span>' + (r.late ? '<br><span class="od-chip" style="background:#fee2e2;color:#b91c1c;margin-top:3px;">⏰ تجاوز الوقت</span>' : '') + '</td>'
+                + '<td style="font-weight:800;">' + esc(r.store) + '<br>' + phone(r.storePhone) + '</td>'
+                + '<td>' + esc(r.customer || '—') + '</td>'
+                + '<td>' + (noDriver(r) ? '<span class="od-chip" style="background:#ede9fe;color:#6d28d9;">🚫 بدون سايق</span>' : esc(r.driver) + (r._multi > 1 ? ' <span class="od-chip" style="background:#e0f2fe;color:#0369a1;">🔁 ' + r._multi + ' طلبات</span>' : '') + '<br>' + phone(r.driverPhone)) + '</td>'
+                + '<td><span class="od-chip" style="background:#f1f5f9;color:#334155;">' + esc(r.group) + '</span><br><span style="font-size:.72rem;color:#64748b;">' + esc(r.hub) + '</span></td>'
+                + '<td>' + esc(r.zone) + '</td>'
+                + '<td style="font-weight:800;white-space:nowrap;">' + fmtN(r.amount) + '</td>'
+                + '<td style="white-space:nowrap;color:#64748b;">' + (r.created ? fmtT(r.created) : '') + '</td></tr>';
+        });
+        box.innerHTML = h + '</tbody></table>';
+    }
+
+    window._odQuick = k => { filt.quick = filt.quick === k ? '' : k; render(); };
+    window._odSet = () => {
+        const o = document.getElementById('od-overlay'); if (!o) return;
+        filt.q = o.querySelector('#od-q').value; filt.group = o.querySelector('#od-group').value; filt.st = o.querySelector('#od-st').value;
+        const L = parseInt(o.querySelector('#od-late').value, 10), W = parseInt(o.querySelector('#od-warnm').value, 10);
+        if (L > 0) cfg.late = L; if (W > 0) cfg.warn = Math.min(W, cfg.late - 1);
+        cfg.sound = o.querySelector('#od-sound').checked; saveCfg(); render();
+    };
+
+    window.openOpenDeliveries = async function () {
+        if (!(await checkAllowed())) return;
+        const old = document.getElementById('od-overlay'); if (old) old.remove();
+        const o = document.createElement('div'); o.id = 'od-overlay';
+        o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:12px;';
+        const inp = 'border:1px solid #94a3b8;border-radius:8px;padding:4px 8px;font-weight:700;font-size:0.8rem;font-family:Cairo,sans-serif;background:#fff;color:#334155;';
+        o.innerHTML = '<div style="background:#f8fafc;border-radius:24px;padding:18px;width:100%;max-width:1400px;height:92vh;display:flex;flex-direction:column;direction:rtl;font-family:Cairo,sans-serif;">'
+            + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;">'
+            + '<h2 style="font-size:1.25rem;font-weight:900;color:#334155;">🛵 الطلبات المفتوحة <span style="font-size:.75rem;color:#94a3b8;font-weight:700;">(من لوحة السريع — لك بس)</span></h2>'
+            + '<div style="display:flex;gap:6px;"><button onclick="window._odReload()" style="' + inp + 'cursor:pointer;background:#eff6ff;border-color:#93c5fd;color:#1d4ed8;">🔄 تحديث</button>'
+            + '<button onclick="document.getElementById(\'od-overlay\').remove()" style="background:#e2e8f0;border:none;border-radius:10px;padding:6px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button></div></div>'
+            + '<div id="od-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;"></div>'
+            + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;padding:8px 10px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;">'
+            + '<input id="od-q" oninput="window._odSet()" placeholder="🔍 رقم الطلب، مطعم، سايق، زبون..." style="' + inp + 'min-width:220px;">'
+            + '<select id="od-group" onchange="window._odSet()" style="' + inp + '"></select>'
+            + '<select id="od-st" onchange="window._odSet()" style="' + inp + '"></select>'
+            + '<label style="font-size:.75rem;font-weight:800;color:#64748b;">متأخر بعد <input id="od-late" type="number" min="5" max="180" value="' + cfg.late + '" onchange="window._odSet()" style="' + inp + 'width:60px;"> د</label>'
+            + '<label style="font-size:.75rem;font-weight:800;color:#64748b;">تنبيه بعد <input id="od-warnm" type="number" min="1" max="179" value="' + cfg.warn + '" onchange="window._odSet()" style="' + inp + 'width:60px;"> د</label>'
+            + '<label style="font-size:.75rem;font-weight:800;color:#64748b;"><input id="od-sound" type="checkbox"' + (cfg.sound ? ' checked' : '') + ' onchange="window._odSet()"> 🔔 صوت</label>'
+            + '<span id="od-info" style="font-size:.72rem;color:#64748b;font-weight:800;margin-inline-start:auto;"></span></div>'
+            + '<div id="od-body" style="overflow:auto;flex:1;background:#fff;border:1px solid #e2e8f0;border-radius:14px;"></div></div>';
+        o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+        document.body.appendChild(o);
+        render();
+        load(true);
+    };
+    window._odReload = () => load(true);
+
+    // عدّاد الوقت يمشي كل ثانية
+    setInterval(() => {
+        const o = document.getElementById('od-overlay'); if (!o) return;
+        o.querySelectorAll('.od-tm[data-c]').forEach(el => {
+            const c = Number(el.getAttribute('data-c')); if (!c) return;
+            const ms = Date.now() - c, m = Math.floor(ms / 60000);
+            el.textContent = mmss(ms);
+            el.style.background = m >= cfg.late ? '#dc2626' : m >= cfg.warn ? '#ea580c' : '#334155';
+        });
+    }, 1000);
+
+    // تحديث: كل دقيقة والنافذة مفتوحة، وكل 3 دقايق بالخلفية (للتنبيه والعدّاد على الزر)
+    let _lastBg = 0;
+    setInterval(async () => {
+        if (!loggedInId) { if (allowed) { allowed = false; document.documentElement.classList.remove('a3-od-ok'); } return; }
+        await checkAllowed();
+        if (!allowed) return;
+        const open = !!document.getElementById('od-overlay');
+        if (open && !document.hidden) { load(); return; }
+        if (cfg.bg && Date.now() - _lastBg > 55000) { _lastBg = Date.now(); load(); }
+    }, 60000);
+    // أول فحص بعد الدخول
+    let _for = null;
+    setInterval(async () => { if (loggedInId && loggedInId !== _for) { _for = loggedInId; if (await checkAllowed()) setTimeout(load, 3000); } else if (!loggedInId) _for = null; }, 2000);
+
+    console.log('[Alsaree3] v7.0 loaded: open deliveries (owner only)');
+})();
+</script>
+
+
+<!-- ===== Alsaree3 v7.1 — 🤖 تكعيد السواق التلقائي (لحساب عمار فقط) ===== -->
+<script>
+(function () {
+    const URL_ = 'https://script.google.com/macros/s/AKfycbxhIxLuGajhpAMyQf_LO1Pf7jXDNXeJLIuuqEiywOGrlXI7JH6NdcNBkeH7w1vtB5J92Q/exec';
+    let st = null, busy = false, err = '', timer = null;
+    const esc = v => (typeof sanitize === 'function') ? sanitize(String(v == null ? '' : v)) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const tm = t => { try { return new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Asia/Baghdad', hour: '2-digit', minute: '2-digit', hour12: true }); } catch (e) { return ''; } };
+
+    async function call(extra) {
+        const { data } = await supabaseClient.auth.getSession();
+        const s = data && data.session; if (!s) throw new Error('سجّل دخول من جديد');
+        const r = await fetch(URL_, { method: 'POST', body: JSON.stringify(Object.assign({ action: 'aa', jwt: s.access_token }, extra || {})) });
+        const j = await r.json();
+        if (!j.ok) throw new Error({ forbidden: 'هذا الحساب مو مسموح', auth: 'انتهت الجلسة — اطلع وادخل', 'no-suggestion': 'الاقتراح انتهى' }[j.error] || j.error || 'خطأ');
+        return j;
+    }
+    async function refresh(extra) {
+        if (busy) return; busy = true;
+        try { st = await call(extra); err = ''; } catch (e) { err = String(e.message || e); }
+        finally { busy = false; render(); }
+    }
+
+    function render() {
+        const o = document.getElementById('aa-overlay'); if (!o) return;
+        const body = o.querySelector('#aa-body');
+        if (!st) { body.innerHTML = '<p style="text-align:center;color:' + (err ? '#dc2626' : '#94a3b8') + ';font-weight:800;padding:20px;">' + (err ? '❌ ' + esc(err) : '⏳ جاري التحميل...') + '</p>'; return; }
+        const c = st.cfg || {}, age = st.tokenAt ? (Date.now() - st.tokenAt) / 3600e3 : null;
+        const tokOk = age !== null && age < 23;
+        const pend = st.pending || {};
+        const row = (l) => {
+            const color = { ok: '#16a34a', err: '#dc2626', warn: '#b45309', suggest: '#1d4ed8', info: '#475569' }[l.type] || '#334155';
+            const p = l.type === 'suggest' && pend[l.taskId];
+            return '<div style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">'
+                + '<div style="font-size:.72rem;color:#94a3b8;font-weight:700;">' + tm(l.t) + (l.inv ? ' · طلب ' + esc(l.inv) : '') + (l.store ? ' · ' + esc(l.store) : '') + (l.hub ? ' · ' + esc(l.hub) : '') + '</div>'
+                + '<div style="color:' + color + ';font-weight:800;font-size:.85rem;">' + esc(l.text) + '</div>'
+                + (p ? '<div style="margin-top:5px;display:flex;gap:6px;"><button onclick="window._aaAssign(\'' + esc(l.taskId) + '\')" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:4px 14px;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;">✅ كعّد</button>'
+                    + '<button onclick="window._aaDismiss(\'' + esc(l.taskId) + '\')" style="background:#e2e8f0;border:none;border-radius:8px;padding:4px 12px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">تجاهل</button></div>' : '')
+                + '</div>';
+        };
+        body.innerHTML =
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">'
+            + '<span style="display:inline-flex;align-items:center;gap:6px;font-weight:900;color:' + (c.running ? '#16a34a' : '#64748b') + ';"><span style="width:10px;height:10px;border-radius:50%;background:' + (c.running ? '#22c55e' : '#94a3b8') + ';"></span>' + (c.running ? 'شغّال' : 'واكف') + '</span>'
+            + (c.running ? '<button onclick="window._aaSet({running:false})" style="background:#ef4444;color:#fff;border:none;border-radius:10px;padding:6px 16px;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;">⏹️ وكّف</button>'
+                : '<button onclick="window._aaSet({running:true})" style="background:#22c55e;color:#04120a;border:none;border-radius:10px;padding:6px 16px;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;">▶️ ابدأ</button>')
+            + '<label style="font-weight:800;font-size:.85rem;color:#334155;display:inline-flex;align-items:center;gap:4px;"><input type="checkbox" ' + (c.auto ? 'checked' : '') + ' onchange="window._aaSet({auto:this.checked})"> تلقائي (يكعّد بنفسه)</label>'
+            + '<label style="font-size:.78rem;font-weight:800;color:#64748b;">أبعد مسافة <input type="number" min="0.5" step="0.5" value="' + (c.maxKm || 5) + '" onchange="window._aaSet({maxKm:Number(this.value)})" style="width:60px;border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;"> كم</label>'
+            + '<label style="font-size:.78rem;font-weight:800;color:#64748b;">انتظر <input type="number" min="0" step="10" value="' + (c.graceSec != null ? c.graceSec : 30) + '" onchange="window._aaSet({graceSec:Number(this.value)})" style="width:60px;border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;"> ث بعد ما يوكف</label>'
+            + '</div>'
+            + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:.78rem;font-weight:800;">'
+            + '<span style="padding:4px 10px;border-radius:999px;background:' + (tokOk ? '#dcfce7;color:#166534' : '#fee2e2;color:#991b1b') + ';">🔑 مفتاح FalconFlex: ' + (st.tokenAt ? (tokOk ? 'شغّال (من ' + Math.round(age) + ' ساعة)' : 'قديم — افتح FalconFlex') : 'ما وصل بعد — افتح FalconFlex') + '</span>'
+            + '<span style="padding:4px 10px;border-radius:999px;background:#f1f5f9;color:#334155;">آخر فحص: ' + esc(st.last || '—') + '</span>'
+            + (err ? '<span style="color:#dc2626;">❌ ' + esc(err) + '</span>' : '')
+            + '</div>'
+            + '<div style="font-size:.72rem;color:#64748b;font-weight:700;margin-bottom:8px;">يتدخل بس لما FalconFlex <b>يوكف عن البحث</b>. القاعدة: نفس الهب ← الفارغ الأقرب للمطعم ← وإلا الأقرب اللي عنده طلب. بوضع الاقتراح تطلع لك «كعّد» وتقرر انت. حد أقصى 30 تكعيد بالساعة.</div>'
+            + '<div style="border:1px solid #e2e8f0;border-radius:14px;overflow:auto;max-height:52vh;background:#fff;">' + ((st.log || []).map(row).join('') || '<p style="text-align:center;color:#94a3b8;padding:20px;font-weight:800;">ماكو شي بالسجل بعد</p>') + '</div>';
+    }
+
+    window._aaSet = o => refresh(Object.assign({ op: 'set' }, o));
+    window._aaAssign = id => refresh({ op: 'assign', taskId: id });
+    window._aaDismiss = id => refresh({ op: 'dismiss', taskId: id });
+
+    window.openAutoAssign = async function () {
+        if (!document.documentElement.classList.contains('a3-od-ok')) return;   // نفس شرط «لعمار فقط»
+        const old = document.getElementById('aa-overlay'); if (old) old.remove();
+        const o = document.createElement('div'); o.id = 'aa-overlay';
+        o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:12px;';
+        o.innerHTML = '<div style="background:#f8fafc;border-radius:24px;padding:18px;width:100%;max-width:900px;max-height:92vh;display:flex;flex-direction:column;direction:rtl;font-family:Cairo,sans-serif;">'
+            + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h2 style="font-size:1.2rem;font-weight:900;color:#334155;">🤖 تكعيد السواق التلقائي <span style="font-size:.72rem;color:#94a3b8;">(لك بس)</span></h2>'
+            + '<div style="display:flex;gap:6px;"><button onclick="document.getElementById(\'aa-overlay\').remove()" style="background:#e2e8f0;border:none;border-radius:10px;padding:6px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button></div></div>'
+            + '<div id="aa-body" style="overflow:auto;"></div></div>';
+        o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+        document.body.appendChild(o);
+        render(); refresh();
+        clearInterval(timer);
+        timer = setInterval(() => { if (!document.getElementById('aa-overlay')) { clearInterval(timer); return; } if (!document.hidden) refresh(); }, 20000);
+    };
+    console.log('[Alsaree3] v7.1 loaded: auto-assign panel (owner only)');
 })();
 </script>
 
