@@ -8211,7 +8211,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.13-v7.5</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.13-v7.6</div>
 <!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
@@ -9874,85 +9874,156 @@
         return q;
     }
 
+    const AA_HUBS = [['rasafa_south', 'Rasafa South'], ['rasafa_north', 'Rasafa North'], ['karkh_north', 'Karkh North'], ['karkh_south', 'Karkh South'], ['basra', 'Basra']];
+    const hubName = h => (AA_HUBS.find(x => x[0] === h) || [h, String(h).replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase())])[1];
+    const nice = t => {   // رسائل FalconFlex الطويلة ← جملة مفهومة
+        t = String(t || '');
+        if (/Assignment Strategy/i.test(t)) return t.split(':')[0].replace(/^❌\s*/, '❌ ') + ' — FalconFlex رفض نوع التكعيد';
+        if (/planned trip already exists/i.test(t)) return t.split(':')[0] + ' — السايق عنده طلب معلّق';
+        return t;
+    };
+    let pendingRender = false;
+
     function render() {
         const o = document.getElementById('aa-overlay'); if (!o) return;
+        const ae = document.activeElement;
+        if (ae && ae.tagName === 'INPUT' && ae.type === 'number' && o.contains(ae)) { pendingRender = true; return; }   // لا نخرّب الكتابة
+        pendingRender = false;
         const body = o.querySelector('#aa-body');
-        if (!st) { body.innerHTML = '<p style="text-align:center;color:' + (err ? '#dc2626' : '#94a3b8') + ';font-weight:800;padding:20px;">' + (err ? '❌ ' + esc(err) : '⏳ جاري التحميل...') + '</p>'; return; }
+        if (!st) { body.innerHTML = '<div class="aa-empty">' + (err ? '❌ ' + esc(err) : '⏳ جاري التحميل...') + '</div>'; return; }
         const c = st.cfg || {}, age = st.tokenAt ? (Date.now() - st.tokenAt) / 3600e3 : null;
-        const tokOk = age !== null && age < 23;
+        const tokOk = age !== null && age < 23, run = !!c.running, auto = !!c.auto;
         const pend = st.pending || {};
-        const row = (l) => {
-            const color = { ok: '#16a34a', err: '#dc2626', warn: '#b45309', suggest: '#1d4ed8', info: '#475569' }[l.type] || '#334155';
+        const logs = (st.log || []).filter(l => l.text !== '⚙️ تغيّرت الإعدادات');
+        const row = l => {
             const p = l.type === 'suggest' && pend[l.taskId];
-            return '<div style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">'
-                + '<div style="font-size:.72rem;color:#94a3b8;font-weight:700;">' + tm(l.t) + (l.inv ? ' · طلب ' + esc(l.inv) : '') + (l.store ? ' · ' + esc(l.store) : '') + (l.hub ? ' · ' + esc(l.hub) : '') + '</div>'
-                + '<div style="color:' + color + ';font-weight:800;font-size:.85rem;">' + esc(l.text) + '</div>'
-                + (p ? '<div style="margin-top:5px;display:flex;gap:6px;"><button onclick="window._aaAssign(\'' + esc(l.taskId) + '\')" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:4px 14px;font-family:Cairo,sans-serif;font-weight:900;cursor:pointer;">✅ كعّد</button>'
-                    + '<button onclick="window._aaDismiss(\'' + esc(l.taskId) + '\')" style="background:#e2e8f0;border:none;border-radius:8px;padding:4px 12px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">تجاهل</button></div>' : '')
-                + '</div>';
+            const meta = ['<bdi dir="ltr">' + tm(l.t) + '</bdi>', l.inv ? '#' + esc(l.inv) : '', l.store ? esc(l.store) : '', l.hub ? '<span class="aa-tag">' + esc(hubName(l.hub)) + '</span>' : ''].filter(Boolean).join(' · ');
+            return '<div class="aa-row aa-' + esc(l.type || 'info') + '"><i></i><div class="aa-rb">'
+                + '<div class="aa-rt" title="' + esc(l.text) + '">' + esc(nice(l.text)) + '</div><div class="aa-rm">' + meta + '</div>'
+                + (p ? '<div class="aa-ra"><button class="aa-btn aa-go" onclick="window._aaAssign(\'' + esc(l.taskId) + '\')">✅ كعّد</button><button class="aa-btn" onclick="window._aaDismiss(\'' + esc(l.taskId) + '\')">تجاهل</button></div>' : '')
+                + '</div></div>';
         };
+        const hubs = AA_HUBS.concat(Object.keys(Object.assign({}, c.hubKm, c.hubOn)).filter(h => !AA_HUBS.some(x => x[0] === h)).map(h => [h, hubName(h)]));
         body.innerHTML =
-            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">'
-            + '<span style="display:inline-flex;align-items:center;gap:6px;font-weight:900;color:' + (c.running ? '#16a34a' : '#64748b') + ';"><span style="width:10px;height:10px;border-radius:50%;background:' + (c.running ? '#22c55e' : '#94a3b8') + ';"></span>' + (c.running ? 'شغّال' : 'واكف') + '</span>'
-            + '<label class="aa-sw" title="شغّل / وكّف"><input type="checkbox" ' + (c.running ? 'checked' : '') + ' onchange="window._aaSet({running:this.checked})"><span></span></label>'
-            + '<span style="display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:.85rem;color:#334155;"><label class="aa-sw aa-sw-s" title="تلقائي"><input type="checkbox" ' + (c.auto ? 'checked' : '') + ' onchange="window._aaSet({auto:this.checked})"><span></span></label>تلقائي (يكعّد بنفسه)</span>'
-            + (inflight ? '<span style="font-size:.75rem;color:#94a3b8;font-weight:800;">⏳ يحفظ...</span>' : '')
-            + '<label style="font-size:.78rem;font-weight:800;color:#64748b;">المسافة العامة <input type="number" min="0.5" step="0.5" value="' + (c.maxKm || 5) + '" onchange="window._aaSet({maxKm:Number(this.value)})" style="width:60px;border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;"> كم</label>'
-            + '<label style="font-size:.78rem;font-weight:800;color:#64748b;">انتظر <input type="number" min="0" step="10" value="' + (c.graceSec != null ? c.graceSec : 30) + '" onchange="window._aaSet({graceSec:Number(this.value)})" style="width:60px;border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;"> ث بعد ما يوكف</label>'
+            // ---- الحالة ----
+            '<div class="aa-card aa-hero' + (run ? ' on' : '') + '">'
+            + '<div class="aa-hl"><label class="aa-sw aa-sw-l"><input type="checkbox" ' + (run ? 'checked' : '') + ' onchange="window._aaSet({running:this.checked})"><span></span></label>'
+            + '<div><div class="aa-st"><b class="aa-dot"></b>' + (run ? 'شغّال' : 'واكف') + '</div><div class="aa-sub">' + (run ? (auto ? 'يكعّد بنفسه' : 'يقترح وانت تقرر') : 'ما يتدخل بأي طلب') + '</div></div></div>'
+            + '<div class="aa-seg' + (run ? '' : ' dim') + '"><button class="' + (!auto ? 'act' : '') + '" onclick="window._aaSet({auto:false})">👁️ اقتراح</button><button class="' + (auto ? 'act' : '') + '" onclick="window._aaSet({auto:true})">⚡ تلقائي</button></div>'
             + '</div>'
-            + '<div style="margin-bottom:10px;"><div style="font-size:.8rem;font-weight:900;color:#334155;margin-bottom:6px;">📍 الهبات — شغّل الهب اللي تريده وحدد مسافته <span style="font-size:.7rem;color:#94a3b8;font-weight:700;">(المسافة الفارغة = العامة)</span></div>'
-            + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;">'
-            + AA_HUBS.concat(Object.keys(Object.assign({}, c.hubKm, c.hubOn)).filter(h => !AA_HUBS.some(x => x[0] === h)).map(h => [h, h])).map(([h, n]) => {
-                const val = (c.hubKm || {})[h], on = (c.hubOn || {})[h] !== false;
-                return '<div style="display:flex;align-items:center;gap:8px;background:' + (on ? '#f0fdfa' : '#f8fafc') + ';border:1px solid ' + (on ? '#99f6e4' : '#e2e8f0') + ';border-radius:14px;padding:8px 10px;">'
-                    + '<label class="aa-sw aa-sw-s" title="شغّل / طفّي هذا الهب"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="window._aaHubOn(\'' + esc(h) + '\',this.checked)"><span></span></label>'
-                    + '<div style="flex:1;min-width:0;"><div style="font-size:.8rem;font-weight:900;color:' + (on ? '#0f766e' : '#94a3b8') + ';">' + esc(n) + '</div>'
-                    + '<div style="font-size:.66rem;color:#94a3b8;font-weight:700;direction:ltr;text-align:right;">' + esc(h) + '</div></div>'
-                    + '<input type="number" min="0" step="0.5" placeholder="' + (c.maxKm || 5) + '" value="' + (val != null ? val : '') + '" onchange="window._aaHub(\'' + esc(h) + '\',this.value)" ' + (on ? '' : 'disabled ') + 'style="width:52px;border:1px solid #94a3b8;border-radius:8px;padding:2px 5px;"><span style="font-size:.7rem;font-weight:800;color:#64748b;">كم</span></div>';
-            }).join('')
+            + '<div class="aa-chips">'
+            + '<span class="aa-chip ' + (tokOk ? 'g' : 'r') + '">🔑 FalconFlex: ' + (st.tokenAt ? (tokOk ? 'متصل' : 'المفتاح قديم — افتح FalconFlex') : 'ما وصل المفتاح — افتح FalconFlex') + '</span>'
+            + '<span class="aa-chip">🕒 آخر فحص: ' + esc(st.last || '—') + '</span>'
+            + (inflight ? '<span class="aa-chip b">⏳ يحفظ...</span>' : '')
+            + (err ? '<span class="aa-chip r">❌ ' + esc(err) + '</span>' : '')
+            + '</div>'
+            // ---- الإعدادات ----
+            + '<div class="aa-card"><div class="aa-h">⚙️ الإعدادات</div><div class="aa-fields">'
+            + '<label class="aa-f"><span>المسافة العامة</span><div class="aa-in"><input type="number" min="0.5" step="0.5" value="' + (c.maxKm || 5) + '" onchange="window._aaSet({maxKm:Number(this.value)})"><em>km</em></div></label>'
+            + '<label class="aa-f"><span>انتظر بعد ما FalconFlex يوكف</span><div class="aa-in"><input type="number" min="0" step="5" value="' + (c.graceSec != null ? c.graceSec : 30) + '" onchange="window._aaSet({graceSec:Number(this.value)})"><em>ث</em></div></label>'
             + '</div></div>'
-            + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:.78rem;font-weight:800;">'
-            + '<span style="padding:4px 10px;border-radius:999px;background:' + (tokOk ? '#dcfce7;color:#166534' : '#fee2e2;color:#991b1b') + ';">🔑 مفتاح FalconFlex: ' + (st.tokenAt ? (tokOk ? 'شغّال (من ' + Math.round(age) + ' ساعة)' : 'قديم — افتح FalconFlex') : 'ما وصل بعد — افتح FalconFlex') + '</span>'
-            + '<span style="padding:4px 10px;border-radius:999px;background:#f1f5f9;color:#334155;">آخر فحص: ' + esc(st.last || '—') + '</span>'
-            + (err ? '<span style="color:#dc2626;">❌ ' + esc(err) + '</span>' : '')
-            + '</div>'
-            + '<div style="font-size:.72rem;color:#64748b;font-weight:700;margin-bottom:8px;">يتدخل بس لما FalconFlex <b>يوكف عن البحث</b>. القاعدة: سايق من <b>نفس الهب (Skill)</b> فقط، فاتح ← الفارغ الأقرب للمطعم ← وإلا الأقرب اللي عنده طلب، ضمن مسافة الهب. بوضع الاقتراح تطلع لك «كعّد» وتقرر انت. حد أقصى 30 تكعيد بالساعة.</div>'
-            + '<div style="border:1px solid #e2e8f0;border-radius:14px;overflow:auto;max-height:52vh;background:#fff;">' + ((st.log || []).map(row).join('') || '<p style="text-align:center;color:#94a3b8;padding:20px;font-weight:800;">ماكو شي بالسجل بعد</p>') + '</div>';
+            // ---- الهبات ----
+            + '<div class="aa-card"><div class="aa-h">📍 Hubs <small>شغّل الهب وحدد مسافته — الفارغ يستخدم العامة (' + (c.maxKm || 5) + ' km)</small></div>'
+            + '<div class="aa-hubs" dir="ltr">' + hubs.map(([h, n]) => {
+                const val = (c.hubKm || {})[h], on = (c.hubOn || {})[h] !== false;
+                return '<div class="aa-hub' + (on ? ' on' : '') + '">'
+                    + '<div class="aa-hr"><div class="aa-hn">' + esc(n) + '</div>'
+                    + '<label class="aa-sw"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="window._aaHubOn(\'' + esc(h) + '\',this.checked)"><span></span></label></div>'
+                    + '<div class="aa-hr"><span class="aa-hl2">' + (on ? 'Max distance' : 'Off') + '</span>'
+                    + '<div class="aa-in sm"><input type="number" min="0" step="0.5" placeholder="' + (c.maxKm || 5) + '" value="' + (val != null ? val : '') + '" ' + (on ? '' : 'disabled ') + 'onchange="window._aaHub(\'' + esc(h) + '\',this.value)"><em>km</em></div></div>'
+                    + '</div>';
+            }).join('') + '</div></div>'
+            // ---- السجل ----
+            + '<div class="aa-card aa-logc"><div class="aa-h">📜 السجل <small>' + logs.length + '</small></div>'
+            + '<div class="aa-log">' + (logs.map(row).join('') || '<div class="aa-empty">ماكو شي بالسجل بعد</div>') + '</div>'
+            + '<div class="aa-foot">يتدخل بس لما FalconFlex يوكف عن البحث · سايق من نفس الهب (Skill) فقط · فاتح · الفارغ الأقرب للمطعم ثم الأقرب اللي عنده طلب · حد أقصى ' + (c.maxPerHour || 30) + ' تكعيد بالساعة</div></div>';
     }
 
-    const AA_HUBS = [['rasafa_south', 'رصافة جنوبية'], ['rasafa_north', 'رصافة شمالية'], ['karkh_north', 'كرخ شمالية'], ['karkh_south', 'كرخ جنوبية'], ['basra', 'بصرة']];
     const local = fn => { if (st) { fn(st); } render(); };
     window._aaHubOn = (h, on) => { local(x => { x.cfg = Object.assign({}, x.cfg); x.cfg.hubOn = Object.assign({}, x.cfg.hubOn, { [h]: !!on }); }); refresh({ op: 'set', hubOn: { [h]: !!on } }); };
     window._aaHub = (h, val) => { const n = Number(val) || 0; local(x => { x.cfg = Object.assign({}, x.cfg); x.cfg.hubKm = Object.assign({}, x.cfg.hubKm); if (n > 0) x.cfg.hubKm[h] = n; else delete x.cfg.hubKm[h]; }); refresh({ op: 'set', hubKm: { [h]: n } }); };
-    window._aaSet = o => { local(x => { x.cfg = Object.assign({}, x.cfg, o); }); refresh(Object.assign({ op: 'set' }, o)); render(); };
+    window._aaSet = o => { if (st && st.cfg && Object.keys(o).every(k => st.cfg[k] === o[k])) return; local(x => { x.cfg = Object.assign({}, x.cfg, o); }); refresh(Object.assign({ op: 'set' }, o)); render(); };
     window._aaAssign = id => { local(x => { if (x.pending) delete x.pending[id]; (x.log = x.log || []).unshift({ t: Date.now(), type: 'info', text: '⏳ جاري التكعيد...', taskId: id }); }); refresh({ op: 'assign', taskId: id }); };
     window._aaDismiss = id => { local(x => { if (x.pending) delete x.pending[id]; }); refresh({ op: 'dismiss', taskId: id }); };
-    if (!document.getElementById('aa-sw-css')) {
-        const cs = document.createElement('style'); cs.id = 'aa-sw-css';
-        cs.textContent = '.aa-sw{position:relative;display:inline-block;width:54px;height:30px;flex:none;cursor:pointer}.aa-sw input{opacity:0;width:0;height:0;position:absolute}'
-            + '.aa-sw span{position:absolute;inset:0;background:#cbd5e1;border-radius:999px;transition:background .2s}'
-            + '.aa-sw span:before{content:"";position:absolute;width:24px;height:24px;top:3px;right:3px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s}'
-            + '.aa-sw input:checked+span{background:#14b8a6}.aa-sw input:checked+span:before{transform:translateX(-24px)}'
-            + '.aa-sw-s{width:42px;height:24px}.aa-sw-s span:before{width:18px;height:18px}.aa-sw-s input:checked+span:before{transform:translateX(-18px)}';
-        document.head.appendChild(cs);
-    }
+
+    (document.getElementById('aa-sw-css') || {}).remove && document.getElementById('aa-sw-css').remove();
+    const cs = document.createElement('style'); cs.id = 'aa-sw-css';
+    cs.textContent = `
+#aa-overlay{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;padding:14px;background:rgba(15,23,42,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:aaFade .18s ease}
+@keyframes aaFade{from{opacity:0}to{opacity:1}} @keyframes aaUp{from{transform:translateY(14px);opacity:.4}to{transform:none;opacity:1}}
+#aa-overlay .aa-panel{width:100%;max-width:940px;max-height:92vh;display:flex;flex-direction:column;background:#f6f8fb;border-radius:26px;box-shadow:0 30px 80px rgba(2,6,23,.35);font-family:Cairo,system-ui,sans-serif;color:#0f172a;overflow:hidden;animation:aaUp .22s ease}
+#aa-overlay .aa-top{display:flex;align-items:center;gap:12px;padding:16px 20px;background:#fff;border-bottom:1px solid #e8edf3}
+#aa-overlay .aa-logo{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;font-size:22px;background:linear-gradient(135deg,#14b8a6,#0ea5e9);box-shadow:0 6px 16px rgba(20,184,166,.35)}
+#aa-overlay .aa-title{flex:1;min-width:0} #aa-overlay .aa-title b{display:block;font-size:1.15rem;font-weight:900;line-height:1.3} #aa-overlay .aa-title span{font-size:.75rem;color:#64748b;font-weight:700}
+#aa-overlay .aa-x{width:38px;height:38px;border-radius:12px;border:none;background:#f1f5f9;color:#334155;font-size:18px;cursor:pointer;transition:background .15s} #aa-overlay .aa-x:hover{background:#e2e8f0}
+#aa-body{overflow:auto;padding:16px 18px 18px;display:flex;flex-direction:column;gap:12px}
+#aa-overlay .aa-card{background:#fff;border:1px solid #e8edf3;border-radius:20px;padding:14px 16px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+#aa-overlay .aa-h{font-size:.9rem;font-weight:900;color:#1e293b;margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap} #aa-overlay .aa-h small{font-size:.72rem;color:#94a3b8;font-weight:700}
+#aa-overlay .aa-hero{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;transition:background .25s,border-color .25s}
+#aa-overlay .aa-hero.on{background:linear-gradient(135deg,#f0fdfa,#ecfeff);border-color:#99f6e4}
+#aa-overlay .aa-hl{display:flex;align-items:center;gap:14px}
+#aa-overlay .aa-st{display:flex;align-items:center;gap:8px;font-size:1.2rem;font-weight:900;color:#64748b} #aa-overlay .aa-hero.on .aa-st{color:#0f766e}
+#aa-overlay .aa-dot{width:10px;height:10px;border-radius:50%;background:#94a3b8} #aa-overlay .aa-hero.on .aa-dot{background:#10b981;box-shadow:0 0 0 0 rgba(16,185,129,.6);animation:aaPulse 1.6s infinite}
+@keyframes aaPulse{0%{box-shadow:0 0 0 0 rgba(16,185,129,.55)}70%{box-shadow:0 0 0 9px rgba(16,185,129,0)}100%{box-shadow:0 0 0 0 rgba(16,185,129,0)}}
+#aa-overlay .aa-sub{font-size:.78rem;color:#64748b;font-weight:700}
+#aa-overlay .aa-seg{display:inline-flex;background:#eef2f6;border-radius:14px;padding:4px;gap:4px} #aa-overlay .aa-seg.dim{opacity:.55}
+#aa-overlay .aa-seg button{border:none;background:transparent;padding:8px 16px;border-radius:11px;font-family:inherit;font-weight:800;font-size:.85rem;color:#475569;cursor:pointer;transition:all .15s}
+#aa-overlay .aa-seg button.act{background:#fff;color:#0f766e;box-shadow:0 2px 6px rgba(15,23,42,.1)}
+#aa-overlay .aa-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:-2px}
+#aa-overlay .aa-chip{font-size:.75rem;font-weight:800;padding:5px 12px;border-radius:999px;background:#fff;border:1px solid #e8edf3;color:#475569}
+#aa-overlay .aa-chip.g{background:#ecfdf5;border-color:#a7f3d0;color:#047857} #aa-overlay .aa-chip.r{background:#fef2f2;border-color:#fecaca;color:#b91c1c} #aa-overlay .aa-chip.b{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+#aa-overlay .aa-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+#aa-overlay .aa-f{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#f8fafc;border:1px solid #eef2f6;border-radius:14px;padding:8px 12px} #aa-overlay .aa-f>span{font-size:.82rem;font-weight:800;color:#334155}
+#aa-overlay .aa-in{display:inline-flex;align-items:center;background:#fff;border:1px solid #d6dee8;border-radius:11px;overflow:hidden;transition:border-color .15s,box-shadow .15s}
+#aa-overlay .aa-in:focus-within{border-color:#14b8a6;box-shadow:0 0 0 3px rgba(20,184,166,.15)}
+#aa-overlay .aa-in input{width:62px;border:none;outline:none;padding:6px 8px;font-family:inherit;font-weight:900;font-size:.9rem;text-align:center;background:transparent;color:#0f172a;-moz-appearance:textfield}
+#aa-overlay .aa-in input::-webkit-inner-spin-button{opacity:.4}
+#aa-overlay .aa-in em{font-style:normal;font-size:.72rem;font-weight:800;color:#94a3b8;padding:0 9px 0 2px;direction:ltr}
+#aa-overlay .aa-in.sm input{width:50px;font-size:.85rem;padding:5px 4px}
+#aa-overlay .aa-hubs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+#aa-overlay .aa-hub{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:16px;background:#f8fafc;border:1px solid #eef2f6;transition:all .2s}
+#aa-overlay .aa-hr{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#aa-overlay .aa-hl2{font-size:.7rem;font-weight:700;color:#94a3b8;font-family:Inter,system-ui,sans-serif}
+#aa-overlay .aa-hub.on{background:#f0fdfa;border-color:#99f6e4}
+#aa-overlay .aa-hn{flex:1;min-width:0;font-weight:900;font-size:.9rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:Inter,system-ui,sans-serif} #aa-overlay .aa-hub.on .aa-hn{color:#0f766e}
+#aa-overlay .aa-hub:not(.on) .aa-in{opacity:.45}
+#aa-overlay .aa-sw{--d:-1;position:relative;display:inline-block;width:44px;height:26px;flex:none;cursor:pointer}
+#aa-overlay [dir=ltr] .aa-sw{--d:1}
+#aa-overlay .aa-sw input{opacity:0;width:0;height:0;position:absolute}
+#aa-overlay .aa-sw span{position:absolute;inset:0;background:#cbd5e1;border-radius:999px;transition:background .2s}
+#aa-overlay .aa-sw span:before{content:"";position:absolute;width:20px;height:20px;top:3px;inset-inline-start:3px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s}
+#aa-overlay .aa-sw input:checked+span{background:#14b8a6} #aa-overlay .aa-sw input:checked+span:before{transform:translateX(calc(var(--d) * 18px))}
+#aa-overlay .aa-sw-l{width:58px;height:32px} #aa-overlay .aa-sw-l span:before{width:26px;height:26px} #aa-overlay .aa-sw-l input:checked+span:before{transform:translateX(calc(var(--d) * 26px))}
+#aa-overlay .aa-logc{display:flex;flex-direction:column;min-height:0}
+#aa-overlay .aa-log{max-height:40vh;overflow:auto;margin:0 -6px;padding:0 6px}
+#aa-overlay .aa-row{display:flex;gap:10px;padding:10px 4px;border-bottom:1px solid #f1f5f9} #aa-overlay .aa-row:last-child{border-bottom:none}
+#aa-overlay .aa-row>i{flex:none;width:8px;height:8px;border-radius:50%;margin-top:8px;background:#94a3b8}
+#aa-overlay .aa-ok>i{background:#10b981} #aa-overlay .aa-err>i{background:#ef4444} #aa-overlay .aa-warn>i{background:#f59e0b} #aa-overlay .aa-suggest>i{background:#3b82f6}
+#aa-overlay .aa-rb{flex:1;min-width:0} #aa-overlay .aa-rt{font-size:.86rem;font-weight:800;color:#334155;word-break:break-word}
+#aa-overlay .aa-ok .aa-rt{color:#047857} #aa-overlay .aa-err .aa-rt{color:#b91c1c} #aa-overlay .aa-warn .aa-rt{color:#b45309} #aa-overlay .aa-suggest .aa-rt{color:#1d4ed8}
+#aa-overlay .aa-rm{font-size:.72rem;color:#94a3b8;font-weight:700;margin-top:2px}
+#aa-overlay .aa-tag{display:inline-block;padding:0 7px;border-radius:6px;background:#f1f5f9;color:#475569;font-family:Inter,system-ui,sans-serif;font-size:.68rem}
+#aa-overlay .aa-ra{display:flex;gap:6px;margin-top:6px} #aa-overlay .aa-btn{border:none;border-radius:10px;padding:5px 14px;font-family:inherit;font-weight:800;font-size:.8rem;cursor:pointer;background:#f1f5f9;color:#334155} #aa-overlay .aa-go{background:#10b981;color:#fff}
+#aa-overlay .aa-empty{text-align:center;color:#94a3b8;font-weight:800;padding:22px}
+#aa-overlay .aa-foot{font-size:.7rem;color:#94a3b8;font-weight:700;margin-top:10px;padding-top:10px;border-top:1px dashed #e2e8f0;line-height:1.7}
+@media (max-width:560px){#aa-overlay .aa-panel{border-radius:20px} #aa-body{padding:12px} #aa-overlay .aa-hero{flex-direction:column;align-items:stretch} #aa-overlay .aa-seg{justify-content:center} #aa-overlay .aa-seg button{flex:1} #aa-overlay .aa-log{max-height:none} #aa-overlay .aa-hub{padding:10px 11px}}
+`;
+    document.head.appendChild(cs);
 
     window.openAutoAssign = async function () {
         if (!document.documentElement.classList.contains('a3-od-ok')) return;   // نفس شرط «لعمار فقط»
         const old = document.getElementById('aa-overlay'); if (old) old.remove();
         const o = document.createElement('div'); o.id = 'aa-overlay';
-        o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:12px;';
-        o.innerHTML = '<div style="background:#f8fafc;border-radius:24px;padding:18px;width:100%;max-width:900px;max-height:92vh;display:flex;flex-direction:column;direction:rtl;font-family:Cairo,sans-serif;">'
-            + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h2 style="font-size:1.2rem;font-weight:900;color:#334155;">🤖 تكعيد السواق التلقائي <span style="font-size:.72rem;color:#94a3b8;">(لك بس)</span></h2>'
-            + '<div style="display:flex;gap:6px;"><button onclick="document.getElementById(\'aa-overlay\').remove()" style="background:#e2e8f0;border:none;border-radius:10px;padding:6px 14px;font-family:Cairo,sans-serif;font-weight:700;cursor:pointer;">✕ إغلاق</button></div></div>'
-            + '<div id="aa-body" style="overflow:auto;"></div></div>';
+        o.innerHTML = '<div class="aa-panel" dir="rtl"><div class="aa-top"><div class="aa-logo">🤖</div><div class="aa-title"><b>التكعيد التلقائي</b><span>FalconFlex · لك بس</span></div>'
+            + '<button class="aa-x" title="إغلاق" onclick="document.getElementById(\'aa-overlay\').remove()">✕</button></div><div id="aa-body"></div></div>';
         o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+        o.addEventListener('focusout', () => setTimeout(() => { if (pendingRender) render(); }, 0));
         document.body.appendChild(o);
         render(); refresh();
         clearInterval(timer);
         timer = setInterval(() => { if (!document.getElementById('aa-overlay')) { clearInterval(timer); return; } if (!document.hidden) refresh(); }, 10000);
     };
-    console.log('[Alsaree3] v7.2 loaded: auto-assign panel (owner only)');
+    console.log('[Alsaree3] v7.6 loaded: auto-assign panel (owner only)');
 })();
 </script>
 
