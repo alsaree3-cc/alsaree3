@@ -8211,7 +8211,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.13-v7.4</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.13-v7.5</div>
 <!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
@@ -9900,14 +9900,17 @@
             + '<label style="font-size:.78rem;font-weight:800;color:#64748b;">المسافة العامة <input type="number" min="0.5" step="0.5" value="' + (c.maxKm || 5) + '" onchange="window._aaSet({maxKm:Number(this.value)})" style="width:60px;border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;"> كم</label>'
             + '<label style="font-size:.78rem;font-weight:800;color:#64748b;">انتظر <input type="number" min="0" step="10" value="' + (c.graceSec != null ? c.graceSec : 30) + '" onchange="window._aaSet({graceSec:Number(this.value)})" style="width:60px;border:1px solid #94a3b8;border-radius:8px;padding:2px 6px;"> ث بعد ما يوكف</label>'
             + '</div>'
-            + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:8px 10px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;">'
-            + '<span style="font-size:.78rem;font-weight:900;color:#334155;">📍 مسافة كل هب:</span>'
-            + AA_HUBS.concat(Object.keys(c.hubKm || {}).filter(h => !AA_HUBS.some(x => x[0] === h)).map(h => [h, h])).map(([h, n]) => {
-                const val = (c.hubKm || {})[h];
-                return '<label style="font-size:.75rem;font-weight:800;color:#475569;display:inline-flex;align-items:center;gap:3px;background:#f1f5f9;border-radius:10px;padding:3px 8px;">' + esc(n)
-                    + ' <input type="number" min="0" step="0.5" placeholder="' + (c.maxKm || 5) + '" value="' + (val != null ? val : '') + '" onchange="window._aaHub(\'' + esc(h) + '\',this.value)" style="width:52px;border:1px solid #94a3b8;border-radius:8px;padding:1px 5px;"> كم</label>';
+            + '<div style="margin-bottom:10px;"><div style="font-size:.8rem;font-weight:900;color:#334155;margin-bottom:6px;">📍 الهبات — شغّل الهب اللي تريده وحدد مسافته <span style="font-size:.7rem;color:#94a3b8;font-weight:700;">(المسافة الفارغة = العامة)</span></div>'
+            + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;">'
+            + AA_HUBS.concat(Object.keys(Object.assign({}, c.hubKm, c.hubOn)).filter(h => !AA_HUBS.some(x => x[0] === h)).map(h => [h, h])).map(([h, n]) => {
+                const val = (c.hubKm || {})[h], on = (c.hubOn || {})[h] !== false;
+                return '<div style="display:flex;align-items:center;gap:8px;background:' + (on ? '#f0fdfa' : '#f8fafc') + ';border:1px solid ' + (on ? '#99f6e4' : '#e2e8f0') + ';border-radius:14px;padding:8px 10px;">'
+                    + '<label class="aa-sw aa-sw-s" title="شغّل / طفّي هذا الهب"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="window._aaHubOn(\'' + esc(h) + '\',this.checked)"><span></span></label>'
+                    + '<div style="flex:1;min-width:0;"><div style="font-size:.8rem;font-weight:900;color:' + (on ? '#0f766e' : '#94a3b8') + ';">' + esc(n) + '</div>'
+                    + '<div style="font-size:.66rem;color:#94a3b8;font-weight:700;direction:ltr;text-align:right;">' + esc(h) + '</div></div>'
+                    + '<input type="number" min="0" step="0.5" placeholder="' + (c.maxKm || 5) + '" value="' + (val != null ? val : '') + '" onchange="window._aaHub(\'' + esc(h) + '\',this.value)" ' + (on ? '' : 'disabled ') + 'style="width:52px;border:1px solid #94a3b8;border-radius:8px;padding:2px 5px;"><span style="font-size:.7rem;font-weight:800;color:#64748b;">كم</span></div>';
             }).join('')
-            + '<span style="font-size:.7rem;color:#94a3b8;font-weight:700;">(الفارغ = يستخدم المسافة العامة)</span></div>'
+            + '</div></div>'
             + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:.78rem;font-weight:800;">'
             + '<span style="padding:4px 10px;border-radius:999px;background:' + (tokOk ? '#dcfce7;color:#166534' : '#fee2e2;color:#991b1b') + ';">🔑 مفتاح FalconFlex: ' + (st.tokenAt ? (tokOk ? 'شغّال (من ' + Math.round(age) + ' ساعة)' : 'قديم — افتح FalconFlex') : 'ما وصل بعد — افتح FalconFlex') + '</span>'
             + '<span style="padding:4px 10px;border-radius:999px;background:#f1f5f9;color:#334155;">آخر فحص: ' + esc(st.last || '—') + '</span>'
@@ -9919,6 +9922,7 @@
 
     const AA_HUBS = [['rasafa_south', 'رصافة جنوبية'], ['rasafa_north', 'رصافة شمالية'], ['karkh_north', 'كرخ شمالية'], ['karkh_south', 'كرخ جنوبية'], ['basra', 'بصرة']];
     const local = fn => { if (st) { fn(st); } render(); };
+    window._aaHubOn = (h, on) => { local(x => { x.cfg = Object.assign({}, x.cfg); x.cfg.hubOn = Object.assign({}, x.cfg.hubOn, { [h]: !!on }); }); refresh({ op: 'set', hubOn: { [h]: !!on } }); };
     window._aaHub = (h, val) => { const n = Number(val) || 0; local(x => { x.cfg = Object.assign({}, x.cfg); x.cfg.hubKm = Object.assign({}, x.cfg.hubKm); if (n > 0) x.cfg.hubKm[h] = n; else delete x.cfg.hubKm[h]; }); refresh({ op: 'set', hubKm: { [h]: n } }); };
     window._aaSet = o => { local(x => { x.cfg = Object.assign({}, x.cfg, o); }); refresh(Object.assign({ op: 'set' }, o)); render(); };
     window._aaAssign = id => { local(x => { if (x.pending) delete x.pending[id]; (x.log = x.log || []).unshift({ t: Date.now(), type: 'info', text: '⏳ جاري التكعيد...', taskId: id }); }); refresh({ op: 'assign', taskId: id }); };
