@@ -7706,10 +7706,19 @@
                 let rst = 0; try { rst = Math.round(restUsagePenalty(d, now, id) || 0); } catch (e) {}
                 rows.push(['🛋️', 'الاستراحة', usedR + ' د من ' + allowR + ' د مسموح باليوم', -rst]); known += rst;
                 if (usedR > allowR) tips.push('خلّي الاستراحة ضمن ' + allowR + ' د باليوم.');
+                // مخالفة تجاوز الاستراحة (نفس حساب التقييم: كل ساعة زايدة = مخالفة)
+                const rViol = usedR > allowR ? Math.floor((usedR - allowR) / 60) + 1 : 0;
+                if (rViol) { rows.push(['⛔', 'تجاوز الاستراحة', 'زايد ' + (usedR - allowR) + ' د عن المسموح', -rViol * VIOLATION_POINTS]); known += rViol * VIOLATION_POINTS; }
+                // قواعد المجموعة / المهام (خصم يسجّله النظام أو المسؤول)
+                const gPen = Math.round(Number(hb.groupPenalty) || 0);
+                if (gPen) { rows.push(['📋', 'قواعد المجموعة والمهام', 'مثل تأخر قراءة مهمة من المسؤول أو مخالفة قاعدة بالمجموعة', -gPen]); known += gPen; tips.push('اقرا مهام المسؤول أول ما توصل وطبّق قواعد المجموعة.'); }
                 // الطلبات
                 const nOrd = (_ordCountDate === today ? (_ordCountToday[id] || 0) : 0);
                 let bonus = 0; try { bonus = Math.round(ordersBonus(id) || 0); } catch (e) {}
-                rows.push(['📦', 'طلباتك (قبول + توزيع)', nOrd + ' من ' + SC_ORDERS_DAILY_TARGET + ' (الهدف)', bonus]); known -= bonus;
+                // المكافأة ما ترفع فوق «100 ناقص الخصم الثابت» (نفس معادلة التقييم) — نعرض الفعلي حتى ما يطلع فرق غامض
+                const hardPts = late + viol * VIOLATION_POINTS + rViol * VIOLATION_POINTS + gPen, softPts = brk + rst;
+                const effBonus = todayR == null ? bonus : Math.max(0, Math.min(bonus, todayR - (100 - hardPts - softPts)));
+                rows.push(['📦', 'طلباتك (قبول + توزيع)', nOrd + ' من ' + SC_ORDERS_DAILY_TARGET + ' (الهدف)' + (effBonus < bonus ? ' · المكافأة ما تعوّض خصم التأخير أو المخالفات' : ''), effBonus]); known -= effBonus;
                 if (nOrd < SC_ORDERS_DAILY_TARGET) tips.push('سجّل كل طلب قبول وتوزيع، باقيلك ' + (SC_ORDERS_DAILY_TARGET - nOrd) + ' حتى تاخذ المكافأة كاملة (+' + ORDERS_BONUS_MAX + ').');
                 // رسائل واتساب
                 const tk = (typeof _tkData !== 'undefined' ? _tkData : []).filter(t => t.kind === 'self' && t.created_at && _bgYmdOf(new Date(t.created_at).getTime()) === today);
@@ -7717,7 +7726,7 @@
                 if (tk.length) rows.push(['💬', 'رسائل واتساب', solved + ' انحلّت' + (open ? ' · ' + open + ' مفتوحة' : '') + ' (تنضاف عند إغلاق اليوم)', null]);
                 if (open) tips.push('عندك ' + open + ' رسالة مفتوحة، حلّها خلال ' + TICKET_SOLVE_LIMIT_MIN + ' د حتى ما ينخصم منك.');
                 const other = Math.round(100 - todayR - known);
-                if (other > 0) rows.push(['⚠️', 'خصومات ثانية', 'مثل تأخر قراءة المهام أو قواعد المجموعة', -other]);
+                if (other > 0) rows.push(['⚠️', 'خصومات ثانية', 'خصم سجّله النظام أو المسؤول (مو من الحضور أو البريك أو الاستراحة)', -other]);
             }
             const chip = (lb, v, rk, sub) => '<div style="flex:1;min-width:0;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:6px 8px;text-align:center;"><div style="font-size:.66rem;font-weight:800;color:#64748b;">' + lb + '</div><div style="font-size:1.15rem;font-weight:900;color:' + col(v) + ';line-height:1.3;">' + (v == null ? '—' : v + '%') + '</div><div style="font-size:.62rem;font-weight:800;color:#94a3b8;">' + (rk && rk.r ? medal(rk) + 'الترتيب ' + rk.r + ' من ' + rk.n : sub || '&nbsp;') + '</div></div>';
             const eff = v => v == null ? '<span style="color:#94a3b8;">—</span>' : v === 0 ? '<span style="color:#16a34a;">✓ 0</span>' : '<span style="color:' + (v < 0 ? '#dc2626' : '#16a34a') + ';direction:ltr;display:inline-block;">' + (v > 0 ? '+' : '') + v + '</span>';
@@ -8212,7 +8221,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.13-v7.7</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.13-v7.8</div>
 <!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
