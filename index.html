@@ -32,7 +32,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src https://alsaree3.jitbit.com; worker-src 'none'; manifest-src 'none'">
     <meta name="referrer" content="no-referrer">
-    <title>Alsaree3 - Digital Monitoring System v7.8</title>
+    <title>Alsaree3 - Digital Monitoring System v7.9</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
@@ -8233,7 +8233,7 @@
 
         console.log('%c[Alsaree3 v6] البيانات كلها على Supabase (محمية بـ RLS)', 'color:#16a34a;font-weight:bold');
     </script>
-<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.13-v7.8</div>
+<div id="ver-tag" style="position:fixed !important;top:auto !important;bottom:calc(6px + env(safe-area-inset-bottom, 0px)) !important;left:8px !important;right:auto !important;z-index:9980;font-size:10px;color:#94a3b8;background:rgba(255,255,255,.7);border-radius:6px;padding:1px 6px;font-family:sans-serif;direction:ltr;pointer-events:none;">v2026.11.14-v7.9</div>
 <!-- ===== Alsaree3 — إصلاحات v6.5.1 =====
      الصقه في index.html قبل سطر </body> مباشرة (بعد كل السكربتات الموجودة).
      لا يغيّر أي شيء آخر في الملف، ويمكن حذفه بأي وقت للرجوع للوضع السابق. -->
@@ -9873,7 +9873,16 @@
     const URL_ = 'https://script.google.com/macros/s/AKfycbxhIxLuGajhpAMyQf_LO1Pf7jXDNXeJLIuuqEiywOGrlXI7JH6NdcNBkeH7w1vtB5J92Q/exec';
     let st = null, err = '', timer = null;
     const esc = v => (typeof sanitize === 'function') ? sanitize(String(v == null ? '' : v)) : String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const tm = t => { try { return new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Asia/Baghdad', hour: '2-digit', minute: '2-digit', hour12: true }); } catch (e) { return ''; } };
+    const bgDay = t => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Asia/Baghdad' });
+    // الوقت + اليوم إذا مو اليوم (حتى ما ينفهم سجل أمس كأنه وقت غلط)
+    const tm = t => { try {
+        const h = new Date(t).toLocaleTimeString('en-GB', { timeZone: 'Asia/Baghdad', hour: '2-digit', minute: '2-digit', hour12: true });
+        const d = bgDay(t), today = bgDay(Date.now()), yest = bgDay(Date.now() - 864e5);
+        return d === today ? h : (d === yest ? 'أمس ' : d.slice(5).replace('-', '/') + ' ') + h;
+    } catch (e) { return ''; } };
+    const TOK_MAX_H = 23, SUGGEST_MAX_MS = 10 * 60e3;
+    const tokFresh = () => !!(st && st.tokenAt && (Date.now() - st.tokenAt) / 3600e3 < TOK_MAX_H);
+    const TOK_MSG = '🔑 مفتاح FalconFlex قديم — افتح FalconFlex وسجّل دخول حتى يتجدد، بعدين شغّل التكعيد.';
 
     async function call(extra) {
         const { data } = await supabaseClient.auth.getSession();
@@ -9913,13 +9922,15 @@
         pendingRender = false;
         const body = o.querySelector('#aa-body');
         if (!st) { body.innerHTML = '<div class="aa-empty">' + (err ? '❌ ' + esc(err) : '⏳ جاري التحميل...') + '</div>'; return; }
-        const c = st.cfg || {}, age = st.tokenAt ? (Date.now() - st.tokenAt) / 3600e3 : null;
-        const tokOk = age !== null && age < 23, run = !!c.running, auto = !!c.auto;
+        const c = st.cfg || {};
+        const tokOk = tokFresh(), run = !!c.running, auto = !!c.auto;
         const pend = st.pending || {};
         const logs = (st.log || []).filter(l => l.text !== '⚙️ تغيّرت الإعدادات');
         const row = l => {
-            const p = l.type === 'suggest' && pend[l.taskId];
-            const meta = ['<bdi dir="ltr">' + tm(l.t) + '</bdi>', l.inv ? '#' + esc(l.inv) : '', l.store ? esc(l.store) : '', l.hub ? '<span class="aa-tag">' + esc(hubName(l.hub)) + '</span>' : ''].filter(Boolean).join(' · ');
+            // الاقتراح القديم (أكثر من 10 دقايق) ما ينعرض عليه زر تكعيد
+            const p = l.type === 'suggest' && pend[l.taskId] && (Date.now() - Number(new Date(l.t))) < SUGGEST_MAX_MS;
+            const dupe = l.type === 'ok' && l.inv && logs.some(x => x !== l && x.type === 'ok' && x.inv === l.inv && Number(new Date(x.t)) < Number(new Date(l.t)));
+            const meta = [dupe ? '<span class="aa-tag" style="background:#fef2f2;color:#b91c1c">⚠️ تكعيد مكرر</span>' : '', '<bdi dir="ltr">' + tm(l.t) + '</bdi>', l.inv ? '#' + esc(l.inv) : '', l.store ? esc(l.store) : '', l.hub ? '<span class="aa-tag">' + esc(hubName(l.hub)) + '</span>' : ''].filter(Boolean).join(' · ');
             return '<div class="aa-row aa-' + esc(l.type || 'info') + '"><i></i><div class="aa-rb">'
                 + '<div class="aa-rt" title="' + esc(l.text) + '">' + esc(nice(l.text)) + '</div><div class="aa-rm">' + meta + '</div>'
                 + (p ? '<div class="aa-ra"><button class="aa-btn aa-go" onclick="window._aaAssign(\'' + esc(l.taskId) + '\')">✅ كعّد</button><button class="aa-btn" onclick="window._aaDismiss(\'' + esc(l.taskId) + '\')">تجاهل</button></div>' : '')
@@ -9964,8 +9975,16 @@
     const local = fn => { if (st) { fn(st); } render(); };
     window._aaHubOn = (h, on) => { local(x => { x.cfg = Object.assign({}, x.cfg); x.cfg.hubOn = Object.assign({}, x.cfg.hubOn, { [h]: !!on }); }); refresh({ op: 'set', hubOn: { [h]: !!on } }); };
     window._aaHub = (h, val) => { const n = Number(val) || 0; local(x => { x.cfg = Object.assign({}, x.cfg); x.cfg.hubKm = Object.assign({}, x.cfg.hubKm); if (n > 0) x.cfg.hubKm[h] = n; else delete x.cfg.hubKm[h]; }); refresh({ op: 'set', hubKm: { [h]: n } }); };
-    window._aaSet = o => { if (st && st.cfg && Object.keys(o).every(k => st.cfg[k] === o[k])) return; local(x => { x.cfg = Object.assign({}, x.cfg, o); }); refresh(Object.assign({ op: 'set' }, o)); render(); };
-    window._aaAssign = id => { local(x => { if (x.pending) delete x.pending[id]; (x.log = x.log || []).unshift({ t: Date.now(), type: 'info', text: '⏳ جاري التكعيد...', taskId: id }); }); refresh({ op: 'assign', taskId: id }); };
+    window._aaSet = o => {
+        // ما يشتغل بمفتاح قديم
+        if (o.running === true && !tokFresh()) { alert(TOK_MSG); render(); return; }
+        if (st && st.cfg && Object.keys(o).every(k => st.cfg[k] === o[k])) return; local(x => { x.cfg = Object.assign({}, x.cfg, o); }); refresh(Object.assign({ op: 'set' }, o)); render(); };
+    window._aaAssign = id => {
+        if (!tokFresh()) { alert(TOK_MSG); return; }
+        // حماية من التكعيد المكرر: إذا الطلب انكعّد قبل، لا تعيده
+        const done = st && (st.log || []).find(l => l.type === 'ok' && String(l.taskId) === String(id));
+        if (done) { alert('⚠️ هذا الطلب انكعّد قبل (' + tm(done.t) + ') — ما راح ينعاد.'); local(x => { if (x.pending) delete x.pending[id]; }); refresh({ op: 'dismiss', taskId: id }); return; }
+        local(x => { if (x.pending) delete x.pending[id]; (x.log = x.log || []).unshift({ t: Date.now(), type: 'info', text: '⏳ جاري التكعيد...', taskId: id }); }); refresh({ op: 'assign', taskId: id }); };
     window._aaDismiss = id => { local(x => { if (x.pending) delete x.pending[id]; }); refresh({ op: 'dismiss', taskId: id }); };
 
     (document.getElementById('aa-sw-css') || {}).remove && document.getElementById('aa-sw-css').remove();
@@ -10045,7 +10064,7 @@
         clearInterval(timer);
         timer = setInterval(() => { if (!document.getElementById('aa-overlay')) { clearInterval(timer); return; } if (!document.hidden) refresh(); }, 10000);
     };
-    console.log('[Alsaree3] v7.6 loaded: auto-assign panel (owner only)');
+    console.log('[Alsaree3] v7.9 loaded: auto-assign panel (owner only)');
 })();
 </script>
 
