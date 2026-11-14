@@ -32,7 +32,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://eygohyybhidlsycblfop.supabase.co wss://eygohyybhidlsycblfop.supabase.co https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src https://alsaree3.jitbit.com; worker-src 'none'; manifest-src 'none'">
     <meta name="referrer" content="no-referrer">
-    <title>Alsaree3 - Digital Monitoring System v7.1</title>
+    <title>Alsaree3 - Digital Monitoring System v7.8</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
@@ -652,6 +652,23 @@
             auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: false }
         });
         // الشاشة مشتركة بين الموظفين: لا نحتفظ بجلسة قديمة بعد إعادة تحميل الصفحة
+        // تحقق من كلمة مرور بدون إنشاء عميل Supabase ثانٍ (يمنع تحذير Multiple GoTrueClient instances)
+        async function _checkPasswordLogin(email, password) {
+            try {
+                const r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_PUBLISHABLE_KEY },
+                    body: JSON.stringify({ email, password })
+                });
+                const j = await r.json().catch(() => null);
+                if (!r.ok || !j || !j.user || !j.access_token) return null;
+                // ألغِ هذه الجلسة المؤقتة فقط (scope=local) كي لا تُلغى الجلسات الأخرى
+                fetch(SUPABASE_URL + '/auth/v1/logout?scope=local', {
+                    method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + j.access_token }
+                }).catch(() => {});
+                return j.user;
+            } catch (e) { return null; }
+        }
 
         // ===== إعدادات قواعد العمل الجديدة =====
         const WORK_LOCATION = { lat: 33.293117, lng: 44.433205 };   // موقع العمل
@@ -1770,11 +1787,8 @@
             const user = ud && ud.user;
             if (!user || !user.email) return false;
             // عميل مؤقت حتى لا نمس الجلسة الحالية؛ scope:'local' كي لا تُلغى الجلسات الأخرى
-            const tmp = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
-            const { data, error } = await tmp.auth.signInWithPassword({ email: user.email, password: pw });
-            if (error || !data || !data.user || data.user.id !== user.id) return false;
-            try { await tmp.auth.signOut({ scope: 'local' }); } catch (e) {}
-            return true;
+            const u = await _checkPasswordLogin(user.email, pw);
+            return !!(u && u.id === user.id);
         }
         function _askPin(title) {
             return new Promise(resolve => {
@@ -1918,10 +1932,8 @@
             btn.disabled = true; msg.style.color = '#64748b'; msg.textContent = 'Checking...';
             try {
                 // تحقق أن الرمز صحيح فعلاً بتسجيل دخول على عميل مؤقت (لا يمس جلستك)
-                const tmp = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
-                const { data: d, error: e1 } = await tmp.auth.signInWithPassword({ email: k + '@alsaree3.local', password: pw });
-                if (e1 || !d || !d.user) { msg.style.color = '#b91c1c'; msg.textContent = '❌ This is not the employee\'s current password'; btn.disabled = false; return; }
-                try { await tmp.auth.signOut({ scope: 'local' }); } catch (e) {}
+                const _u = await _checkPasswordLogin(k + '@alsaree3.local', pw);
+                if (!_u) { msg.style.color = '#b91c1c'; msg.textContent = '❌ This is not the employee\'s current password'; btn.disabled = false; return; }
                 const { error } = await supabaseClient.rpc('alsaree3_admin_save_code', { p_key: k, p_code: pw });
                 if (error) { console.error('[KeepPw]', error); msg.style.color = '#b91c1c'; msg.textContent = '❌ ' + (error.message || 'Failed (run the SQL setup file again)'); btn.disabled = false; return; }
                 document.getElementById('lacc-code-' + k).textContent = pw;
